@@ -6,6 +6,8 @@
 import { stat } from 'node:fs/promises'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { annotationStats, readAnnotations } from './annotations.js'
+import { readCards } from './cards.js'
+import { readRelations, relationForPaper } from './relations.js'
 import type { Config } from './config.js'
 import { createPaper, readMeta, updateMeta } from './library.js'
 import { appendToNotes, readNotes } from './notes.js'
@@ -224,12 +226,14 @@ export function registerTools(tools: ToolRegistryLike, config: Config): () => vo
             paper: { type: 'object', additionalProperties: true, properties: {} },
             notes: { type: 'object', additionalProperties: true, properties: {} },
             annotations: { type: 'object', additionalProperties: true, properties: {} },
+            cards: { type: 'object', additionalProperties: true, properties: {} },
+            relations: { type: 'object', additionalProperties: true, properties: {} },
           },
         },
         render: (_args, value) =>
           textResult(
             value.ok
-              ? jsonText({ paper: value.paper, notes: value.notes, annotations: value.annotations })
+              ? jsonText({ paper: value.paper, notes: value.notes, annotations: value.annotations, cards: value.cards, relations: value.relations })
               : `PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`,
           ),
       },
@@ -243,9 +247,20 @@ export function registerTools(tools: ToolRegistryLike, config: Config): () => vo
         if (meta === null) return failure(`paper not found: ${args.paperId}`)
         const notes = await readNotes(library.root, args.paperId)
         const annotations = await readAnnotations(library.root, args.paperId).catch(() => undefined)
+        const cards = await readCards(library.root, args.paperId).catch(() => undefined)
+        const relations = await readRelations(library.root).catch(() => undefined)
+        const edgeCount =
+          relations === undefined
+            ? { outgoing: 0, incoming: 0 }
+            : (() => {
+                const { outgoing, incoming } = relationForPaper(relations, args.paperId)
+                return { outgoing: outgoing.length, incoming: incoming.length }
+              })()
         return {
           ok: true,
           annotations: annotations === undefined ? { total: 0, highlights: 0, notes: 0, questions: 0 } : annotationStats(annotations),
+          cards: { total: cards === undefined ? 0 : cards.items.length },
+          relations: edgeCount,
           paper: {
             id: meta.id,
             title: meta.title,
@@ -628,6 +643,131 @@ export function registerTools(tools: ToolRegistryLike, config: Config): () => vo
             comment: item.comment,
             source: item.source,
             createdAt: item.createdAt,
+          })),
+        }
+      },
+    }),
+  )
+
+  add(
+    defineTool({
+      name: 'paper_cards',
+      description:
+        "Read the note cards the user distilled for one PaperDesk paper (cards are created from AI answers and shown in the notes tab). Each card has a title, Markdown body, tags and page references.",
+      parameters: {
+        paperId: { type: 'string', required: true, description: 'Paper id.' },
+        limit: { type: 'number', description: 'Maximum cards (default 50, max 200).' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            ok: { type: 'boolean', required: true },
+            error: { type: 'string' },
+            count: { type: 'number' },
+            cards: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
+          },
+        },
+        render: (_args, value) => {
+          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
+          const cards = Array.isArray(value.cards) ? value.cards : []
+          const blocks = cards.map((entry) => {
+            const card = entry as Record<string, unknown>
+            const pages = Array.isArray(card.pages) && card.pages.length > 0 ? ` · p.${(card.pages as number[]).join(', p.')}` : ''
+            return `## ${String(card.title)}${pages}\n${String(card.body ?? '')}`
+          })
+          return textResult([`PaperDesk cards: ${cards.length} card(s).`, ...blocks].join('\n\n'))
+        },
+      },
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const invalid = badId(args.paperId)
+        if (invalid !== undefined) return invalid
+        const library = libraryOrError(settings())
+        if (isToolFailure(library)) return library
+        const doc = await readCards(library.root, args.paperId)
+        const limit = Math.min(Math.max(Math.trunc(args.limit ?? 50), 1), 200)
+        return {
+          ok: true,
+          count: doc.items.length,
+          cards: doc.items.slice(0, limit).map((card) => ({
+            id: card.id,
+            title: card.title,
+            body: card.body,
+            tags: card.tags,
+            pages: card.pages,
+            createdAt: card.createdAt,
+          })),
+        }
+      },
+    }),
+  )
+
+  add(
+    defineTool({
+      name: 'paper_relations',
+      description:
+        'Read the paper relation graph (typed edges: cites / related / method / contrast / same-topic / custom). Pass paperId to see only that paper\'s incoming and outgoing edges.',
+      parameters: {
+        paperId: { type: 'string', description: 'Optional: only edges touching this paper.' },
+        limit: { type: 'number', description: 'Maximum edges (default 100, max 500).' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            ok: { type: 'boolean', required: true },
+            error: { type: 'string' },
+            count: { type: 'number' },
+            relations: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
+          },
+        },
+        render: (_args, value) => {
+          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
+          const relations = Array.isArray(value.relations) ? value.relations : []
+          const lines = relations.map((entry) => {
+            const relation = entry as Record<string, unknown>
+            return `- [${String(relation.kind)}] ${String(relation.fromTitle ?? relation.from)} ↔ ${String(relation.toTitle ?? relation.to)}${relation.label ? ` (${String(relation.label)})` : ''}${relation.note ? ` — ${String(relation.note)}` : ''}`
+          })
+          return textResult([`PaperDesk relations: ${relations.length} edge(s).`, ...lines].join('\n'))
+        },
+      },
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const library = libraryOrError(settings())
+        if (isToolFailure(library)) return library
+        const doc = await readRelations(library.root)
+        const scoped =
+          args.paperId === undefined
+            ? doc.items
+            : (() => {
+                const { outgoing, incoming } = relationForPaper(doc, args.paperId)
+                return [...outgoing, ...incoming]
+              })()
+        const limit = Math.min(Math.max(Math.trunc(args.limit ?? 100), 1), 500)
+        const titles = new Map<string, string>()
+        for (const relation of scoped.slice(0, limit)) {
+          for (const paperId of [relation.from, relation.to]) {
+            if (titles.has(paperId)) continue
+            const meta = await readMeta(library.root, paperId).catch(() => null)
+            titles.set(paperId, meta === null ? paperId : meta.title)
+          }
+        }
+        return {
+          ok: true,
+          count: scoped.length,
+          relations: scoped.slice(0, limit).map((relation) => ({
+            id: relation.id,
+            from: relation.from,
+            to: relation.to,
+            fromTitle: titles.get(relation.from) ?? relation.from,
+            toTitle: titles.get(relation.to) ?? relation.to,
+            kind: relation.kind,
+            label: relation.label,
+            note: relation.note,
+            createdAt: relation.createdAt,
           })),
         }
       },

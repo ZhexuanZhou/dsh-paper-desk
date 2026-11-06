@@ -34,6 +34,8 @@ export interface LibraryViewProps {
   onSelect: (id: string) => void
   onImport: () => void
   onRetry: () => void
+  onCompare: () => void
+  onRelations: () => void
 }
 
 export function LibraryView(props: LibraryViewProps) {
@@ -56,6 +58,8 @@ export function LibraryView(props: LibraryViewProps) {
     onSelect,
     onImport,
     onRetry,
+    onCompare,
+    onRelations,
   } = props
 
   const tagOptions = [
@@ -99,6 +103,14 @@ export function LibraryView(props: LibraryViewProps) {
               {t(statusText(status))}
             </Chip>
           ))}
+        </div>
+        <div className="pd-list-launchers">
+          <Button size="sm" variant="ghost" onClick={onCompare}>
+            {t('library.compare')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onRelations}>
+            {t('library.relations')}
+          </Button>
         </div>
         <div className="pd-list-title-row">
           <Select

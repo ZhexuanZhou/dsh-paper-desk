@@ -33,6 +33,7 @@ export interface AiPanelLabels {
   scrolledUpHint: string
   newAnswer: string
   reasoning: string
+  createCard: string
   taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
 }
 
@@ -47,6 +48,8 @@ export interface AiPanelProps {
   onCopy: (text: string) => void | Promise<void>
   onOpenInSession: () => void | Promise<void>
   onJumpPage: (page: number) => void
+  /** Per-answer 「生成卡片」 action (omitted → no per-message card button). */
+  onCreateCard?: (row: AiRow) => void
 }
 
 /** Distinct cited pages from the assistant text, capped at 8. */
@@ -81,7 +84,7 @@ function firstLine(text: string): string {
 }
 
 export function AiPanel(props: AiPanelProps) {
-  const { ai, busyTask, labels, onRunTask, onAsk, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage } = props
+  const { ai, busyTask, labels, onRunTask, onAsk, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
 
   const subscribe = useCallback((listener: () => void) => ai.subscribe(listener), [ai])
   const getSnapshot = useCallback(() => ai.getSnapshot(), [ai])
@@ -182,6 +185,13 @@ export function AiPanel(props: AiPanelProps) {
           <div key={row.id} className="pd-ai-assistant">
             <Markdown markdown={row.text} />
             {row.streaming === true ? <span className="pd-ai-caret" aria-hidden="true" /> : null}
+            {row.streaming !== true && onCreateCard !== undefined ? (
+              <div className="pd-ai-row-actions">
+                <Button size="sm" variant="ghost" onClick={() => onCreateCard(row)}>
+                  {labels.createCard}
+                </Button>
+              </div>
+            ) : null}
           </div>
         )
       case 'reasoning':

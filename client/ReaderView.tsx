@@ -12,8 +12,11 @@ import type {
   AnnotationPatch,
   AnnotationRect,
   AssistTask,
+  CardsDocument,
   ExtractedText,
   NewAnnotation,
+  NewNoteCard,
+  NoteCard,
   NotesDocument,
   NotesWriteResult,
   PaperDetail,
@@ -30,10 +33,12 @@ import {
   IconSpark,
   IconTrash,
 } from './icons.js'
-import { AiPanel } from './AiPanel.js'
+import { AiPanel, collectCitedPages } from './AiPanel.js'
 import type { AiPanelLabels } from './AiPanel.js'
-import type { AiThreadController } from './aiSession.js'
+import type { AiRow, AiThreadController } from './aiSession.js'
 import { annotationKindLabel, formatNumber, statusLabel, useLang, useT } from './i18n.js'
+import { CardEditor, CardsPanel, suggestCardTitle } from './CardsPanel.js'
+import type { CardDraft } from './CardsPanel.js'
 import { MetaEditor } from './MetaEditor.js'
 import { NotesEditor } from './NotesEditor.js'
 import { PdfViewer } from './PdfViewer.js'
@@ -56,6 +61,13 @@ interface DrawerState {
 
 function drawerButtonPressed(drawer: DrawerState, tab: DrawerTab): boolean {
   return drawer.open && drawer.tab === tab
+}
+
+interface CardEditorState {
+  mode: 'create' | 'edit'
+  cardId: string | null
+  source: 'ai' | 'user'
+  initial: CardDraft
 }
 
 const READER_TABS: readonly ReaderTab[] = ['read', 'text', 'notes', 'info']
@@ -112,6 +124,15 @@ export interface ReaderViewProps {
   onAiSaveToNotes: (text: string) => Promise<void>
   onAiCopy: (text: string) => Promise<void>
   onAiOpenInSession: () => Promise<void>
+  cards: CardsDocument | null
+  cardsLoading: boolean
+  relationCount: number
+  onOpenRelations: () => void
+  onCreateCard: (input: NewNoteCard) => Promise<string | null>
+  onUpdateCard: (cardId: string, patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>>) => Promise<void>
+  onDeleteCard: (cardId: string) => Promise<void>
+  onInsertCard: (card: NoteCard) => Promise<void>
+  onCopyCard: (card: NoteCard) => Promise<void>
   onToast: ToastPush
   onRetry: () => void
   onImport: () => void
@@ -330,6 +351,15 @@ export function ReaderView(props: ReaderViewProps) {
     onAiSaveToNotes,
     onAiCopy,
     onAiOpenInSession,
+    cards,
+    cardsLoading,
+    relationCount,
+    onOpenRelations,
+    onCreateCard,
+    onUpdateCard,
+    onDeleteCard,
+    onInsertCard,
+    onCopyCard,
     onToast,
     onRetry,
     onImport,
@@ -349,6 +379,10 @@ export function ReaderView(props: ReaderViewProps) {
   const [askAnnotation, setAskAnnotation] = useState<AnnotationItem | null>(null)
   const [askQuestion, setAskQuestion] = useState('')
   const [askingQuestion, setAskingQuestion] = useState(false)
+  const [cardEditor, setCardEditor] = useState<CardEditorState | null>(null)
+  const [cardSaving, setCardSaving] = useState(false)
+  const [pendingCardDelete, setPendingCardDelete] = useState<NoteCard | null>(null)
+  const [deletingCard, setDeletingCard] = useState(false)
 
   useEffect(() => {
     setTab('read')
@@ -363,6 +397,9 @@ export function ReaderView(props: ReaderViewProps) {
     setPendingDelete(null)
     setAskAnnotation(null)
     setAskQuestion('')
+    setCardEditor(null)
+    setPendingCardDelete(null)
+    setDeletingCard(false)
   }, [paperId])
 
   /* Lazy text extraction: only when the 文本 tab is visible. */
@@ -458,6 +495,7 @@ export function ReaderView(props: ReaderViewProps) {
       scrolledUpHint: t('ai.scrolledUpHint'),
       newAnswer: t('ai.newAnswer'),
       reasoning: t('ai.reasoning'),
+      createCard: t('cards.createFromAnswer'),
       taskLabels: {
         summary: t('assist.summary'),
         method: t('assist.method'),
@@ -592,6 +630,96 @@ export function ReaderView(props: ReaderViewProps) {
     }
   }
 
+  /* ── note cards (AI answer / manual) ─────────────────────────────────── */
+
+  const openNewCard = (): void => {
+    setCardEditor({
+      mode: 'create',
+      cardId: null,
+      source: 'user',
+      initial: { title: '', body: '', tags: [], pages: [] },
+    })
+  }
+
+  const openCardFromAnswer = (row: AiRow): void => {
+    setCardEditor({
+      mode: 'create',
+      cardId: null,
+      source: 'ai',
+      initial: {
+        title: suggestCardTitle(row.text, t('cards.untitled')),
+        body: row.text,
+        tags: [],
+        pages: collectCitedPages([row]),
+      },
+    })
+  }
+
+  const openCardEdit = (card: NoteCard): void => {
+    setCardEditor({
+      mode: 'edit',
+      cardId: card.id,
+      source: card.source === 'ai' ? 'ai' : 'user',
+      initial: { title: card.title, body: card.body, tags: [...card.tags], pages: [...card.pages] },
+    })
+  }
+
+  const saveCard = async (draft: CardDraft): Promise<void> => {
+    const editor = cardEditor
+    if (editor === null) return
+    setCardSaving(true)
+    try {
+      if (editor.mode === 'create') {
+        await onCreateCard({
+          title: draft.title,
+          body: draft.body,
+          tags: draft.tags,
+          pages: draft.pages,
+          source: editor.source,
+        })
+      } else if (editor.cardId !== null) {
+        await onUpdateCard(editor.cardId, {
+          title: draft.title,
+          body: draft.body,
+          tags: draft.tags,
+          pages: draft.pages,
+        })
+      }
+      setCardEditor(null)
+    } finally {
+      setCardSaving(false)
+    }
+  }
+
+  const deleteCardFromEditor = async (): Promise<void> => {
+    const editor = cardEditor
+    if (editor === null || editor.cardId === null) return
+    setCardSaving(true)
+    try {
+      await onDeleteCard(editor.cardId)
+      setCardEditor(null)
+    } finally {
+      setCardSaving(false)
+    }
+  }
+
+  const confirmDeleteCard = async (): Promise<void> => {
+    const target = pendingCardDelete
+    if (target === null) return
+    setDeletingCard(true)
+    try {
+      await onDeleteCard(target.id)
+      setPendingCardDelete(null)
+    } finally {
+      setDeletingCard(false)
+    }
+  }
+
+  const jumpToCardPage = (card: NoteCard): void => {
+    const first = card.pages[0]
+    if (first !== undefined) jumpToPage(first)
+  }
+
   return (
     <section className="pd-pane pd-pane-detail" aria-label={meta.title}>
       <div className="pd-reader">
@@ -645,6 +773,14 @@ export function ReaderView(props: ReaderViewProps) {
               title={t('ai.title')}
             >
               {t('ai.title')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onOpenRelations}
+              title={t('reader.relations', { n: relationCount })}
+            >
+              {t('reader.relations', { n: relationCount })}
             </Button>
             <Menu
               label={t('reader.menu.label')}
@@ -918,6 +1054,7 @@ export function ReaderView(props: ReaderViewProps) {
                     onCopy={(text) => void onAiCopy(text)}
                     onOpenInSession={() => void onAiOpenInSession()}
                     onJumpPage={jumpToPage}
+                    onCreateCard={openCardFromAnswer}
                   />
                 )}
               </div>
@@ -989,16 +1126,28 @@ export function ReaderView(props: ReaderViewProps) {
         </div>
 
         <div className="pd-tab-panel" hidden={tab !== 'notes'}>
-          <NotesEditor
-            key={meta.id}
-            notes={detail.notes}
-            onSave={onSaveNotes}
-            onReload={onReloadNotes}
-            onAppendQuote={onAppendQuote}
-            onDirtyChange={onDirtyChange}
-            registerSave={registerNotesSave}
-            onToast={onToast}
-          />
+          <div className="pd-notes-with-cards">
+            <NotesEditor
+              key={meta.id}
+              notes={detail.notes}
+              onSave={onSaveNotes}
+              onReload={onReloadNotes}
+              onAppendQuote={onAppendQuote}
+              onDirtyChange={onDirtyChange}
+              registerSave={registerNotesSave}
+              onToast={onToast}
+            />
+            <CardsPanel
+              cards={cards === null ? [] : cards.items}
+              loading={cardsLoading}
+              onNew={openNewCard}
+              onEdit={openCardEdit}
+              onInsert={(card) => void onInsertCard(card)}
+              onCopy={(card) => void onCopyCard(card)}
+              onDelete={(card) => setPendingCardDelete(card)}
+              onJumpPages={jumpToCardPage}
+            />
+          </div>
         </div>
 
         <div className="pd-tab-panel" hidden={tab !== 'info'}>
@@ -1134,6 +1283,33 @@ export function ReaderView(props: ReaderViewProps) {
           placeholder={t('annotations.askPlaceholder')}
           ariaLabel={t('annotations.askTitle')}
         />
+      </Modal>
+
+      <CardEditor
+        open={cardEditor !== null}
+        mode={cardEditor?.mode ?? 'create'}
+        initial={cardEditor?.initial ?? null}
+        busy={cardSaving}
+        onClose={() => setCardEditor(null)}
+        onSave={(draft) => void saveCard(draft)}
+        onDelete={cardEditor?.mode === 'edit' ? () => void deleteCardFromEditor() : undefined}
+      />
+
+      <Modal
+        open={pendingCardDelete !== null}
+        title={t('cards.deleteTitle')}
+        description={t('cards.deleteDesc')}
+        onClose={() => setPendingCardDelete(null)}
+        footer={
+          <>
+            <Button onClick={() => setPendingCardDelete(null)}>{t('cards.cancel')}</Button>
+            <Button variant="danger" loading={deletingCard} onClick={() => void confirmDeleteCard()}>
+              {t('cards.deleteConfirm')}
+            </Button>
+          </>
+        }
+      >
+        {pendingCardDelete !== null ? <div className="pd-modal-quote">{pendingCardDelete.title}</div> : null}
       </Modal>
 
       {notesDirty ? <span className="pd-sr">{t('notes.dirty')}</span> : null}

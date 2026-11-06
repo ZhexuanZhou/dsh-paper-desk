@@ -23,7 +23,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
+import { copyFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import type {
@@ -259,8 +260,9 @@ function errorMessage(error: unknown): string {
 
 /**
  * Move a corrupt annotations.json to `.paperdesk/conflicts/annotations-<ts>.json`.
- * The original bytes are never deleted. A numeric suffix is used if a copy with
- * the same timestamp already exists; a rename failure falls back to copy+unlink.
+ * The original bytes are never deleted. Copying uses COPYFILE_EXCL so two
+ * quarantines in the same millisecond can never overwrite each other (POSIX
+ * rename would silently replace the earlier copy), then the original is removed.
  */
 async function quarantineCorruptFile(root: string, absPath: string): Promise<void> {
   const conflictsDirAbs = safeJoin(root, posixJoin(INTERNAL_DIR, CONFLICTS_DIR))
@@ -271,28 +273,20 @@ async function quarantineCorruptFile(root: string, absPath: string): Promise<voi
     const suffix = attempt === 0 ? '' : `-${attempt + 1}`
     const destination = path.join(conflictsDirAbs, `annotations-${stamp}${suffix}.json`)
     try {
-      await rename(absPath, destination)
-      return
+      await copyFile(absPath, destination, fsConstants.COPYFILE_EXCL)
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       // Another process already quarantined/removed it: nothing left to move.
       if (code === 'ENOENT') return
       if (code === 'EEXIST') continue
-      // Rename can fail across filesystems: copy the bytes then remove.
-      try {
-        const content = await readFile(absPath)
-        await writeFile(destination, content, { flag: 'wx' })
-        await unlink(absPath)
-        return
-      } catch (fallbackError) {
-        const fallbackCode = (fallbackError as NodeJS.ErrnoException).code
-        if (fallbackCode === 'ENOENT') return
-        if (fallbackCode === 'EEXIST') continue
-        throw new Error(
-          `could not quarantine the corrupt annotations file: ${errorMessage(fallbackError)}`,
-        )
-      }
+      throw new Error(`could not quarantine the corrupt annotations file: ${errorMessage(error)}`)
     }
+    try {
+      await unlink(absPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    return
   }
   throw new Error('could not allocate a conflict-copy name for the corrupt annotations file')
 }

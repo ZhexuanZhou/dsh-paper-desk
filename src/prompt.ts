@@ -19,6 +19,7 @@ const TASK_LABEL: Record<AssistTask, { zh: string; en: string }> = {
   related: { zh: '找相关工作', en: 'Find related work' },
   questions: { zh: '生成理解问题', en: 'Generate study questions' },
   quote: { zh: '解释选中内容', en: 'Explain the selected passage' },
+  compare: { zh: '多篇论文对比', en: 'Compare these papers' },
   custom: { zh: '与 Agent 讨论这篇论文', en: 'Discuss this paper with the agent' },
 }
 
@@ -47,6 +48,10 @@ const TASK_INSTRUCTION: Record<AssistTask, { zh: string; en: string }> = {
     zh: '请解释我选中的这段内容：它在论文中的作用、涉及的关键概念/公式、成立的前提，以及它和前后文的关系。先直接回答，再补充必要的背景；如果有歧义，明确指出。',
     en: 'Explain the passage I selected: its role in the paper, the key concepts/equations involved, the assumptions it relies on, and how it connects to the surrounding text. Answer directly first, then add necessary background; flag any ambiguity.',
   },
+  compare: {
+    zh: '请对比这些论文：先给出结构化对比表，再给横向结论，最后给出建议的论文关联（引用/相关/方法/对比）。所有结论尽量标注页码。',
+    en: 'Compare these papers: a structured comparison table, then cross-paper conclusions, then suggested relations (cites/related/method/contrast). Cite pages where possible.',
+  },
   custom: {
     zh: '请阅读这篇论文，等我提问；先给出 5 条最值得关注的要点，然后回答我的问题。',
     en: 'Read this paper and wait for my questions; first list the five most important points, then answer my questions.',
@@ -71,6 +76,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
       '- 先用 `paper_list` / `paper_search` 定位论文，再用 `paper_info`、`paper_text` 读取元数据与正文（按页读取，避免一次读入全文）。',
       '- 回答时尽量标注页码或图表编号；不确定的内容明确说明是推断。',
       '- 用户可能已在 PDF 上做高亮/划线/提问：先用 `paper_annotations` 读取这些标注（含页码、原文、批注），回答时优先回应用户标记过的内容。',
+      '- 论文库里还有用户整理的「笔记卡片」与「论文关联图谱」：需要复用已有结论时先读 `paper_cards`；做跨论文分析或找相关工作时用 `paper_relations` 了解已有关系。',
       '- 有价值的结论用 `paper_note_append` 追加到对应论文的笔记里（section 可选 summary/points/questions/quotes/thoughts），并在回复中说明已记录。',
       '- 需要新论文入库时用 `paper_add` 传入本机绝对路径；不要直接改写论文库里的文件结构。',
       '- 该目录可能通过网盘同步，不要做批量重命名或移动目录。',
@@ -82,6 +88,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
     '- Locate papers with `paper_list` / `paper_search`, then read metadata and text with `paper_info` and `paper_text` (page by page; avoid loading whole papers).',
     '- Cite page numbers or figure/table numbers; mark anything uncertain as inference.',
     '- The user may have highlighted/underlined/asked questions on the PDF: read them with `paper_annotations` (page, quote, comment) and prefer addressing what the user already marked.',
+    '- The library also has distilled note cards (`paper_cards`) and a paper relation graph (`paper_relations`): reuse the user\'s earlier conclusions and check existing relations for cross-paper analysis.',
     '- Persist valuable conclusions with `paper_note_append` (sections: summary/points/questions/quotes/thoughts) and say so in the reply.',
     '- Import new papers with `paper_add` and an absolute Host path; do not restructure the library directories.',
     '- The directory may be synced through a cloud drive: avoid bulk renames or moves.',
@@ -195,4 +202,74 @@ export function assistPayload(
     prompt: lines.filter((line) => line !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim(),
     title: zh ? `${task} · ${meta.title}` : `${task} · ${meta.title}`,
   }
+}
+
+
+/**
+ * Prompt for comparing 2..6 papers. The answer is rendered in the PaperDesk
+ * comparison view; it asks for a comparison table, cross-paper conclusions and
+ * suggested typed relations the user can accept.
+ */
+export function comparePrompt(papers: PaperMeta[], settings: EffectiveSettings): AssistPayload {
+  const zh = isZh(settings)
+  const root = settings.libraryPath
+  const lines: string[] = []
+  if (zh) {
+    lines.push(`请对比以下 ${papers.length} 篇论文，并把答案写成一个可直接展示的对比报告：`)
+  } else {
+    lines.push(`Compare the following ${papers.length} papers and produce a report ready to display:`)
+  }
+  lines.push('')
+  papers.forEach((paper, index) => {
+    const authors = paper.authors.length > 0 ? paper.authors.join(', ') : zh ? '（未知作者）' : '(unknown authors)'
+    const venue = paper.venue.length > 0 ? paper.venue : zh ? '（未知 venue）' : '(unknown venue)'
+    lines.push(
+      `${index + 1}. 《${paper.title}》 · ${authors}${paper.year === null ? '' : ` · ${paper.year}`} · ${venue}`,
+    )
+    lines.push(`   - id: ${paper.id}`)
+    lines.push(`   - DOI: ${paper.doi || '—'} · 页数: ${paper.pageCount === null ? '?' : paper.pageCount}`)
+    lines.push(`   - 目录: ${root}/papers/${paper.id}`)
+    if (paper.abstract.trim().length > 0) {
+      lines.push(`   - 摘要: ${paper.abstract.replace(/\s+/g, ' ').slice(0, 600)}`)
+    }
+  })
+  lines.push('')
+  lines.push(
+    zh
+      ? [
+          '阅读方式：对每篇论文先用 `paper_info` 看元数据，再用 `paper_text` 读摘要/引言 + 方法/实验的关键页（每篇 3-6 页即可），必要时用 `paper_annotations` 看已在 PDF 上的标注；不要一次读完整篇。',
+          '',
+          '输出结构（Markdown）：',
+          '1. **一句话结论**：这几篇论文放在一起最值得注意的 1-2 句话。',
+          '2. **对比表**：表头列固定为：论文（用第一作者+年份简称）| 研究问题 | 核心方法 | 数据与实验 | 主要结果 | 局限 | 可复用点。每行一篇论文，内容简洁，关键数字标注页码 p.N。',
+          '3. **横向结论**：3-6 条，说明谁在什么条件下更好、差距来自哪里、可否组合。',
+          '4. **建议关联**：每行 `- [关系类型] 论文A ↔ 论文B：理由`，关系类型只能是 cites / related / method / contrast / same-topic / custom 之一；这些关联会展示给用户，等待用户确认后写入论文图谱。',
+          '5. **我实际读过的页**：列出每篇读了哪些页。',
+          '',
+          '约束：只根据 PDF 内容与元数据作答，不编造数字；不确定的地方明确写“推断”。',
+        ].join('\n')
+      : [
+          'Reading: for each paper use `paper_info` for metadata, then `paper_text` for abstract/intro and 3-6 key method/experiment pages; `paper_annotations` if useful. Do not read whole papers.',
+          '',
+          'Output structure (Markdown):',
+          '1. **One-sentence takeaway.**',
+          '2. **Comparison table** with columns: paper (first author + year) | problem | method | data & experiments | main results | limitations | reusable ideas. One row per paper, cite p.N for key numbers.',
+          '3. **Cross-paper conclusions**: 3-6 items on which paper wins under which conditions and where the differences come from.',
+          '4. **Suggested relations**: one per line `- [kind] Paper A ↔ Paper B: reason`, kind ∈ cites / related / method / contrast / same-topic / custom. The user will confirm before they are added.',
+          '5. **Pages actually read.**',
+          '',
+          'Constraints: answer only from the PDFs/metadata; never invent numbers; mark uncertain claims as inference.',
+        ].join('\n'),
+  )
+  const title = papers.map((paper) => shortenTitle(paper.title)).join(' vs ')
+  return {
+    workspacePath: root,
+    prompt: lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+    title: zh ? `对比 · ${title}` : `Compare · ${title}`,
+  }
+}
+
+function shortenTitle(title: string): string {
+  const trimmed = title.trim()
+  return trimmed.length > 32 ? `${trimmed.slice(0, 30)}…` : trimmed
 }

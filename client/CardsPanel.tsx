@@ -1,0 +1,327 @@
+/**
+ * Note cards from AI answers (DESIGN-FEATURES §1).
+ *
+ * `CardEditor` is the create/edit modal (title, Markdown body, tags, page
+ * chips); `CardsPanel` is the reader 笔记 tab's right-hand rail. Both are
+ * presentational — persistence lives in `App`, which owns the `/cards` API.
+ */
+import { useEffect, useState } from 'react'
+import type { NoteCard } from '../src/types.js'
+import { IconEdit, IconNote, IconPlus, IconTrash } from './icons.js'
+import { useT } from './i18n.js'
+import { Button, EmptyState, Field, IconButton, Modal, Spinner, Textarea, TextInput } from './ui.js'
+
+/** Editable draft shared by "create from AI answer" / "new card" / "edit card". */
+export interface CardDraft {
+  title: string
+  body: string
+  tags: string[]
+  pages: number[]
+}
+
+/** Suggested title: first non-empty line with markdown decoration stripped. */
+export function suggestCardTitle(markdown: string, fallback: string): string {
+  for (const rawLine of markdown.split('\n')) {
+    const line = rawLine
+      .trim()
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^[-*>]\s+/, '')
+      .replace(/\*\*|__|`/g, '')
+      .trim()
+    if (line !== '') {
+      const sentence = (line.split(/[。！？!?；;]/)[0] ?? line).trim()
+      const short = sentence.length > 0 ? sentence : line
+      return short.length > 60 ? `${short.slice(0, 60)}…` : short
+    }
+  }
+  return fallback
+}
+
+/** The Markdown block inserted into notes.md for a saved card. */
+export function cardToNotesMarkdown(card: NoteCard): string {
+  const pages = card.pages.length > 0 ? card.pages.map((page) => `p.${page}`).join(', ') : '—'
+  const date = card.createdAt !== '' ? card.createdAt.slice(0, 10) : ''
+  const body = card.body.trim()
+  return `### 卡片：${card.title}\n- 来源：${pages} / ${date}\n\n${body}\n`
+}
+
+function excerpt(text: string, cap = 180): string {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#>*_`~[\]()!-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return plain.length > cap ? `${plain.slice(0, cap)}…` : plain
+}
+
+function parseTagList(value: string): string[] {
+  const seen = new Set<string>()
+  const tags: string[] = []
+  for (const part of value.split(/[,，;；]/)) {
+    const tag = part.trim()
+    if (tag === '' || seen.has(tag)) continue
+    seen.add(tag)
+    tags.push(tag)
+    if (tags.length >= 12) break
+  }
+  return tags
+}
+
+function normalizePages(pages: readonly number[]): number[] {
+  const seen = new Set<number>()
+  const result: number[] = []
+  for (const page of pages) {
+    if (!Number.isInteger(page) || page < 1 || page > 999 || seen.has(page)) continue
+    seen.add(page)
+    result.push(page)
+    if (result.length >= 20) break
+  }
+  return result
+}
+
+/* ── card editor ───────────────────────────────────────────────────────── */
+
+export interface CardEditorProps {
+  open: boolean
+  mode: 'create' | 'edit'
+  initial: CardDraft | null
+  busy: boolean
+  onClose: () => void
+  onSave: (draft: CardDraft) => void | Promise<void>
+  onDelete?: (() => void | Promise<void>) | undefined
+}
+
+export function CardEditor({ open, mode, initial, busy, onClose, onSave, onDelete }: CardEditorProps) {
+  const t = useT()
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [tagsText, setTagsText] = useState('')
+  const [pages, setPages] = useState<number[]>([])
+  const [pageInput, setPageInput] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setTitle(initial?.title ?? '')
+    setBody(initial?.body ?? '')
+    setTagsText((initial?.tags ?? []).join(', '))
+    setPages(normalizePages(initial?.pages ?? []))
+    setPageInput('')
+  }, [open, initial])
+
+  const canSave = title.trim() !== '' && body.trim() !== '' && !busy
+
+  const addPage = (): void => {
+    const page = Number.parseInt(pageInput, 10)
+    if (!Number.isFinite(page) || page < 1 || page > 999) {
+      setPageInput('')
+      return
+    }
+    setPages((previous) => normalizePages([...previous, page]))
+    setPageInput('')
+  }
+
+  const save = (): void => {
+    if (!canSave) return
+    void onSave({
+      title: title.trim().slice(0, 200),
+      body: body.trim(),
+      tags: parseTagList(tagsText),
+      pages: normalizePages(pages),
+    })
+  }
+
+  return (
+    <Modal
+      open={open}
+      wide
+      title={mode === 'create' ? t('cards.editorCreate') : t('cards.editorEdit')}
+      description={t('cards.editorHint')}
+      onClose={onClose}
+      footer={
+        <>
+          {mode === 'edit' && onDelete !== undefined ? (
+            <Button variant="danger" disabled={busy} onClick={() => void onDelete()}>
+              {t('cards.delete')}
+            </Button>
+          ) : null}
+          <Button onClick={onClose} disabled={busy}>
+            {t('cards.cancel')}
+          </Button>
+          <Button variant="primary" loading={busy} disabled={!canSave} onClick={save}>
+            {t('cards.save')}
+          </Button>
+        </>
+      }
+    >
+      <Field label={t('cards.titleLabel')} htmlFor="pd-card-title">
+        <TextInput
+          id="pd-card-title"
+          value={title}
+          maxLength={200}
+          placeholder={t('cards.titlePlaceholder')}
+          onChange={(event) => setTitle(event.target.value)}
+          disabled={busy}
+        />
+      </Field>
+      <Field label={t('cards.bodyLabel')} htmlFor="pd-card-body">
+        <Textarea
+          value={body}
+          onChange={setBody}
+          rows={10}
+          placeholder={t('cards.bodyPlaceholder')}
+          ariaLabel={t('cards.bodyLabel')}
+        />
+      </Field>
+      <Field label={t('cards.tagsLabel')} hint={t('cards.tagsHint')} htmlFor="pd-card-tags">
+        <TextInput
+          id="pd-card-tags"
+          value={tagsText}
+          placeholder={t('cards.tagsPlaceholder')}
+          onChange={(event) => setTagsText(event.target.value)}
+          disabled={busy}
+        />
+      </Field>
+      <Field label={t('cards.pagesLabel')} hint={t('cards.pagesHint')}>
+        <div className="pd-card-pages">
+          {pages.length === 0 ? <span className="pd-card-pages-empty">{t('cards.noPages')}</span> : null}
+          {pages.map((page) => (
+            <span key={`card-page-${page}`} className="pd-card-page-chip">
+              {`p.${page}`}
+              <button
+                type="button"
+                className="pd-chip-x"
+                aria-label={t('cards.removePage', { n: page })}
+                title={t('cards.removePage', { n: page })}
+                onClick={() => setPages((previous) => previous.filter((value) => value !== page))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <span className="pd-card-page-add">
+            <TextInput
+              className="pd-card-page-input"
+              value={pageInput}
+              inputMode="numeric"
+              aria-label={t('cards.addPage')}
+              placeholder={t('cards.pagePlaceholder')}
+              onChange={(event) => setPageInput(event.target.value.replace(/[^0-9]/g, ''))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  addPage()
+                }
+              }}
+            />
+            <IconButton label={t('cards.addPage')} onClick={addPage} disabled={pageInput === ''}>
+              <IconPlus size={12} />
+            </IconButton>
+          </span>
+        </div>
+      </Field>
+    </Modal>
+  )
+}
+
+/* ── cards rail ────────────────────────────────────────────────────────── */
+
+export interface CardsPanelProps {
+  cards: readonly NoteCard[]
+  loading: boolean
+  onNew: () => void
+  onEdit: (card: NoteCard) => void
+  onInsert: (card: NoteCard) => void
+  onCopy: (card: NoteCard) => void
+  onDelete: (card: NoteCard) => void
+  onJumpPages: (card: NoteCard) => void
+}
+
+export function CardsPanel(props: CardsPanelProps) {
+  const t = useT()
+  const { cards, loading, onNew, onEdit, onInsert, onCopy, onDelete, onJumpPages } = props
+
+  return (
+    <aside className="pd-cards-rail" aria-label={t('cards.title')}>
+      <div className="pd-cards-head">
+        <IconNote size={13} />
+        <span>{t('cards.title')}</span>
+        <span className="pd-badge" data-kind="local">
+          {t('cards.count', { n: cards.length })}
+        </span>
+        <span className="pd-cards-head-spacer" />
+        <IconButton label={t('cards.create')} onClick={onNew}>
+          <IconPlus size={12} />
+        </IconButton>
+      </div>
+      <div className="pd-cards-scroll">
+        {loading ? (
+          <div className="pd-loading-block">
+            <Spinner size={12} label={t('cards.loading')} />
+            <span>{t('cards.loading')}</span>
+          </div>
+        ) : cards.length === 0 ? (
+          <EmptyState
+            icon={<IconNote size={20} />}
+            title={t('cards.empty')}
+            description={t('cards.emptyHint')}
+            action={
+              <Button size="sm" icon={<IconPlus size={12} />} onClick={onNew}>
+                {t('cards.create')}
+              </Button>
+            }
+          />
+        ) : (
+          <ul className="pd-card-list">
+            {cards.map((card) => (
+              <li key={card.id} className="pd-card-item">
+                <button type="button" className="pd-card-locate" onClick={() => onEdit(card)} title={t('cards.edit')}>
+                  <span className="pd-card-title">{card.title}</span>
+                  <span className="pd-card-excerpt">{excerpt(card.body)}</span>
+                </button>
+                {card.tags.length > 0 || card.pages.length > 0 ? (
+                  <div className="pd-card-meta">
+                    {card.pages.map((page) => (
+                      <button
+                        key={`${card.id}-page-${page}`}
+                        type="button"
+                        className="pd-card-page-chip pd-card-page-jump"
+                        title={t('cards.jumpPages')}
+                        onClick={() => onJumpPages(card)}
+                      >
+                        {`p.${page}`}
+                      </button>
+                    ))}
+                    {card.tags.slice(0, 3).map((tag) => (
+                      <span key={`${card.id}-tag-${tag}`} className="pd-tag">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="pd-card-actions">
+                  <Button size="sm" variant="ghost" icon={<IconEdit size={12} />} onClick={() => onEdit(card)}>
+                    {t('cards.edit')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => onInsert(card)}>
+                    {t('cards.insert')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => onCopy(card)}>
+                    {t('cards.copy')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<IconTrash size={12} />}
+                    onClick={() => onDelete(card)}
+                  >
+                    {t('cards.delete')}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
+  )
+}

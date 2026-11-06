@@ -19,6 +19,9 @@
 | PDF 批注 | 选中文字即可 **高亮 / 划线 / 备注 / 提问**；右侧「批注」栏按页列出所有标注，可编辑批注、删除、或在标注上直接「问 Agent」。标注存于 `annotations.json`，随论文库同步。 |
 | 笔记 | 每篇论文一份 Markdown 笔记，固定分区：摘要 / 要点 / 疑问 / 引用 / 我的想法 / 对话与补充。支持 Cmd/Ctrl+S、未保存拦截、按页码追加引用。 |
 | Agent 精读 | 读者页右侧 **AI 解读侧栏**：总结 / 方法精读 / 批判性审阅 / 相关工作 / 提问都在面板内流式运行，不跳转会话；可追问、停止、保存到笔记、点引用页码跳转。 |
+| 笔记卡片 | 任意一条 AI 回答可一键「生成卡片」：自动提取标题/正文/引用页码，存进论文目录的 `cards.json`，在「笔记」页右侧卡片栏里编辑、跳页、复制、插入笔记。 |
+| 论文对比 | 多选 2–6 篇论文：即时元数据对比矩阵 + AI 生成的对比报告（表格/横向结论/建议关联），报告可保存到 `<库>/comparisons/` 并随时回看。 |
+| 关联图谱 | 给论文建立带类型的关系（引用/相关/方法/对比/同主题/自定义），力导向图谱支持拖拽、缩放、悬停高亮；对比报告里的「建议关联」可一键加入图谱。 |
 | Agent 工具 | `paper_list`、`paper_search`、`paper_info`、`paper_text`、`paper_annotations`、`paper_notes_read`、`paper_note_append`、`paper_add`、`paper_update`、`paper_sync`，任何会话都能读写论文库。 |
 | 网盘同步 | 文件即状态，无需数据库；面板「同步」页显示网盘类型、外部变更、冲突副本、iCloud 未下载文件，可一键重新扫描 / 解决冲突 / 触发下载。 |
 | 管理与导出 | 阅读状态（未读/在读/已读/归档）、星级、标签、在 Finder 中显示、BibTeX 导出、删除进回收站。 |
@@ -65,6 +68,34 @@
 
 也可以在任意会话里直接说：「帮我总结论文库里那篇 Drifting 论文」，Agent 会自动搜索并读取。
 
+## 从 AI 回答生成笔记卡片
+
+AI 侧栏里每条回答右下角有 **「生成卡片」**：打开编辑器，标题（自动取回答首句并截断）、正文（整段回答）、标签、引用页码（自动从 `p.N` 提取）都可以改，保存后出现在「笔记」页右侧的**卡片栏**：
+
+![笔记卡片](docs/screenshots/cards.png)
+
+卡片支持 **编辑 / 插入笔记 / 复制 / 删除**，点页码芯片可直接跳到 PDF 对应页。卡片以 `cards.json` 存在论文目录里，随论文库同步；Agent 也能用 `paper_cards` 读取这些沉淀下来的结论。
+
+## 多篇论文对比
+
+论文库工具栏点 **「对比」**：勾选 2–6 篇论文（可搜索）→ 先看**元数据对比矩阵**（标题/作者/年份/期刊/状态/标签/页数/DOI）→ 点 **「生成 AI 对比」**，Agent 会逐篇读关键页并流式写出对比表、横向结论、建议关联和实际读过的页码：
+
+![论文对比](docs/screenshots/compare.png)
+
+报告可 **保存对比**（存进 `<库>/comparisons/`），之后在「已保存对比」里回看/删除/用同一批论文重新生成。报告末尾的 `- [关系类型] 论文A ↔ 论文B：理由` 会被解析成「关系建议」，点 **加入图谱** 就写入下面的关联图谱：
+
+![关系建议](docs/screenshots/suggestions.png)
+
+## 论文关联图谱
+
+工具栏点 **「关系图谱」**：（也可在阅读器顶部点「关联 N」聚焦当前论文）
+
+![论文关联图谱](docs/screenshots/relations.png)
+
+- 支持 6 种边：引用 / 相关 / 方法 / 对比 / 同主题 / 自定义；力导向布局，节点可拖拽、画布可缩放平移，悬停高亮邻居，点击节点看详情/打开论文/继续加边，点击边可删除。
+- 「列表」页按条管理所有关系；「添加关联」里搜索选择两篇论文与关系类型，自动校验自环与重复。
+- 关系存在 `.paperdesk/relations.json`，随论文库同步；Agent 可用 `paper_relations` 读取整张图（做跨论文分析时会用到）。
+
 工具一览（模型可调用）：
 
 | 工具 | 用途 |
@@ -74,6 +105,8 @@
 | `paper_info` | 单篇元数据 + 笔记状态 |
 | `paper_text` | 按页读抽取文本（首次抽取会缓存） |
 | `paper_annotations` | 读取你在 PDF 上做的高亮/划线/备注/提问（含页码、原文、批注） |
+| `paper_cards` | 读取某篇论文的笔记卡片（标题/正文/标签/页码） |
+| `paper_relations` | 读取论文关系图谱（可按论文过滤） |
 | `paper_notes_read` / `paper_note_append` | 读笔记 / 追加笔记（冲突安全） |
 | `paper_add` | 用本机绝对路径导入 PDF |
 | `paper_update` | 改元数据、标签、状态、评分 |
@@ -89,7 +122,11 @@
       meta.json        # 元数据（含标签、状态、评分、sha256）
       notes.md         # 你的笔记（Markdown，固定分区）
       annotations.json # PDF 高亮/划线/备注/提问（页码 + 原文 + 批注）
+      cards.json       # 从 AI 回答生成的笔记卡片
       text.json        # 抽取文本缓存（可删，会重建）
+  comparisons/       # 保存下来的多篇论文对比报告
+  .paperdesk/
+    relations.json   # 论文关联图谱（带类型的边）
   _inbox/            # 把 PDF 丢这里，点「扫描收件箱」自动导入
   .paperdesk/
     scan.json        # 文件指纹快照，用于发现其他设备/外部程序的改动
@@ -149,10 +186,12 @@ node scripts/smoke.mjs [可选真实PDF路径]   # 28 项领域冒烟测试
 
 安装到 profile：在 Harness 里用 `plugin_manager` 的 `install_bundle`，目标为本目录的绝对路径。Host 端代码改动需要禁用/启用插件行来重新加载模块；浏览器端改动需要刷新页面（除非同时跑着 `pnpm run dev:web`）。
 
-目录：`src/`（Host：目录/笔记/PDF/元数据/同步/HTTP/工具/提示词）、`client/`（React 面板）、`scripts/`（构建与冒烟）、`DESIGN.md`（模块与 API 契约）。
+目录：`src/`（Host：目录/笔记/PDF/元数据/同步/批注/卡片/关系/对比/HTTP/工具/提示词）、`client/`（React 面板、pdf.js 阅读器、AI 侧栏、对比与图谱浮层）、`scripts/`（构建与冒烟）、`DESIGN.md` / `DESIGN-VIEWER.md` / `DESIGN-AI.md` / `DESIGN-FEATURES.md`（契约文档）。
 
 ---
 
 ## English summary
 
 PaperDesk is a Mendeley-style paper library for DeepSeek Harness. Pick a directory (ideally inside iCloud Drive / Dropbox / Nutstore), then drag PDFs in: metadata is inferred and optionally enriched from Crossref, each paper gets a Markdown notes file with fixed sections, the built-in reader shows the PDF and extracted text, and one click hands the paper to the agent (summary / method / critique / related work / study questions) with a prepared prompt. Nine `paper_*` tools let any session list, search, read and annotate papers. Everything is plain files under your chosen root, so any cloud drive syncs it; writes are hash-guarded and conflicting edits become conflict copies instead of overwrites, with a Sync page for external changes, conflicts and iCloud placeholders.
+
+Beyond reading, the library builds knowledge: AI answers become editable **note cards** next to your notes, any 2–6 papers can be **compared** (metadata matrix + an AI report that can be saved and reopened), and papers are linked in a typed **relation graph** (cites / related / method / contrast / same-topic / custom) with a force-directed view; relation suggestions from a comparison can be added to the graph in one click.

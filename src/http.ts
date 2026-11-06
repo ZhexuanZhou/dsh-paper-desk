@@ -19,6 +19,14 @@ import {
   updateAnnotation,
 } from './annotations.js'
 import { readPdfjsAsset } from './assets.js'
+import { addCard, readCards, removeCard, updateCard } from './cards.js'
+import {
+  deleteComparison,
+  listComparisons,
+  readComparison,
+  saveComparison,
+} from './comparisons.js'
+import { addRelation, readRelations, removeRelation, updateRelation } from './relations.js'
 import {
   bibtexOf,
   createPaper,
@@ -32,7 +40,7 @@ import {
 import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { ensureText } from './pdf.js'
-import { assistPayload } from './prompt.js'
+import { assistPayload, comparePrompt } from './prompt.js'
 import { listTags, queryPapers, searchLibrary } from './search.js'
 import {
   deviceShort,
@@ -48,6 +56,10 @@ import { readPackageJson, sha256File } from './util.js'
 import type {
   AnnotationPatch,
   EffectiveSettings,
+  NewNoteCard,
+  NewRelation,
+  PaperComparison,
+  RelationKind,
   EnrichResult,
   NewAnnotation,
   NoteSection,
@@ -591,6 +603,106 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
       return methodNotAllowed(res)
     }
 
+    if (route === 'cards') {
+      const id = requirePdfId(q['id'] ?? null)
+      if (method === 'GET') {
+        json(res, 200, await readCards(root, id))
+        return
+      }
+      if (method === 'POST') {
+        const body = await readJsonBody(req)
+        json(res, 200, await addCard(root, id, body as unknown as NewNoteCard))
+        return
+      }
+      if (method === 'PATCH') {
+        const cardId = (q['cardId'] ?? '').trim()
+        if (cardId.length === 0) throw new HttpError(400, 'cardId is required')
+        const body = await readJsonBody(req)
+        json(
+          res,
+          200,
+          await updateCard(root, id, cardId, body as unknown as Partial<Pick<NewNoteCard, 'title' | 'body' | 'tags' | 'pages'>>),
+        )
+        return
+      }
+      if (method === 'DELETE') {
+        const cardId = (q['cardId'] ?? '').trim()
+        if (cardId.length === 0) throw new HttpError(400, 'cardId is required')
+        json(res, 200, await removeCard(root, id, cardId))
+        return
+      }
+      return methodNotAllowed(res)
+    }
+
+    if (route === 'relations') {
+      if (method === 'GET') {
+        json(res, 200, await readRelations(root))
+        return
+      }
+      if (method === 'POST') {
+        const body = await readJsonBody(req)
+        json(res, 200, await addRelation(root, body as unknown as NewRelation))
+        return
+      }
+      if (method === 'PATCH') {
+        const relationId = (q['relationId'] ?? '').trim()
+        if (relationId.length === 0) throw new HttpError(400, 'relationId is required')
+        const body = await readJsonBody(req)
+        json(
+          res,
+          200,
+          await updateRelation(root, relationId, body as unknown as { kind?: RelationKind; label?: string; note?: string }),
+        )
+        return
+      }
+      if (method === 'DELETE') {
+        const relationId = (q['relationId'] ?? '').trim()
+        if (relationId.length === 0) throw new HttpError(400, 'relationId is required')
+        json(res, 200, await removeRelation(root, relationId))
+        return
+      }
+      return methodNotAllowed(res)
+    }
+
+    if (route === 'graph') {
+      if (method !== 'GET') return methodNotAllowed(res)
+      const [papers, relations] = await Promise.all([queryPapers(root, { limit: 1000 }), readRelations(root)])
+      json(res, 200, { papers, relations })
+      return
+    }
+
+    if (route === 'comparisons') {
+      if (method === 'GET') {
+        const id = (q['id'] ?? '').trim()
+        if (id.length > 0) {
+          const comparison = await readComparison(root, id)
+          if (comparison === null) throw new HttpError(404, `comparison not found: ${id}`)
+          json(res, 200, comparison)
+          return
+        }
+        json(res, 200, { comparisons: await listComparisons(root) })
+        return
+      }
+      if (method === 'POST') {
+        const body = await readJsonBody(req)
+        const title = typeof body['title'] === 'string' ? body['title'] : ''
+        const markdown = typeof body['markdown'] === 'string' ? body['markdown'] : ''
+        const rawIds = Array.isArray(body['paperIds']) ? body['paperIds'] : []
+        const paperIds = rawIds.filter((value): value is string => typeof value === 'string')
+        const comparison: PaperComparison = await saveComparison(root, { title, paperIds, markdown })
+        json(res, 200, comparison)
+        return
+      }
+      if (method === 'DELETE') {
+        const id = (q['id'] ?? '').trim()
+        if (id.length === 0) throw new HttpError(400, 'id is required')
+        await deleteComparison(root, id)
+        json(res, 200, { ok: true })
+        return
+      }
+      return methodNotAllowed(res)
+    }
+
     if (route === 'enrich') {
       if (method !== 'POST') return methodNotAllowed(res)
       const id = requirePdfId(q['id'] ?? null)
@@ -695,9 +807,28 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
     if (route === 'assist') {
       if (method !== 'POST') return methodNotAllowed(res)
       const body = await readJsonBody(req)
-      const paperId = requirePdfId(typeof body['paperId'] === 'string' ? body['paperId'] : null)
       const task = body['task']
       if (!isAssistTask(task)) throw new HttpError(400, 'invalid assist task')
+      if (task === 'compare') {
+        const rawIds = Array.isArray(body['paperIds']) ? body['paperIds'] : []
+        const ids: string[] = []
+        for (const value of rawIds) {
+          if (typeof value !== 'string') continue
+          const next = requirePdfId(value)
+          if (!ids.includes(next)) ids.push(next)
+        }
+        if (ids.length < 2 || ids.length > 6) throw new HttpError(400, 'compare needs 2..6 distinct paper ids')
+        if (ids.length > 6) throw new HttpError(400, 'compare supports at most 6 papers')
+        const metas = []
+        for (const compareId of ids) {
+          const compareMeta = await readMeta(root, compareId)
+          if (compareMeta === null) throw new HttpError(404, `paper not found: ${compareId}`)
+          metas.push(compareMeta)
+        }
+        json(res, 200, comparePrompt(metas, settings))
+        return
+      }
+      const paperId = requirePdfId(typeof body['paperId'] === 'string' ? body['paperId'] : null)
       const meta = await readMeta(root, paperId)
       if (meta === null) throw new HttpError(404, `paper not found: ${paperId}`)
       const notes = await readNotes(root, paperId)
@@ -727,11 +858,11 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
       json(res, error.status, { error: error.message })
       return
     }
-    // Domain modules may tag not-found errors with `status` (e.g. a missing
-    // annotation id) instead of importing the HTTP error type.
+    // Domain modules tag their own failures with `status` (400 validation,
+    // 404 missing, 409 conflict) instead of importing the HTTP error type.
     const tagged = typeof error === 'object' && error !== null && 'status' in error ? (error as { status: unknown }).status : undefined
-    if (tagged === 404) {
-      json(res, 404, { error: error instanceof Error ? error.message : String(error) })
+    if (typeof tagged === 'number' && Number.isInteger(tagged) && tagged >= 400 && tagged <= 599) {
+      json(res, tagged, { error: error instanceof Error ? error.message : String(error) })
       return
     }
     json(res, 500, { error: error instanceof Error ? error.message : String(error) })
@@ -742,7 +873,7 @@ function methodNotAllowed(res: Res): void {
   json(res, 405, { error: 'method not allowed' })
 }
 
-function isAssistTask(value: unknown): value is 'summary' | 'method' | 'critique' | 'related' | 'questions' | 'quote' | 'custom' {
+function isAssistTask(value: unknown): value is 'summary' | 'method' | 'critique' | 'related' | 'questions' | 'quote' | 'compare' | 'custom' {
   return (
     value === 'summary' ||
     value === 'method' ||
@@ -750,6 +881,7 @@ function isAssistTask(value: unknown): value is 'summary' | 'method' | 'critique
     value === 'related' ||
     value === 'questions' ||
     value === 'quote' ||
+    value === 'compare' ||
     value === 'custom'
   )
 }

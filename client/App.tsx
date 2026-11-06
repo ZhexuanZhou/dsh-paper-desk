@@ -16,14 +16,18 @@ import type {
   AnnotationRect,
   AssistPayload,
   AssistTask,
+  CardsDocument,
   ExtractedText,
   NewAnnotation,
+  NewNoteCard,
+  NoteCard,
   NotesDocument,
   NotesWriteResult,
   PaperDetail,
   PaperMeta,
   PaperStatus,
   PaperSummary,
+  RelationsDocument,
   StatusPayload,
   SyncStatus,
 } from '../src/types.js'
@@ -34,9 +38,12 @@ import { defaultLibraryPath, openHostPath, openSessionInShell, pickLibraryDirect
 import { errorText, I18nProvider, useT } from './i18n.js'
 import type { Lang } from './i18n.js'
 import { IconBook, IconClose, IconGear, IconImport, IconLang, IconSearch, IconSync } from './icons.js'
+import { cardToNotesMarkdown } from './CardsPanel.js'
+import { CompareView } from './CompareView.js'
 import { LibraryView } from './LibraryView.js'
 import type { SortKey } from './LibraryView.js'
 import { ReaderView } from './ReaderView.js'
+import { RelationsGraph } from './RelationsGraph.js'
 import type { ReaderBusy } from './ReaderView.js'
 import { SettingsView } from './SettingsView.js'
 import { CSS, STYLE_ATTR } from './styles.js'
@@ -45,6 +52,11 @@ import { Button, Modal, Spinner, Toast } from './ui.js'
 import type { ToastItem, ToastKind } from './ui.js'
 
 type Nav = 'library' | 'sync' | 'settings'
+
+type OverlayState =
+  | { kind: 'none' }
+  | { kind: 'compare' }
+  | { kind: 'relations'; focusPaperId?: string }
 
 /** Max per-paper annotation undo entries kept in memory. */
 const UNDO_LIMIT = 50
@@ -198,6 +210,15 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   /** Undo stack for the currently selected paper (cleared on paper switch). */
   const undoStackRef = useRef<AnnotationUndoEntry[]>([])
 
+  /* note cards for the selected paper */
+  const [cards, setCards] = useState<CardsDocument | null>(null)
+  const [cardsLoading, setCardsLoading] = useState(false)
+  const cardsRef = useRef<CardsDocument | null>(null)
+
+  /* paper knowledge graph + full-panel overlays */
+  const [relations, setRelations] = useState<RelationsDocument | null>(null)
+  const [overlay, setOverlay] = useState<OverlayState>({ kind: 'none' })
+
   /* notes dirty guard */
   const [notesDirty, setNotesDirty] = useState(false)
   const [guardSaving, setGuardSaving] = useState(false)
@@ -278,6 +299,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     setAnnotations(document)
   }, [])
 
+  const setCardsDoc = useCallback((document: CardsDocument | null) => {
+    cardsRef.current = document
+    setCards(document)
+  }, [])
+
   /* Undo history belongs to one paper: reset it as soon as selection changes. */
   useEffect(() => {
     undoStackRef.current = []
@@ -292,6 +318,30 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const configured = status !== null && status.configured && status.libraryExists
   /* Re-fetch when the configured folder changes (settings / first run). */
   const activeLibraryPath = status?.settings.libraryPath ?? ''
+
+  /* ── relation graph count (chip in the reader header) ────────────────── */
+  const refreshRelations = useCallback(async (): Promise<void> => {
+    if (!configured) {
+      setRelations(null)
+      return
+    }
+    try {
+      setRelations(await api.relations())
+    } catch {
+      /* The graph overlay reports its own errors; the chip just shows a count. */
+      setRelations(null)
+    }
+  }, [configured, activeLibraryPath])
+
+  useEffect(() => {
+    void refreshRelations()
+  }, [refreshRelations, papers.length])
+
+  const relationCount = useMemo(() => {
+    const paperId = selectedId
+    if (paperId === null || relations === null) return 0
+    return relations.items.filter((relation) => relation.from === paperId || relation.to === paperId).length
+  }, [relations, selectedId])
 
   /* Attach the AI thread to the selected paper (re-runs only on paper/path/title change). */
   const aiOpenRef = useRef<{ paperId: string; title: string } | null>(null)
@@ -400,6 +450,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       setTextError(null)
       setAnnotationsDoc(null)
       setAnnotationsLoading(false)
+      setCardsDoc(null)
+      setCardsLoading(false)
       return
     }
     let cancelled = false
@@ -410,8 +462,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     setTextError(null)
     setAnnotationsDoc(null)
     setAnnotationsLoading(true)
-    Promise.allSettled([api.paper(selectedId), api.annotations(selectedId)])
-      .then(([paperResult, annotationsResult]) => {
+    setCardsDoc(null)
+    setCardsLoading(true)
+    Promise.allSettled([api.paper(selectedId), api.annotations(selectedId), api.cards(selectedId)])
+      .then(([paperResult, annotationsResult, cardsResult]) => {
         if (cancelled) return
         if (paperResult.status === 'fulfilled') {
           setDetail(paperResult.value)
@@ -425,16 +479,23 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           setAnnotationsDoc(null)
           pushToast('warn', errorText(annotationsResult.reason) || tRef.current('annotations.loadFailed'))
         }
+        if (cardsResult.status === 'fulfilled') {
+          setCardsDoc(cardsResult.value)
+        } else {
+          setCardsDoc(null)
+          pushToast('warn', errorText(cardsResult.reason) || tRef.current('cards.loadFailed'))
+        }
       })
       .finally(() => {
         if (cancelled) return
         setDetailLoading(false)
         setAnnotationsLoading(false)
+        setCardsLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [selectedId, detailNonce, pushToast, setAnnotationsDoc])
+  }, [selectedId, detailNonce, pushToast, setAnnotationsDoc, setCardsDoc])
 
   /* Auto-select the first row when nothing is selected yet. */
   useEffect(() => {
@@ -492,6 +553,31 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       requestAction(() => setNav(next))
     },
     [nav, requestAction],
+  )
+
+  /* ── knowledge overlays (compare / relation graph) ───────────────────── */
+
+  const openCompareOverlay = useCallback(() => {
+    setOverlay({ kind: 'compare' })
+  }, [])
+
+  const openRelationsOverlay = useCallback(() => {
+    setOverlay(selectedId !== null ? { kind: 'relations', focusPaperId: selectedId } : { kind: 'relations' })
+  }, [selectedId])
+
+  const closeOverlay = useCallback(() => {
+    setOverlay({ kind: 'none' })
+    void refreshRelations()
+  }, [refreshRelations])
+
+  const handleOverlayOpenPaper = useCallback(
+    (paperId: string) => {
+      setOverlay({ kind: 'none' })
+      setNav('library')
+      requestAction(() => setSelectedId(paperId))
+      void refreshRelations()
+    },
+    [requestAction, refreshRelations],
   )
 
   const saveAndContinue = useCallback(async () => {
@@ -667,6 +753,99 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       }
     }
   }, [selectedId, setAnnotationsDoc, pushToast, reportError])
+
+  /* ── note cards (from AI answers / manual) ───────────────────────────── */
+
+  const handleCreateCard = useCallback(
+    async (input: NewNoteCard): Promise<string | null> => {
+      const paperId = selectedId
+      if (paperId === null) return null
+      try {
+        const previousIds = new Set((cardsRef.current?.items ?? []).map((card) => card.id))
+        const document = await api.addCard(paperId, input)
+        if (selectedIdRef.current !== paperId) return null
+        setCardsDoc(document)
+        pushToast('success', tRef.current('cards.created'))
+        return document.items.find((card) => !previousIds.has(card.id))?.id ?? null
+      } catch (error) {
+        reportError(error, 'cards.saveFailed')
+        return null
+      }
+    },
+    [selectedId, setCardsDoc, pushToast, reportError],
+  )
+
+  const handleUpdateCard = useCallback(
+    async (
+      cardId: string,
+      patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>>,
+    ): Promise<void> => {
+      const paperId = selectedId
+      if (paperId === null) return
+      try {
+        const document = await api.updateCard(paperId, cardId, patch)
+        if (selectedIdRef.current !== paperId) return
+        setCardsDoc(document)
+        pushToast('success', tRef.current('cards.updated'))
+      } catch (error) {
+        reportError(error, 'cards.saveFailed')
+      }
+    },
+    [selectedId, setCardsDoc, pushToast, reportError],
+  )
+
+  const handleDeleteCard = useCallback(
+    async (cardId: string): Promise<void> => {
+      const paperId = selectedId
+      if (paperId === null) return
+      try {
+        const document = await api.deleteCard(paperId, cardId)
+        if (selectedIdRef.current !== paperId) return
+        setCardsDoc(document)
+        pushToast('success', tRef.current('cards.deleted'))
+      } catch (error) {
+        reportError(error, 'cards.deleteFailed')
+      }
+    },
+    [selectedId, setCardsDoc, pushToast, reportError],
+  )
+
+  const handleInsertCard = useCallback(
+    async (card: NoteCard): Promise<void> => {
+      const paperId = selectedId
+      if (paperId === null) return
+      try {
+        const result = await api.appendNote(paperId, {
+          section: 'conversation',
+          text: cardToNotesMarkdown(card),
+          by: 'user',
+        })
+        if (result.ok) {
+          setDetail((previous) =>
+            previous !== null && previous.meta.id === paperId ? { ...previous, notes: result.notes } : previous,
+          )
+          pushToast('success', tRef.current('cards.inserted'))
+        } else {
+          pushToast('warn', tRef.current('cards.insertFailed'))
+        }
+      } catch (error) {
+        reportError(error, 'cards.insertFailed')
+      }
+    },
+    [selectedId, pushToast, reportError],
+  )
+
+  const handleCopyCard = useCallback(
+    async (card: NoteCard): Promise<void> => {
+      try {
+        await navigator.clipboard.writeText(cardToNotesMarkdown(card))
+        pushToast('success', tRef.current('cards.copied'))
+      } catch (error) {
+        reportError(error, 'cards.copyFailed')
+      }
+    },
+    [pushToast, reportError],
+  )
 
   /* ── metadata / reader actions ───────────────────────────────────────── */
 
@@ -900,7 +1079,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       if (text === '') return
       if (!(await ensureAiPaper(paperId))) return
       try {
-        const result = await ai.run(text)
+        const emptyThread = ai.getSnapshot().rows.length === 0
+        const title = detail?.meta.title ?? paperId
+        const prompt = emptyThread ? `当前论文：《${title}》（id: ${paperId}）。\n\n${text}` : text
+        const result = await ai.run(prompt)
         if (!result.ok) {
           pushToast('error', result.error !== undefined && result.error !== '' ? result.error : tRef.current('ai.error'))
         }
@@ -1546,6 +1728,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onSelect={selectPaper}
               onImport={openImportPicker}
               onRetry={() => void loadPapers()}
+              onCompare={openCompareOverlay}
+              onRelations={openRelationsOverlay}
             />
             <ReaderView
               paperId={selectedId}
@@ -1585,6 +1769,15 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onAiSaveToNotes={handleAiSaveToNotes}
               onAiCopy={handleAiCopy}
               onAiOpenInSession={handleAiOpenInSession}
+              cards={cards}
+              cardsLoading={cardsLoading}
+              relationCount={relationCount}
+              onOpenRelations={openRelationsOverlay}
+              onCreateCard={handleCreateCard}
+              onUpdateCard={handleUpdateCard}
+              onDeleteCard={handleDeleteCard}
+              onInsertCard={handleInsertCard}
+              onCopyCard={handleCopyCard}
               onToast={pushToast}
               onRetry={() => setDetailNonce((value) => value + 1)}
               onImport={openImportPicker}
@@ -1641,6 +1834,21 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
             </Button>
           </>
         }
+      />
+
+      <CompareView
+        open={overlay.kind === 'compare'}
+        ctx={ctx}
+        lang={lang}
+        onClose={closeOverlay}
+        onOpenPaper={handleOverlayOpenPaper}
+      />
+      <RelationsGraph
+        open={overlay.kind === 'relations'}
+        focusPaperId={overlay.kind === 'relations' ? overlay.focusPaperId ?? null : null}
+        lang={lang}
+        onClose={closeOverlay}
+        onOpenPaper={handleOverlayOpenPaper}
       />
 
       <Toast toasts={toasts} onDismiss={dismissToast} />

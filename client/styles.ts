@@ -35,6 +35,9 @@ const PRIMARY_FG = 'var(--dsw-alias-label-primary-foreground, var(--dsw-alias-bg
 const SIDEBAR_FILL = 'var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-layer-1))'
 const RING = `0 0 0 3px color-mix(in srgb, ${BRAND} 22%, transparent)`
 
+import { relationsCss } from './RelationsGraph.js'
+import { compareCss } from './CompareView.js'
+
 export const CSS = `
 /* ── page root ─────────────────────────────────────────────────────────── */
 .pd-root {
@@ -1020,6 +1023,109 @@ export const CSS = `
 .pd-notes-sections { display: flex; flex-wrap: wrap; gap: 4px; }
 .pd-notes-section { font-size: 10.5px; }
 
+/* ── note cards (notes-tab rail + card editor) ─────────────────────────── */
+.pd-notes-with-cards { display: flex; flex: 1 1 auto; min-height: 0; }
+.pd-notes-with-cards > .pd-notes { flex: 1 1 auto; min-width: 0; }
+.pd-cards-rail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 280px;
+  width: 280px;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid ${B1};
+  background: ${L1};
+}
+.pd-cards-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid ${B1};
+  color: ${FG};
+  font-size: 12px;
+  font-weight: 600;
+}
+.pd-cards-head-spacer { flex: 1 1 auto; }
+.pd-cards-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px; }
+.pd-card-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.pd-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 8px;
+  border: 1px solid ${B1};
+  border-radius: 8px;
+  background: color-mix(in srgb, ${FG} 2%, transparent);
+}
+.pd-card-locate {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pd-card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: ${FG};
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.pd-card-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: ${FG_2};
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.pd-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.pd-card-page-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px;
+  border: 1px solid ${B1};
+  border-radius: 999px;
+  background: transparent;
+  color: ${BRAND};
+  font-family: inherit;
+  font-size: 9.5px;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+.pd-card-page-jump { cursor: pointer; }
+.pd-card-page-jump:hover {
+  background: color-mix(in srgb, ${BRAND} 10%, transparent);
+  border-color: color-mix(in srgb, ${BRAND} 30%, transparent);
+}
+.pd-card-actions { display: flex; flex-wrap: wrap; gap: 1px; }
+.pd-card-actions .pd-btn { min-height: 22px; padding: 1px 5px; color: ${FG_2}; font-size: 10.5px; }
+.pd-card-actions .pd-btn:hover:not(:disabled) { color: ${FG}; }
+.pd-card-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pd-card-pages-empty { color: ${FG_2}; font-size: 11.5px; }
+.pd-card-page-add { display: inline-flex; align-items: center; gap: 2px; }
+.pd-card-page-input { width: 64px; min-height: 24px; padding: 1px 6px; font-size: 11.5px; }
+.pd-ai-row-actions { display: flex; gap: 2px; margin-top: 2px; }
+.pd-ai-row-actions .pd-btn { min-height: 22px; padding: 1px 6px; color: ${FG_2}; font-size: 10.5px; }
+.pd-list-launchers { display: flex; gap: 4px; padding-top: 2px; }
+.pd-list-launchers .pd-btn { flex: 1 1 0; min-height: 24px; padding: 2px 6px; font-size: 11.5px; }
+
 /* ── in-panel AI drawer ────────────────────────────────────────────────── */
 .pd-ai { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .pd-ai-tasks {
@@ -1538,6 +1644,11 @@ export const CSS = `
 .pd-md img { max-width: 100%; border-radius: 6px; }
 .pd-md input[type="checkbox"] { margin-right: 4px; }
 
+/* ── responsive: the cards rail folds away under 1000px ───────────────── */
+@container pd (max-width: 1000px) {
+  .pd-cards-rail { display: none; }
+}
+
 /* ── responsive: annotation rail collapses to an overlay under 900px ──── */
 @container pd (max-width: 900px) {
   /* Narrow container: fall back to the absolute full-height overlay instead of
@@ -1582,7 +1693,9 @@ export const CSS = `
   .pd-toasts { right: 12px; bottom: 12px; }
   .pd-stats { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
 }
-`
+` +
+  relationsCss +
+  compareCss
 
 /** Value of the injected `<style data-plugin-css="...">` attribute. */
 export const STYLE_ATTR = 'paper-desk'

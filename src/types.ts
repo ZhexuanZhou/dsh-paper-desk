@@ -237,6 +237,7 @@ export type AssistTask =
   | 'related'
   | 'questions'
   | 'quote'
+  | 'compare'
   | 'custom'
 
 /** Request/response of `/api/paper-desk/assist`. */
@@ -251,6 +252,8 @@ export interface AssistRequest {
   page?: number
   /** The user's question about the selected passage. */
   question?: string
+  /** Papers to compare (task `compare`, 2..6). */
+  paperIds?: string[]
 }
 
 export interface AssistPayload {
@@ -365,3 +368,96 @@ export const ANNOTATION_LIMITS = {
   rects: 60,
   items: 2000,
 } as const
+
+/* ── Note cards generated from AI answers ───────────────────────────────── */
+
+/** Where a note card came from. */
+export type CardSource = 'ai' | 'user' | 'agent'
+
+/** One distilled note card attached to a paper (`papers/<id>/cards.json`). */
+export interface NoteCard {
+  id: string
+  title: string
+  /** Markdown body (usually an AI answer, possibly edited). */
+  body: string
+  tags: string[]
+  /** Pages the card refers to (1-based). */
+  pages: number[]
+  source: CardSource
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CardsDocument {
+  schemaVersion: 1
+  paperId: string
+  updatedAt: string
+  items: NoteCard[]
+}
+
+export interface NewNoteCard {
+  title: string
+  body: string
+  tags?: string[]
+  pages?: number[]
+  source?: CardSource
+}
+
+/* ── Paper relations (knowledge graph) ─────────────────────────────────── */
+
+/** Edge type between two papers. */
+export type RelationKind = 'cites' | 'related' | 'method' | 'contrast' | 'same-topic' | 'custom'
+
+export interface PaperRelation {
+  id: string
+  /** paperId of the source node. */
+  from: string
+  /** paperId of the target node. */
+  to: string
+  kind: RelationKind
+  /** Optional short label shown on the edge. */
+  label: string
+  note: string
+  source: 'user' | 'agent'
+  createdAt: string
+  updatedAt: string
+}
+
+/** Whole graph file (`.paperdesk/relations.json`). */
+export interface RelationsDocument {
+  schemaVersion: 1
+  updatedAt: string
+  items: PaperRelation[]
+}
+
+export interface NewRelation {
+  from: string
+  to: string
+  kind: RelationKind
+  label?: string
+  note?: string
+  source?: 'user' | 'agent'
+}
+
+/* ── Saved multi-paper comparisons (`comparisons/<id>.json`) ───────────── */
+
+export interface PaperComparison {
+  id: string
+  title: string
+  /** 2..6 paper ids, in presentation order. */
+  paperIds: string[]
+  /** AI-generated Markdown (table + conclusions). */
+  markdown: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ComparisonSummary {
+  id: string
+  title: string
+  paperIds: string[]
+  createdAt: string
+  updatedAt: string
+  /** First ~180 chars of the markdown, for the saved list. */
+  preview: string
+}

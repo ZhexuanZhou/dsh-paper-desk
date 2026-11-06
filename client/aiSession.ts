@@ -1,14 +1,15 @@
 /**
- * In-panel AI thread controller (DESIGN-AI.md §2.1–§2.2).
+ * In-panel AI thread controller (DESIGN-AI.md §2.1–§2.2, DESIGN-FEATURES §6.1).
  *
- * One agent session per paper, retained through the shell's session controller
- * and reduced into a small display transcript. The module is pure data: no JSX,
- * no API client, no React. Every optional runtime service is resolved with
- * `ctx.get(...)` and typed structurally because the installed client-runtime
- * types lag the shipped shell (the same approach as `client/agent.ts`).
+ * One agent session per thread (`<paperId>` for a paper's AI tab, or an
+ * arbitrary key such as `compare:<id1>,<id2>`), retained through the shell's
+ * session controller and reduced into a small display transcript. The module is
+ * pure data: no JSX, no API client, no React. Every optional runtime service is
+ * resolved with `ctx.get(...)` and typed structurally because the installed
+ * client-runtime types lag the shipped shell (same approach as `client/agent.ts`).
  *
  * Public surface:
- *   createAiThread(ctx)      — external-store controller (openPaper/run/stop/…)
+ *   createAiThread(ctx)      — external-store controller (openThread/openPaper/…)
  *   reduceTranscript(...)    — pure event → AiRow[] reducer (exported for tests)
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -32,6 +33,9 @@ export interface AiRow {
 
 export interface AiThreadState {
   status: 'idle' | 'attaching' | 'ready' | 'running' | 'error'
+  /** The open thread key: a paper id, `compare:<id1>,<id2>`, …, or null. */
+  threadKey: string | null
+  /** Convenience mirror of `threadKey` when it is a paper id, else null. */
   paperId: string | null
   sessionId: string | null
   rows: AiRow[]
@@ -41,11 +45,19 @@ export interface AiThreadState {
 export interface AiThreadOptions {
   /** Workspace path (the library root). */
   workspacePath: string
-  /** Used for the session title. */
-  paperTitle: string
+  /**
+   * Session title, used verbatim. `openPaper` builds `AI · <paperTitle>`;
+   * direct `openThread` callers (comparisons) pass their own label.
+   */
+  title?: string
+  /** Legacy per-paper title, wrapped as `AI · <paperTitle>` when `title` is absent. */
+  paperTitle?: string
 }
 
 export interface AiThreadController {
+  /** Open an arbitrary thread key and attach its retained session. */
+  openThread(threadKey: string, options: AiThreadOptions): Promise<void>
+  /** Open a paper's thread with the `AI · <paperTitle>` session name. */
   openPaper(paperId: string, options: AiThreadOptions): Promise<void>
   run(prompt: string): Promise<{ ok: boolean; error?: string }>
   stop(): Promise<void>
@@ -128,12 +140,14 @@ interface Attachment {
   reference: SessionReferenceLike | null
   session: SessionFaceLike
   eventSource: SnapshotSource<unknown> | null
-  paperId: string
+  threadKey: string
   sessionId: string
   unsubs: Array<() => void>
 }
 
-const CACHE_PREFIX = 'paperdesk:ai-session:'
+const CACHE_PREFIX = 'paperdesk:ai-thread:'
+/** Pre-multi-thread key: read once and migrated to {@link CACHE_PREFIX}. */
+const LEGACY_CACHE_PREFIX = 'paperdesk:ai-session:'
 
 /** Friendly zh labels for the tools the PaperDesk agent can call. */
 const TOOL_LABELS: Readonly<Record<string, string>> = {
@@ -658,22 +672,37 @@ function storage(): Storage | null {
   }
 }
 
-function readCachedSessionId(paperId: string): string | null {
+function readCachedSessionId(threadKey: string): string | null {
   const store = storage()
   if (store === null) return null
   try {
-    const value = store.getItem(CACHE_PREFIX + paperId)
-    return typeof value === 'string' && value !== '' ? value : null
+    const current = store.getItem(CACHE_PREFIX + threadKey)
+    if (typeof current === 'string' && current !== '') return current
+    // Migration: single-paper installs cached the session under the old key.
+    const legacy = store.getItem(LEGACY_CACHE_PREFIX + threadKey)
+    if (typeof legacy !== 'string' || legacy === '') return null
+    try {
+      store.setItem(CACHE_PREFIX + threadKey, legacy)
+      store.removeItem(LEGACY_CACHE_PREFIX + threadKey)
+    } catch {
+      // A failed migration write still leaves the legacy entry readable.
+    }
+    return legacy
   } catch {
     return null
   }
 }
 
-function writeCachedSessionId(paperId: string, sessionId: string): void {
+function writeCachedSessionId(threadKey: string, sessionId: string): void {
   const store = storage()
   if (store === null) return
   try {
-    store.setItem(CACHE_PREFIX + paperId, sessionId)
+    store.setItem(CACHE_PREFIX + threadKey, sessionId)
+    try {
+      store.removeItem(LEGACY_CACHE_PREFIX + threadKey)
+    } catch {
+      // Only the legacy entry cleanup failed; the new key is authoritative.
+    }
   } catch {
     // Quota/private-mode failures must not break the panel.
   }
@@ -682,6 +711,23 @@ function writeCachedSessionId(paperId: string, sessionId: string): void {
 function sessionTitleFor(paperTitle: string, paperId: string): string {
   const base = paperTitle.trim() !== '' ? paperTitle.trim() : paperId
   return `AI · ${base}`
+}
+
+/** Real paper ids match the Host's validation regex; compare keys do not. */
+const PAPER_KEY_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+/** `paperId` compatibility mirror: only a genuine paper thread yields a value. */
+function paperIdForThread(threadKey: string | null): string | null {
+  return threadKey !== null && PAPER_KEY_RE.test(threadKey) ? threadKey : null
+}
+
+/** Resolve the session title for a direct `openThread` call. */
+function threadTitleFor(threadKey: string, options: AiThreadOptions): string {
+  const explicit = typeof options?.title === 'string' ? options.title.trim() : ''
+  if (explicit !== '') return explicit
+  const legacy = typeof options?.paperTitle === 'string' ? options.paperTitle.trim() : ''
+  if (legacy !== '') return sessionTitleFor(legacy, threadKey)
+  return threadKey
 }
 
 function remoteMessage(value: unknown): string {
@@ -701,7 +747,7 @@ function remoteMessage(value: unknown): string {
 }
 
 function createIdleState(): AiThreadState {
-  return { status: 'idle', paperId: null, sessionId: null, rows: [], error: null }
+  return { status: 'idle', threadKey: null, paperId: null, sessionId: null, rows: [], error: null }
 }
 
 function rowsEqual(left: readonly AiRow[], right: readonly AiRow[]): boolean {
@@ -729,7 +775,7 @@ function rowsEqual(left: readonly AiRow[], right: readonly AiRow[]): boolean {
 
 /**
  * Create the in-panel AI thread controller. One instance owns at most one
- * retained shell session; `openPaper` reattaches per paper and `dispose`
+ * retained shell session; `openThread` reattaches per thread and `dispose`
  * releases it. All services are optional: when absent the controller reports
  * a readable `status:'error'` instead of throwing.
  */
@@ -738,7 +784,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
   const listeners = new Set<() => void>()
 
   let attachment: Attachment | null = null
-  let currentPaperId: string | null = null
+  let currentThreadKey: string | null = null
   let currentWorkspacePath = ''
   let fatalError: string | null = null
   let localErrorRows: AiRow[] = []
@@ -770,6 +816,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     const merged: AiThreadState = rowsEqual(next.rows, state.rows) ? { ...next, rows: state.rows } : next
     if (
       merged.status === state.status &&
+      merged.threadKey === state.threadKey &&
       merged.paperId === state.paperId &&
       merged.sessionId === state.sessionId &&
       merged.error === state.error &&
@@ -815,11 +862,12 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     else if (running || pendingSubmit) status = 'running'
     else status = 'ready'
 
-    const reduced = reduceTranscript(entries, current.paperId)
+    const reduced = reduceTranscript(entries, current.threadKey)
     const rows = localErrorRows.length === 0 ? reduced : [...reduced, ...localErrorRows]
     commit({
       status,
-      paperId: current.paperId,
+      threadKey: current.threadKey,
+      paperId: paperIdForThread(current.threadKey),
       sessionId: current.sessionId,
       rows,
       error: fatalError,
@@ -853,7 +901,8 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     localErrorRows = []
     commit({
       status: 'error',
-      paperId: currentPaperId,
+      threadKey: currentThreadKey,
+      paperId: paperIdForThread(currentThreadKey),
       sessionId: null,
       rows: [],
       error: message,
@@ -881,28 +930,29 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     return asBinding(reference.binding)
   }
 
-  const syncTitle = async (current: Attachment, paperTitle: string): Promise<void> => {
+  const syncTitle = async (current: Attachment, title: string): Promise<void> => {
     const rename = current.session.rename
     if (typeof rename !== 'function') return
-    const desired = sessionTitleFor(paperTitle, current.paperId)
+    const desired = title.trim()
+    if (desired === '') return
     try {
       const entries = readEntries(current)
       const hasUser = hasVisibleUserMessage(entries)
-      const title = readSessionTitle(ctx, current.sessionId)
+      const existing = readSessionTitle(ctx, current.sessionId)
       // Only rename a still-blank session (or one without any durable title).
-      if (hasUser && title !== null && title !== '') return
-      if (title === desired) return
+      if (hasUser && existing !== null && existing !== '') return
+      if (existing === desired) return
       await rename.call(current.session, desired)
     } catch {
       // Renaming is a convenience; the panel works with the host default title.
     }
   }
 
-  const attachPaper = async (
+  const attachThread = async (
     token: number,
-    paperId: string,
+    threadKey: string,
     workspacePath: string,
-    paperTitle: string,
+    title: string,
   ): Promise<void> => {
     if (workspacePath.trim() === '') {
       failAttach(token, 'The library path is unavailable, so the AI session cannot be opened.')
@@ -917,7 +967,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     let reference: SessionReferenceLike | null = null
     let binding: SessionBindingLike | null = null
 
-    const cached = readCachedSessionId(paperId)
+    const cached = readCachedSessionId(threadKey)
     if (cached !== null) {
       if (typeof sessions.retain === 'function') {
         try {
@@ -954,7 +1004,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
       try {
         workspaceId = await ensurePaperWorkspace(ctx, workspacePath)
       } catch (error) {
-        failAttach(token, `The paper workspace could not be resolved: ${errorMessage(error) || 'unknown error'}`)
+        failAttach(token, `The AI workspace could not be resolved: ${errorMessage(error) || 'unknown error'}`)
         return
       }
       if (token !== openToken) return
@@ -997,7 +1047,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
           return
         }
       }
-      writeCachedSessionId(paperId, connected)
+      writeCachedSessionId(threadKey, connected)
     }
 
     if (token !== openToken) {
@@ -1043,35 +1093,48 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
       reference,
       session,
       eventSource,
-      paperId,
+      threadKey,
       sessionId,
       unsubs,
     }
     fatalError = null
     pendingSubmit = false
     hasRunStarted = false
-    writeCachedSessionId(paperId, sessionId)
+    writeCachedSessionId(threadKey, sessionId)
     refreshNow()
-    void syncTitle(attachment, paperTitle)
+    void syncTitle(attachment, title)
   }
 
-  const openPaper = async (paperId: string, options: AiThreadOptions): Promise<void> => {
-    if (typeof paperId !== 'string' || paperId === '') {
+  const openThread = async (threadKey: string, options: AiThreadOptions): Promise<void> => {
+    if (typeof threadKey !== 'string' || threadKey === '') {
       const invalidToken = openToken + 1
       openToken = invalidToken
       detach()
-      currentPaperId = null
+      currentThreadKey = null
       currentWorkspacePath = ''
-      failAttach(invalidToken, 'No paper was provided to the AI panel.')
+      failAttach(invalidToken, 'No AI thread was provided.')
       return
     }
     const workspacePath = typeof options?.workspacePath === 'string' ? options.workspacePath : ''
-    const paperTitle = typeof options?.paperTitle === 'string' ? options.paperTitle : ''
+    const title = threadTitleFor(threadKey, options)
 
-    // Same paper + same library root: keep the retained session, refresh the
-    // title for the (possibly) late-loaded metadata, and avoid a reattach.
-    if (attachment !== null && currentPaperId === paperId && currentWorkspacePath === workspacePath) {
-      void syncTitle(attachment, paperTitle)
+    // A same-key call while the attach is still in flight must not restart it.
+    if (attachment === null && currentThreadKey === threadKey && pendingOpen !== null) {
+      const inFlight = pendingOpen
+      currentWorkspacePath = workspacePath
+      try {
+        await inFlight
+      } catch {
+        // attachThread reports failures through state; nothing to rethrow here.
+      }
+      if (attachment !== null && currentThreadKey === threadKey) void syncTitle(attachment, title)
+      return
+    }
+
+    // Same thread: no reattach; refresh the workspace/title only.
+    if (attachment !== null && currentThreadKey === threadKey) {
+      currentWorkspacePath = workspacePath
+      void syncTitle(attachment, title)
       return
     }
 
@@ -1084,24 +1147,32 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     pendingSubmit = false
     hasRunStarted = false
     submitStartSeq = -1
-    currentPaperId = paperId
+    currentThreadKey = threadKey
     currentWorkspacePath = workspacePath
 
     commit({
       status: 'attaching',
-      paperId,
+      threadKey,
+      paperId: paperIdForThread(threadKey),
       sessionId: null,
       rows: [],
       error: null,
     })
 
-    const work = attachPaper(token, paperId, workspacePath, paperTitle)
+    const work = attachThread(token, threadKey, workspacePath, title)
     pendingOpen = work
     try {
       await work
     } finally {
       if (pendingOpen === work) pendingOpen = null
     }
+  }
+
+  /** Thin per-paper wrapper: keeps the historical `AI · <paperTitle>` session name. */
+  const openPaper = async (paperId: string, options: AiThreadOptions): Promise<void> => {
+    const rawTitle = typeof options?.paperTitle === 'string' ? options.paperTitle : ''
+    const title = sessionTitleFor(rawTitle.trim() !== '' ? rawTitle : paperId, paperId)
+    await openThread(paperId, { ...options, title })
   }
 
   const run = async (prompt: string): Promise<{ ok: boolean; error?: string }> => {
@@ -1112,14 +1183,14 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
       try {
         await pendingOpen
       } catch {
-        // attachPaper resolves failures into state; ignore here.
+        // attachThread resolves failures into state; ignore here.
       }
     }
     const current = attachment
     if (current === null) {
       return {
         ok: false,
-        error: fatalError !== null ? fatalError : 'No AI session is attached to this paper yet.',
+        error: fatalError !== null ? fatalError : 'No AI session is attached to this thread yet.',
       }
     }
 
@@ -1244,13 +1315,14 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     pendingSubmit = false
     hasRunStarted = false
     submitStartSeq = -1
-    currentPaperId = null
+    currentThreadKey = null
     currentWorkspacePath = ''
     listeners.clear()
     state = createIdleState()
   }
 
   return {
+    openThread,
     openPaper,
     run,
     stop,

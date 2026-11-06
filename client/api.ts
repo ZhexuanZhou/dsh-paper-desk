@@ -8,6 +8,15 @@ import type {
   AssistPayload,
   AssistRequest,
   AssistTask,
+  CardsDocument,
+  ComparisonSummary,
+  NewNoteCard,
+  NewRelation,
+  NoteCard,
+  PaperComparison,
+  PaperRelation,
+  RelationKind,
+  RelationsDocument,
   CloudInfo,
   EffectiveSettings,
   ExtractedText,
@@ -311,6 +320,87 @@ export const api = {
     return requestJson<AnnotationDocument>(`/annotations${query({ id, annotationId })}`, {
       method: 'DELETE',
     })
+  },
+
+  /* ── note cards ────────────────────────────────────────────────────── */
+
+  cards(id: string): Promise<CardsDocument> {
+    return requestJson<CardsDocument>(`/cards${query({ id })}`)
+  },
+
+  addCard(id: string, input: NewNoteCard): Promise<CardsDocument> {
+    return requestJson<CardsDocument>(`/cards${query({ id })}`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  updateCard(
+    id: string,
+    cardId: string,
+    patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>>,
+  ): Promise<CardsDocument> {
+    return requestJson<CardsDocument>(`/cards${query({ id, cardId })}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  deleteCard(id: string, cardId: string): Promise<CardsDocument> {
+    return requestJson<CardsDocument>(`/cards${query({ id, cardId })}`, { method: 'DELETE' })
+  },
+
+  /* ── paper relation graph ──────────────────────────────────────────── */
+
+  relations(): Promise<RelationsDocument> {
+    return requestJson<RelationsDocument>('/relations')
+  },
+
+  addRelation(input: NewRelation): Promise<RelationsDocument> {
+    return requestJson<RelationsDocument>('/relations', { method: 'POST', body: JSON.stringify(input) })
+  },
+
+  updateRelation(
+    relationId: string,
+    patch: { kind?: RelationKind; label?: string; note?: string },
+  ): Promise<RelationsDocument> {
+    return requestJson<RelationsDocument>(`/relations${query({ relationId })}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  deleteRelation(relationId: string): Promise<RelationsDocument> {
+    return requestJson<RelationsDocument>(`/relations${query({ relationId })}`, { method: 'DELETE' })
+  },
+
+  /** Every stored relation (the graph endpoint is the same document). */
+  graph(): Promise<{ papers: unknown; relations: RelationsDocument }> {
+    return requestJson<{ papers: unknown; relations: RelationsDocument }>('/graph')
+  },
+
+  /* ── saved comparisons ─────────────────────────────────────────────── */
+
+  comparisons(): Promise<{ comparisons: ComparisonSummary[] }> {
+    return requestJson<{ comparisons: ComparisonSummary[] }>('/comparisons')
+  },
+
+  comparison(id: string): Promise<PaperComparison> {
+    return requestJson<PaperComparison>(`/comparisons${query({ id })}`)
+  },
+
+  saveComparison(input: { title: string; paperIds: string[]; markdown: string }): Promise<PaperComparison> {
+    return requestJson<PaperComparison>('/comparisons', { method: 'POST', body: JSON.stringify(input) })
+  },
+
+  deleteComparison(id: string): Promise<{ ok: boolean }> {
+    return requestJson<{ ok: boolean }>(`/comparisons${query({ id })}`, { method: 'DELETE' })
+  },
+
+  /** Prompt for comparing papers (then run it in an AI thread). */
+  compareAssist(paperIds: string[]): Promise<AssistPayload> {
+    const body: AssistRequest = { paperId: paperIds[0] ?? '', task: 'compare', paperIds }
+    return requestJson<AssistPayload>('/assist', { method: 'POST', body: JSON.stringify(body) })
   },
 
   /** URL of a bundled pdf.js asset (base PDF.js build, cmaps, fonts, CSS). */
