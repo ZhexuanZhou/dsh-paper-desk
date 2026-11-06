@@ -1,0 +1,1033 @@
+/**
+ * PaperDesk UI dictionaries + tiny formatting helpers.
+ *
+ * `zh` is the authoritative copy; `en` is typed as `Record<keyof typeof zh>`
+ * so a missing or extra English key is a compile error. Every visible string
+ * in the panel comes from here (`t('…')`), including aria labels.
+ */
+import { createContext, createElement, useContext, useMemo } from 'react'
+import type { ReactNode } from 'react'
+import type { AnnotationKind, CloudKind, PaperSource, PaperStatus } from '../src/types.js'
+
+export type Lang = 'zh' | 'en'
+
+const zh = {
+  // ── panel registration (used by client/index.tsx) ──────────────────────
+  'title': '论文库 PaperDesk',
+  'description': '管理论文：导入 PDF、自动补全元数据、记笔记与高亮，并让 Agent 精读论文。',
+
+  // ── app shell ──────────────────────────────────────────────────────────
+  'app.title': '论文库 · PaperDesk',
+  'app.subtitle': 'PDF 论文库 · 笔记 · Agent 精读 · 网盘同步',
+  'app.lang.zh': '中文',
+  'app.lang.en': 'English',
+  'app.lang.label': '界面语言',
+  'app.loading': '正在加载…',
+  'app.connectError': '无法连接 PaperDesk 后端',
+  'app.renderError': '面板渲染出错。请刷新页面后重试；如果问题持续，请重新安装插件。',
+  'app.reload': '刷新页面',
+  'app.retry': '重试',
+  'app.nav.library': '论文库',
+  'app.nav.sync': '同步',
+  'app.nav.settings': '设置',
+
+  // ── common ─────────────────────────────────────────────────────────────
+  'common.cancel': '取消',
+  'common.close': '关闭',
+  'common.save': '保存',
+  'common.saving': '正在保存…',
+  'common.delete': '删除',
+  'common.confirm': '确定',
+  'common.loading': '正在加载…',
+  'common.none': '无',
+  'common.unknown': '未知',
+  'common.optional': '可选',
+  'common.copy': '复制',
+  'common.edit': '编辑',
+  'common.preview': '预览',
+  'common.retry': '重试',
+  'common.refresh': '刷新',
+  'common.dismiss': '关闭',
+
+  // ── search / sort ──────────────────────────────────────────────────────
+  'search.placeholder': '搜索标题、作者、标签、摘要…',
+  'search.clear': '清除搜索',
+  'sort.label': '排序',
+  'sort.added': '添加时间',
+  'sort.title': '标题',
+  'sort.year': '年份',
+  'sort.updated': '更新时间',
+
+  // ── status ─────────────────────────────────────────────────────────────
+  'status.all': '全部',
+  'status.unread': '未读',
+  'status.reading': '在读',
+  'status.read': '已读',
+  'status.archived': '已归档',
+
+  // ── library list ───────────────────────────────────────────────────────
+  'list.title': '论文库',
+  'list.count': '{n} 篇',
+  'list.pages': '{n} 页',
+  'list.filterTag': '标签筛选',
+  'list.allTags': '全部标签',
+  'list.empty.title': '论文库还是空的',
+  'list.empty.desc': '导入一篇 PDF 开始建立你的论文库；标题、作者等元数据会自动补全。',
+  'list.filtered.title': '没有匹配的论文',
+  'list.filtered.desc': '试试清空搜索或切换筛选条件。',
+  'list.loading': '正在加载论文…',
+  'list.error': '加载论文列表失败',
+  'list.evicted': 'iCloud 未下载',
+  'list.notes': '有笔记',
+  'list.importHint': '把 PDF 拖到页面上即可导入',
+  'list.dropHint': '松开鼠标导入 PDF',
+
+  // ── import ─────────────────────────────────────────────────────────────
+  'import.button': '导入 PDF',
+  'import.importing': '正在导入…',
+  'import.notPdf': '请选择 PDF 文件',
+  'import.done': '已导入「{title}」',
+  'import.duplicated': '论文已在库中，已为你选中',
+  'import.multiple': '已导入 {n} 篇论文',
+  'import.partial': '已导入 {n} 篇，{failed} 篇失败',
+  'import.failed': '导入失败',
+  'import.aria': '选择要导入的 PDF 文件',
+  'import.hint': '支持多选；也可以直接拖拽 PDF',
+
+  // ── reader ─────────────────────────────────────────────────────────────
+  'reader.empty.title': '选择一篇论文',
+  'reader.empty.desc': '从左侧列表选择论文，或导入一篇新的 PDF。',
+  'reader.empty.action': '导入 PDF',
+  'reader.tab.read': '阅读',
+  'reader.tab.text': '文本',
+  'reader.tab.notes': '笔记',
+  'reader.tab.info': '信息',
+  'reader.loading': '正在加载论文…',
+  'reader.error': '加载论文详情失败',
+  'reader.menu.label': '更多操作',
+  'reader.editInfo': '编辑信息',
+  'reader.menu.delete': '删除论文',
+  'reader.enrich': '更新元数据',
+  'reader.bibtex': '导出 BibTeX',
+  'reader.bibtexDone': '已导出 BibTeX',
+  'reader.reveal': '在 Finder 中显示',
+  'reader.revealDone': '已在 Finder 中显示',
+  'reader.delete.title': '删除这篇论文？',
+  'reader.delete.desc': '论文目录会被移到论文库的 .paperdesk/trash 中，不会真正删除，可手动恢复。',
+  'reader.delete.confirm': '删除论文',
+  'reader.delete.done': '已删除论文',
+  'reader.rating': '评分',
+  'reader.pdfEvicted.title': 'iCloud 文件尚未下载',
+  'reader.pdfEvicted.desc': '这篇论文的 PDF 目前只是 iCloud 占位文件，下载完成后才能阅读。',
+  'reader.pdfEvicted.download': '下载 PDF',
+  'reader.pdfEvicted.downloading': '正在请求下载…',
+  'reader.pdfMissing.title': 'PDF 文件缺失',
+  'reader.pdfMissing.desc': '论文目录里找不到 PDF，可能已被移动或删除。',
+  'reader.text.loading': '正在提取文本…',
+  'reader.text.empty': '还没有提取文本',
+  'reader.text.emptyDesc': '点「提取文本」从 PDF 生成可检索的文本缓存（首次较慢）。',
+  'reader.text.extract': '提取文本',
+  'reader.text.retry': '重新提取',
+  'reader.text.failed': '提取文本失败',
+  'reader.text.low': '这个 PDF 几乎没有可提取的文字（可能是扫描版）。',
+  'reader.text.page': '第 {n} 页',
+  'reader.text.cached': '文本来自 PDF 的自动提取缓存（text.json）。',
+  'reader.text.emptyPage': '（本页没有文本）',
+  'reader.text.chars': '{n} 字符',
+  'reader.text.pages': '共 {n} 页',
+  'reader.meta.tabHint': '修改元数据会写回 meta.json，并同步到其他设备。',
+
+  // ── in-app PDF viewer ──────────────────────────────────────────────────
+  'viewer.loading': '正在加载 PDF…',
+  'viewer.loadError': 'PDF 加载失败',
+  'viewer.retry': '重试',
+  'viewer.page': '页',
+  'viewer.of': '共',
+  'viewer.zoomIn': '放大',
+  'viewer.zoomOut': '缩小',
+  'viewer.fitWidth': '适应宽度',
+  'viewer.actualSize': '实际大小',
+  'viewer.prev': '上一页',
+  'viewer.next': '下一页',
+  'viewer.highlight': '高亮',
+  'viewer.underline': '划线',
+  'viewer.note': '备注',
+  'viewer.ask': '提问',
+  'viewer.copy': '复制',
+  'viewer.copied': '已复制',
+  'viewer.cancel': '取消',
+  'viewer.askTitle': '针对选中内容提问',
+  'viewer.askPlaceholder': '输入你的问题…',
+  'viewer.askSubmit': '发送提问',
+  'viewer.textLayerUnavailable': '当前 PDF 没有可选择的文字层（可能是扫描版）。',
+  'viewer.lowText': '这个 PDF 几乎没有可提取的文字（可能是扫描版），文字选择与批注可能不可用。',
+
+  // ── annotations rail ───────────────────────────────────────────────────
+  'annotations.title': '批注',
+  'annotations.count': '{n} 条',
+  'annotations.toggle': '批注 {n}',
+  'annotations.loading': '正在加载批注…',
+  'annotations.empty': '还没有批注',
+  'annotations.emptyHint': '在 PDF 中选中文字，然后选择高亮、划线、备注或提问。',
+  'annotations.noQuote': '（无引用文字）',
+  'annotations.kind.highlight': '高亮',
+  'annotations.kind.underline': '划线',
+  'annotations.kind.note': '备注',
+  'annotations.kind.question': '提问',
+  'annotations.pageShort': 'p.{n}',
+  'annotations.edit': '编辑',
+  'annotations.save': '保存',
+  'annotations.cancel': '取消',
+  'annotations.delete': '删除',
+  'annotations.ask': '问 Agent',
+  'annotations.commentPlaceholder': '添加备注…',
+  'annotations.deleteTitle': '删除这条批注？',
+  'annotations.deleteDesc': '删除后无法恢复；PDF 原文不受影响。',
+  'annotations.deleteConfirm': '删除批注',
+  'annotations.created': '已添加批注',
+  'annotations.questionCreated': '已添加提问',
+  'annotations.updated': '已更新批注',
+  'annotations.deleted': '已删除批注',
+  'annotations.deletedUndoable': '已删除，可按 ⌘Z 撤销',
+  'annotations.undone': '已撤销',
+  'annotations.nothingToUndo': '没有可撤销的操作',
+  'annotations.undoFailed': '撤销失败',
+  'annotations.loadFailed': '加载批注失败',
+  'annotations.saveFailed': '保存批注失败',
+  'annotations.deleteFailed': '删除批注失败',
+  'annotations.askTitle': '针对这条批注问 Agent',
+  'annotations.askDesc': '问题会和引用原文一起带给 Agent，并在新会话中发送。',
+  'annotations.askPlaceholder': '想问什么？',
+  'annotations.askSubmit': '发送',
+  'annotations.askFailed': '无法向 Agent 提问',
+  'annotations.summary': '高亮 {highlights} · 划线 {underlines} · 备注 {notes} · 提问 {questions}',
+
+
+  // ── metadata ───────────────────────────────────────────────────────────
+  'meta.title': '标题',
+  'meta.authors': '作者',
+  'meta.authorsHint': '多位作者用逗号分隔',
+  'meta.year': '年份',
+  'meta.venue': '期刊 / 会议',
+  'meta.doi': 'DOI',
+  'meta.url': '链接',
+  'meta.abstract': '摘要',
+  'meta.keywords': '关键词',
+  'meta.keywordsHint': '用逗号分隔',
+  'meta.tags': '标签',
+  'meta.tagsHint': '用逗号分隔',
+  'meta.status': '状态',
+  'meta.rating': '评分',
+  'meta.source': '来源',
+  'meta.addedAt': '添加时间',
+  'meta.updatedAt': '更新时间',
+  'meta.pageCount': '页数',
+  'meta.pdfSize': 'PDF 大小',
+  'meta.save': '保存元数据',
+  'meta.saved': '元数据已保存',
+  'meta.dirty': '有未保存的修改',
+  'meta.enrich': '用 Crossref 补全',
+  'meta.enriching': '正在补全…',
+  'meta.enrichDone': '已补全 {n} 个字段',
+  'meta.enrichNone': '没有可补全的字段',
+  'meta.enrichFailed': '元数据补全失败',
+  'meta.notAvailable': '未知',
+  'meta.yearInvalid': '年份需要是数字',
+  'meta.value.pages': '{n} 页',
+  'meta.value.evicted': '未下载',
+  'meta.source.import': '导入',
+  'meta.source.arxiv': 'arXiv',
+  'meta.source.doi': 'DOI',
+  'meta.source.inbox': '收件箱',
+  'meta.source.agent': 'Agent',
+
+  // ── notes ──────────────────────────────────────────────────────────────
+  'notes.placeholder': '用 Markdown 记录摘要、要点、疑问、想法与引用…',
+  'notes.save': '保存笔记',
+  'notes.saveShortcut': '保存（Cmd/Ctrl+S）',
+  'notes.saving': '正在保存…',
+  'notes.saved': '笔记已保存',
+  'notes.saveFailed': '保存笔记失败',
+  'notes.dirty': '未保存',
+  'notes.dirtyHint': '有未保存的修改，Cmd/Ctrl+S 保存',
+  'notes.cleanHint': '已同步到 notes.md',
+  'notes.edit': '编辑',
+  'notes.preview': '预览',
+  'notes.sections': '跳转到分节',
+  'notes.section.summary': '摘要',
+  'notes.section.points': '要点',
+  'notes.section.questions': '疑问',
+  'notes.section.quotes': '引用',
+  'notes.section.thoughts': '我的想法',
+  'notes.section.conversation': '对话与补充',
+  'notes.loading': '正在加载笔记…',
+  'notes.loadFailed': '加载笔记失败',
+  'notes.appendQuote': '追加引用',
+  'notes.appendQuote.title': '追加引用到「引用」',
+  'notes.appendQuote.desc': '引用的原文会写入「引用」分节，并带上页码锚点。',
+  'notes.appendQuote.text': '引用原文',
+  'notes.appendQuote.placeholder': '粘贴或输入要引用的原文…',
+  'notes.appendQuote.page': '页码',
+  'notes.appendQuote.pageHint': '可选',
+  'notes.appendQuote.append': '追加',
+  'notes.appendQuote.appended': '已追加到笔记',
+  'notes.appendQuote.failed': '追加引用失败',
+  'notes.appendQuote.saveFirst': '请先保存当前笔记，再追加引用',
+  'notes.appendQuote.empty': '请先输入要引用的内容',
+  'notes.unsaved.title': '有未保存的笔记',
+  'notes.unsaved.desc': '切换论文前要保存当前笔记吗？',
+  'notes.unsaved.save': '保存并切换',
+  'notes.unsaved.discard': '放弃修改',
+  'notes.unsaved.stay': '停在当前论文',
+  'notes.conflict.title': '检测到笔记冲突',
+  'notes.conflict.desc': '这篇笔记在磁盘上已被其他设备或工具修改。你的内容没有覆盖它，而是写入了冲突副本。',
+  'notes.conflict.path': '冲突副本：{path}',
+  'notes.conflict.useMine': '使用我的版本',
+  'notes.conflict.useDisk': '加载磁盘版本',
+  'notes.conflict.diskLoaded': '已加载磁盘上的版本',
+  'notes.retry': '重新加载',
+
+  // ── in-panel AI drawer ─────────────────────────────────────────────────
+  'ai.title': 'AI 解读',
+  'ai.emptyHint': '选择上面的任务，让 Agent 在这里精读这篇论文。',
+  'ai.thinking': '正在思考…',
+  'ai.attaching': '正在连接会话…',
+  'ai.stop': '停止',
+  'ai.send': '发送',
+  'ai.placeholder': '继续提问…（Enter 发送，Shift+Enter 换行）',
+  'ai.saveToNotes': '保存到笔记',
+  'ai.saved': '已保存到笔记',
+  'ai.saveFailed': '保存到笔记失败',
+  'ai.copy': '复制',
+  'ai.copied': '已复制',
+  'ai.copyFailed': '复制失败',
+  'ai.openInSession': '在完整会话中继续',
+  'ai.openInSessionFailed': '无法打开完整会话',
+  'ai.jumpHint': '引用页',
+  'ai.retry': '重试',
+  'ai.error': 'AI 解读失败',
+  'ai.attachFailed': '无法连接 AI 会话',
+  'ai.nothingToSave': '还没有可保存的回复',
+  'ai.scrolledUpHint': '跳到最新',
+  'ai.newAnswer': '有新回复',
+  'ai.reasoning': '推理过程',
+
+  // ── agent assist ───────────────────────────────────────────────────────
+  'assist.title': 'Agent 精读',
+  'assist.hint': '在右侧面板中运行 Agent',
+  'assist.summary': '总结',
+  'assist.method': '方法精读',
+  'assist.critique': '审阅',
+  'assist.related': '相关工作',
+  'assist.questions': '提问',
+  'assist.quote': '针对选中内容提问',
+  'assist.custom': '自定义',
+  'assist.failed': '无法启动新会话',
+  'assist.question.title': '向 Agent 提问',
+  'assist.question.desc': '问题会带着选中内容一起发送给右侧面板中的 Agent。',
+  'assist.question.placeholder': '输入你的问题…',
+  'assist.question.ask': '开始提问',
+
+  // ── sync ───────────────────────────────────────────────────────────────
+  'sync.title': '同步',
+  'sync.cloud': '网盘',
+  'sync.cloud.icloud': 'iCloud 云盘',
+  'sync.cloud.onedrive': 'OneDrive',
+  'sync.cloud.dropbox': 'Dropbox',
+  'sync.cloud.nutstore': '坚果云',
+  'sync.cloud.baidu': '百度网盘',
+  'sync.cloud.syncthing': 'Syncthing',
+  'sync.cloud.local': '本地目录',
+  'sync.note.synced': '文献库位于网盘目录中：所有状态都是普通文件，其他设备会自动收到变更。',
+  'sync.note.local': '文献库位于本地目录；把目录放进 iCloud 云盘 / OneDrive / Dropbox / 坚果云 即可多设备同步。',
+  'sync.stats.tracked': '已跟踪文件',
+  'sync.stats.pdfs': 'PDF 数量',
+  'sync.stats.conflicts': '冲突副本',
+  'sync.stats.evicted': '未下载',
+  'sync.lastScan': '上次扫描：{time}',
+  'sync.neverScanned': '尚未扫描',
+  'sync.rescan': '重新扫描',
+  'sync.scanning': '正在扫描…',
+  'sync.scanDone': '扫描完成：新增 {added} · 变更 {changed} · 移除 {removed}',
+  'sync.scanFailed': '扫描失败',
+  'sync.openFolder': '打开目录',
+  'sync.loading': '正在读取同步状态…',
+  'sync.error': '加载同步状态失败',
+  'sync.readOnly': '论文库目录是只读的，写入会失败。',
+  'sync.external.title': '外部变更',
+  'sync.external.none': '没有检测到其他设备 / 工具的变更',
+  'sync.external.hint': '这些文件由其他设备或工具修改，通过扫描指纹检测。',
+  'sync.external.added': '新增',
+  'sync.external.changed': '变更',
+  'sync.external.removed': '移除',
+  'sync.conflicts.title': '冲突副本',
+  'sync.conflicts.none': '没有冲突副本',
+  'sync.conflicts.use': '使用副本覆盖',
+  'sync.conflicts.discard': '丢弃副本',
+  'sync.conflicts.done': '冲突已处理',
+  'sync.conflicts.failed': '处理冲突失败',
+  'sync.evicted.title': 'iCloud 未下载文件',
+  'sync.evicted.none': '没有未下载的文件',
+  'sync.evicted.download': '下载',
+  'sync.evicted.downloading': '正在下载…',
+  'sync.evicted.downloaded': '已请求 iCloud 下载',
+  'sync.evicted.failed': '下载失败',
+  'sync.noLibrary': '还没有配置论文库',
+  'sync.retry': '重新加载',
+
+  // ── settings ───────────────────────────────────────────────────────────
+  'settings.title': '设置',
+  'settings.library': '论文库目录',
+  'settings.libraryHint': '所有状态都是这个目录里的普通文件（meta.json / notes.md / paper.pdf），可以直接交给网盘同步。',
+  'settings.pathPlaceholder': '/Users/you/Documents/PaperDesk',
+  'settings.choose': '选择目录…',
+  'settings.save': '保存设置',
+  'settings.saved': '设置已保存',
+  'settings.saveFailed': '保存设置失败',
+  'settings.reload': '重新加载',
+  'settings.loading': '正在加载设置…',
+  'settings.error': '加载设置失败',
+  'settings.language': '界面语言',
+  'settings.languageHint': '中文 / English',
+  'settings.enrich': '导入时用 Crossref 补全元数据',
+  'settings.enrichHint': '需要联网；按 DOI 或标题检索 Crossref。',
+  'settings.autoImportInbox': '导入时扫描 _inbox',
+  'settings.autoImportHint': '把 PDF 放进论文库的 _inbox/ 目录即可批量导入。',
+  'settings.inbox': '扫描收件箱',
+  'settings.inboxScanning': '正在扫描收件箱…',
+  'settings.inboxDone': '已从收件箱导入 {n} 篇论文',
+  'settings.inboxEmpty': '收件箱里没有可导入的 PDF',
+  'settings.inboxFailed': '扫描收件箱失败',
+  'settings.device': '设备 ID',
+  'settings.deviceHint': '冲突副本会带上设备短码，便于区分来源。',
+  'settings.file': '设置文件',
+  'settings.source': '配置来源',
+  'settings.source.file': '设置文件',
+  'settings.source.config': '插件配置',
+  'settings.source.env': '环境变量',
+  'settings.source.none': '未配置',
+  'settings.openFolder': '在 Finder 中显示',
+  'settings.cloudDesign.title': '云同步设计',
+  'settings.cloudDesign.body': '论文库没有数据库：每篇论文一个目录，元数据是 meta.json，笔记是 notes.md。写入是原子的，冲突保存为副本而不是覆盖，因此 iCloud、OneDrive、Dropbox、坚果云等任意网盘都能安全同步。',
+  'settings.dirty': '有未保存的修改',
+  'settings.pathRequired': '请填写论文库路径',
+  'settings.requireConfigured': '先配置论文库后才能使用这些选项。',
+
+  // ── first-run setup ────────────────────────────────────────────────────
+  'setup.title': '设置论文库',
+  'setup.desc': '选择一个目录作为论文库。每篇论文占一个子目录，笔记与元数据都是普通文件，因此可以放进任意网盘同步。',
+  'setup.path': '论文库路径',
+  'setup.choose': '选择目录',
+  'setup.default': '使用默认目录',
+  'setup.defaultHint': '默认：{path}',
+  'setup.start': '开始使用',
+  'setup.create': '创建并开始',
+  'setup.saving': '正在保存…',
+  'setup.stillMissing': '路径已保存；目录会在导入第一篇 PDF 时自动创建。',
+  'setup.missing': '目录还不存在：{path}；导入第一篇 PDF 时会自动创建。',
+  'setup.saveFailed': '保存论文库路径失败',
+  'setup.syncNote': '云同步友好：把论文库放在 iCloud 云盘 / OneDrive / Dropbox / 坚果云 中，多台设备会自动同步；冲突写入副本，绝不覆盖。',
+  'setup.language': '界面语言',
+  'setup.pathHint': '目录可以不存在；导入时会创建 papers/、_inbox/ 与 .paperdesk/ 结构。',
+
+  // ── toasts / a11y ──────────────────────────────────────────────────────
+  'toast.copied': '已复制',
+  'toast.dismiss': '关闭提示',
+  'toast.notifications': '通知',
+  'drop.hint': '松开鼠标导入 PDF',
+  'aria.statusFilter': '按状态筛选',
+  'aria.tagFilter': '按标签筛选',
+  'aria.sort': '排序方式',
+  'aria.notesEditor': '笔记编辑器',
+  'aria.assistBar': 'Agent 精读操作',
+  'aria.rating': '评分',
+  'aria.language': '切换界面语言',
+  'aria.readerTabs': '论文内容标签',
+
+  // ── errors ─────────────────────────────────────────────────────────────
+  'error.generic': '操作失败',
+  'error.loadStatus': '加载状态失败',
+  'error.loadList': '加载论文列表失败',
+  'error.loadDetail': '加载论文详情失败',
+  'error.loadNotes': '加载笔记失败',
+  'error.loadSync': '加载同步状态失败',
+  'error.loadSettings': '加载设置失败',
+  'error.loadText': '提取文本失败',
+  'error.saveSettings': '保存设置失败',
+  'error.patch': '保存元数据失败',
+  'error.enrich': '元数据补全失败',
+  'error.bibtex': '导出 BibTeX 失败',
+  'error.openFolder': '打开目录失败',
+  'error.reveal': '无法在 Finder 中显示',
+  'error.import': '导入失败',
+  'error.delete': '删除失败',
+  'error.copy': '复制失败',
+} satisfies Record<string, string>
+
+type DictKey = keyof typeof zh
+
+const en: Record<DictKey, string> = {
+  // ── panel registration (used by client/index.tsx) ──────────────────────
+  'title': 'PaperDesk Library',
+  'description': 'Manage papers: import PDFs, enrich metadata, take notes and let the agent deep-read them.',
+
+  // ── app shell ──────────────────────────────────────────────────────────
+  'app.title': 'PaperDesk · Library',
+  'app.subtitle': 'PDF library · notes · agent deep-reads · cloud sync',
+  'app.lang.zh': '中文',
+  'app.lang.en': 'English',
+  'app.lang.label': 'Interface language',
+  'app.loading': 'Loading…',
+  'app.connectError': 'Cannot reach the PaperDesk backend',
+  'app.renderError': 'The panel failed to render. Refresh the page and try again; reinstall the plugin if the problem persists.',
+  'app.reload': 'Refresh page',
+  'app.retry': 'Retry',
+  'app.nav.library': 'Library',
+  'app.nav.sync': 'Sync',
+  'app.nav.settings': 'Settings',
+
+  // ── common ─────────────────────────────────────────────────────────────
+  'common.cancel': 'Cancel',
+  'common.close': 'Close',
+  'common.save': 'Save',
+  'common.saving': 'Saving…',
+  'common.delete': 'Delete',
+  'common.confirm': 'Confirm',
+  'common.loading': 'Loading…',
+  'common.none': 'None',
+  'common.unknown': 'Unknown',
+  'common.optional': 'optional',
+  'common.copy': 'Copy',
+  'common.edit': 'Edit',
+  'common.preview': 'Preview',
+  'common.retry': 'Retry',
+  'common.refresh': 'Refresh',
+  'common.dismiss': 'Dismiss',
+
+  // ── search / sort ──────────────────────────────────────────────────────
+  'search.placeholder': 'Search title, author, tag, abstract…',
+  'search.clear': 'Clear search',
+  'sort.label': 'Sort',
+  'sort.added': 'Date added',
+  'sort.title': 'Title',
+  'sort.year': 'Year',
+  'sort.updated': 'Date updated',
+
+  // ── status ─────────────────────────────────────────────────────────────
+  'status.all': 'All',
+  'status.unread': 'Unread',
+  'status.reading': 'Reading',
+  'status.read': 'Read',
+  'status.archived': 'Archived',
+
+  // ── library list ───────────────────────────────────────────────────────
+  'list.title': 'Library',
+  'list.count': '{n} papers',
+  'list.pages': '{n} pages',
+  'list.filterTag': 'Filter by tag',
+  'list.allTags': 'All tags',
+  'list.empty.title': 'Your library is empty',
+  'list.empty.desc': 'Import a PDF to start building your library; title, authors and other metadata are filled in automatically.',
+  'list.filtered.title': 'No matching papers',
+  'list.filtered.desc': 'Try clearing the search or switching filters.',
+  'list.loading': 'Loading papers…',
+  'list.error': 'Failed to load the paper list',
+  'list.evicted': 'iCloud not downloaded',
+  'list.notes': 'Has notes',
+  'list.importHint': 'Drop a PDF anywhere to import it',
+  'list.dropHint': 'Release to import PDF',
+
+  // ── import ─────────────────────────────────────────────────────────────
+  'import.button': 'Import PDF',
+  'import.importing': 'Importing…',
+  'import.notPdf': 'Please choose PDF files',
+  'import.done': 'Imported “{title}”',
+  'import.duplicated': 'Already in the library; selected it for you',
+  'import.multiple': 'Imported {n} papers',
+  'import.partial': 'Imported {n}, {failed} failed',
+  'import.failed': 'Import failed',
+  'import.aria': 'Choose PDF files to import',
+  'import.hint': 'Multi-select supported; drag & drop also works',
+
+  // ── reader ─────────────────────────────────────────────────────────────
+  'reader.empty.title': 'Select a paper',
+  'reader.empty.desc': 'Pick a paper from the list on the left, or import a new PDF.',
+  'reader.empty.action': 'Import PDF',
+  'reader.tab.read': 'Read',
+  'reader.tab.text': 'Text',
+  'reader.tab.notes': 'Notes',
+  'reader.tab.info': 'Info',
+  'reader.loading': 'Loading paper…',
+  'reader.error': 'Failed to load the paper',
+  'reader.menu.label': 'More actions',
+  'reader.editInfo': 'Edit info',
+  'reader.menu.delete': 'Delete paper',
+  'reader.enrich': 'Update metadata',
+  'reader.bibtex': 'Export BibTeX',
+  'reader.bibtexDone': 'BibTeX exported',
+  'reader.reveal': 'Show in Finder',
+  'reader.revealDone': 'Revealed in Finder',
+  'reader.delete.title': 'Delete this paper?',
+  'reader.delete.desc': 'The paper folder is moved into .paperdesk/trash; nothing is unlinked and you can restore it manually.',
+  'reader.delete.confirm': 'Delete paper',
+  'reader.delete.done': 'Paper deleted',
+  'reader.rating': 'Rating',
+  'reader.pdfEvicted.title': 'iCloud file not downloaded',
+  'reader.pdfEvicted.desc': 'The PDF is currently an iCloud placeholder; download it before reading.',
+  'reader.pdfEvicted.download': 'Download PDF',
+  'reader.pdfEvicted.downloading': 'Requesting download…',
+  'reader.pdfMissing.title': 'PDF file missing',
+  'reader.pdfMissing.desc': 'The PDF cannot be found in the paper folder; it may have been moved or deleted.',
+  'reader.text.loading': 'Extracting text…',
+  'reader.text.empty': 'No extracted text yet',
+  'reader.text.emptyDesc': 'Click “Extract text” to build a searchable text cache from the PDF (slow the first time).',
+  'reader.text.extract': 'Extract text',
+  'reader.text.retry': 'Re-extract',
+  'reader.text.failed': 'Text extraction failed',
+  'reader.text.low': 'This PDF has almost no extractable text (it may be scanned).',
+  'reader.text.page': 'Page {n}',
+  'reader.text.cached': 'Text comes from the cached PDF extraction (text.json).',
+  'reader.text.emptyPage': '(no text on this page)',
+  'reader.text.chars': '{n} chars',
+  'reader.text.pages': '{n} pages',
+  'reader.meta.tabHint': 'Metadata edits are written back to meta.json and reach other devices.',
+
+  // ── in-app PDF viewer ──────────────────────────────────────────────────
+  'viewer.loading': 'Loading PDF…',
+  'viewer.loadError': 'Failed to load the PDF',
+  'viewer.retry': 'Retry',
+  'viewer.page': 'Page',
+  'viewer.of': 'of',
+  'viewer.zoomIn': 'Zoom in',
+  'viewer.zoomOut': 'Zoom out',
+  'viewer.fitWidth': 'Fit width',
+  'viewer.actualSize': 'Actual size',
+  'viewer.prev': 'Previous page',
+  'viewer.next': 'Next page',
+  'viewer.highlight': 'Highlight',
+  'viewer.underline': 'Underline',
+  'viewer.note': 'Note',
+  'viewer.ask': 'Ask',
+  'viewer.copy': 'Copy',
+  'viewer.copied': 'Copied',
+  'viewer.cancel': 'Cancel',
+  'viewer.askTitle': 'Ask about the selection',
+  'viewer.askPlaceholder': 'Type your question…',
+  'viewer.askSubmit': 'Send question',
+  'viewer.textLayerUnavailable': 'This PDF has no selectable text layer (it may be scanned).',
+  'viewer.lowText': 'This PDF has almost no extractable text (it may be scanned); selection and annotations may be unavailable.',
+
+  // ── annotations rail ───────────────────────────────────────────────────
+  'annotations.title': 'Annotations',
+  'annotations.count': '{n}',
+  'annotations.toggle': 'Annotations {n}',
+  'annotations.loading': 'Loading annotations…',
+  'annotations.empty': 'No annotations yet',
+  'annotations.emptyHint': 'Select text in the PDF, then highlight, underline, add a note or ask a question.',
+  'annotations.noQuote': '(no quoted text)',
+  'annotations.kind.highlight': 'Highlight',
+  'annotations.kind.underline': 'Underline',
+  'annotations.kind.note': 'Note',
+  'annotations.kind.question': 'Question',
+  'annotations.pageShort': 'p.{n}',
+  'annotations.edit': 'Edit',
+  'annotations.save': 'Save',
+  'annotations.cancel': 'Cancel',
+  'annotations.delete': 'Delete',
+  'annotations.ask': 'Ask agent',
+  'annotations.commentPlaceholder': 'Add a note…',
+  'annotations.deleteTitle': 'Delete this annotation?',
+  'annotations.deleteDesc': 'This cannot be undone; the PDF itself is not modified.',
+  'annotations.deleteConfirm': 'Delete annotation',
+  'annotations.created': 'Annotation added',
+  'annotations.questionCreated': 'Question added',
+  'annotations.updated': 'Annotation updated',
+  'annotations.deleted': 'Annotation deleted',
+  'annotations.deletedUndoable': 'Deleted. Press ⌘Z to undo',
+  'annotations.undone': 'Undone',
+  'annotations.nothingToUndo': 'Nothing to undo',
+  'annotations.undoFailed': 'Failed to undo',
+  'annotations.loadFailed': 'Failed to load annotations',
+  'annotations.saveFailed': 'Failed to save the annotation',
+  'annotations.deleteFailed': 'Failed to delete the annotation',
+  'annotations.askTitle': 'Ask the agent about this annotation',
+  'annotations.askDesc': 'The question is sent to the agent together with the quoted passage in a new session.',
+  'annotations.askPlaceholder': 'What do you want to ask?',
+  'annotations.askSubmit': 'Send',
+  'annotations.askFailed': 'Could not ask the agent',
+  'annotations.summary': 'Highlights {highlights} · Underlines {underlines} · Notes {notes} · Questions {questions}',
+
+
+  // ── metadata ───────────────────────────────────────────────────────────
+  'meta.title': 'Title',
+  'meta.authors': 'Authors',
+  'meta.authorsHint': 'Separate multiple authors with commas',
+  'meta.year': 'Year',
+  'meta.venue': 'Journal / conference',
+  'meta.doi': 'DOI',
+  'meta.url': 'URL',
+  'meta.abstract': 'Abstract',
+  'meta.keywords': 'Keywords',
+  'meta.keywordsHint': 'Comma separated',
+  'meta.tags': 'Tags',
+  'meta.tagsHint': 'Comma separated',
+  'meta.status': 'Status',
+  'meta.rating': 'Rating',
+  'meta.source': 'Source',
+  'meta.addedAt': 'Added',
+  'meta.updatedAt': 'Updated',
+  'meta.pageCount': 'Pages',
+  'meta.pdfSize': 'PDF size',
+  'meta.save': 'Save metadata',
+  'meta.saved': 'Metadata saved',
+  'meta.dirty': 'Unsaved changes',
+  'meta.enrich': 'Enrich with Crossref',
+  'meta.enriching': 'Enriching…',
+  'meta.enrichDone': 'Filled {n} field(s)',
+  'meta.enrichNone': 'Nothing to fill in',
+  'meta.enrichFailed': 'Metadata enrichment failed',
+  'meta.notAvailable': 'Unknown',
+  'meta.yearInvalid': 'Year must be a number',
+  'meta.value.pages': '{n} pages',
+  'meta.value.evicted': 'Not downloaded',
+  'meta.source.import': 'Import',
+  'meta.source.arxiv': 'arXiv',
+  'meta.source.doi': 'DOI',
+  'meta.source.inbox': 'Inbox',
+  'meta.source.agent': 'Agent',
+
+  // ── notes ──────────────────────────────────────────────────────────────
+  'notes.placeholder': 'Write summaries, key points, questions, thoughts and quotes in Markdown…',
+  'notes.save': 'Save notes',
+  'notes.saveShortcut': 'Save (Cmd/Ctrl+S)',
+  'notes.saving': 'Saving…',
+  'notes.saved': 'Notes saved',
+  'notes.saveFailed': 'Failed to save notes',
+  'notes.dirty': 'Unsaved',
+  'notes.dirtyHint': 'Unsaved changes — press Cmd/Ctrl+S to save',
+  'notes.cleanHint': 'Synced to notes.md',
+  'notes.edit': 'Edit',
+  'notes.preview': 'Preview',
+  'notes.sections': 'Jump to section',
+  'notes.section.summary': 'Summary',
+  'notes.section.points': 'Key points',
+  'notes.section.questions': 'Open questions',
+  'notes.section.quotes': 'Quotes',
+  'notes.section.thoughts': 'My take',
+  'notes.section.conversation': 'Conversation notes',
+  'notes.loading': 'Loading notes…',
+  'notes.loadFailed': 'Failed to load notes',
+  'notes.appendQuote': 'Append quote',
+  'notes.appendQuote.title': 'Append quote to “Quotes”',
+  'notes.appendQuote.desc': 'The quoted text is written under the Quotes section with a page anchor.',
+  'notes.appendQuote.text': 'Quote',
+  'notes.appendQuote.placeholder': 'Paste or type the text to quote…',
+  'notes.appendQuote.page': 'Page',
+  'notes.appendQuote.pageHint': 'optional',
+  'notes.appendQuote.append': 'Append',
+  'notes.appendQuote.appended': 'Appended to notes',
+  'notes.appendQuote.failed': 'Failed to append the quote',
+  'notes.appendQuote.saveFirst': 'Save the current notes before appending a quote',
+  'notes.appendQuote.empty': 'Enter the text to quote first',
+  'notes.unsaved.title': 'Unsaved notes',
+  'notes.unsaved.desc': 'Save the current notes before switching papers?',
+  'notes.unsaved.save': 'Save and switch',
+  'notes.unsaved.discard': 'Discard changes',
+  'notes.unsaved.stay': 'Stay on this paper',
+  'notes.conflict.title': 'Note conflict detected',
+  'notes.conflict.desc': 'These notes were changed on disk by another device or tool. Your content did not overwrite it; a conflict copy was written instead.',
+  'notes.conflict.path': 'Conflict copy: {path}',
+  'notes.conflict.useMine': 'Use my version',
+  'notes.conflict.useDisk': 'Load disk version',
+  'notes.conflict.diskLoaded': 'Loaded the version from disk',
+  'notes.retry': 'Reload',
+
+  // ── in-panel AI drawer ─────────────────────────────────────────────────
+  'ai.title': 'AI reading',
+  'ai.emptyHint': 'Pick a task above and let the agent read this paper right here.',
+  'ai.thinking': 'Thinking…',
+  'ai.attaching': 'Connecting the session…',
+  'ai.stop': 'Stop',
+  'ai.send': 'Send',
+  'ai.placeholder': 'Ask a follow-up… (Enter to send, Shift+Enter for a newline)',
+  'ai.saveToNotes': 'Save to notes',
+  'ai.saved': 'Saved to notes',
+  'ai.saveFailed': 'Failed to save to notes',
+  'ai.copy': 'Copy',
+  'ai.copied': 'Copied',
+  'ai.copyFailed': 'Failed to copy',
+  'ai.openInSession': 'Continue in full session',
+  'ai.openInSessionFailed': 'Could not open the full session',
+  'ai.jumpHint': 'Cited pages',
+  'ai.retry': 'Retry',
+  'ai.error': 'AI reading failed',
+  'ai.attachFailed': 'Could not connect the AI session',
+  'ai.nothingToSave': 'No answer to save yet',
+  'ai.scrolledUpHint': 'Jump to latest',
+  'ai.newAnswer': 'New answer',
+  'ai.reasoning': 'Reasoning',
+
+  // ── agent assist ───────────────────────────────────────────────────────
+  'assist.title': 'Agent deep-read',
+  'assist.hint': 'runs the agent in the side panel',
+  'assist.summary': 'Summary',
+  'assist.method': 'Method deep-dive',
+  'assist.critique': 'Critique',
+  'assist.related': 'Related work',
+  'assist.questions': 'Ask',
+  'assist.quote': 'Ask about selection',
+  'assist.custom': 'Custom',
+  'assist.failed': 'Could not start a new session',
+  'assist.question.title': 'Ask the agent',
+  'assist.question.desc': 'The question and the selection are sent to the agent in the side panel.',
+  'assist.question.placeholder': 'Type your question…',
+  'assist.question.ask': 'Ask',
+
+  // ── sync ───────────────────────────────────────────────────────────────
+  'sync.title': 'Sync',
+  'sync.cloud': 'Cloud',
+  'sync.cloud.icloud': 'iCloud Drive',
+  'sync.cloud.onedrive': 'OneDrive',
+  'sync.cloud.dropbox': 'Dropbox',
+  'sync.cloud.nutstore': 'Nutstore',
+  'sync.cloud.baidu': 'Baidu Netdisk',
+  'sync.cloud.syncthing': 'Syncthing',
+  'sync.cloud.local': 'Local folder',
+  'sync.note.synced': 'The library lives in a cloud-drive folder: every piece of state is a normal file, so other devices pick changes up automatically.',
+  'sync.note.local': 'The library lives in a local folder; put it inside iCloud Drive / OneDrive / Dropbox / Nutstore to sync across devices.',
+  'sync.stats.tracked': 'Tracked files',
+  'sync.stats.pdfs': 'PDFs',
+  'sync.stats.conflicts': 'Conflict copies',
+  'sync.stats.evicted': 'Not downloaded',
+  'sync.lastScan': 'Last scan: {time}',
+  'sync.neverScanned': 'Never scanned',
+  'sync.rescan': 'Rescan',
+  'sync.scanning': 'Scanning…',
+  'sync.scanDone': 'Scan complete: {added} added · {changed} changed · {removed} removed',
+  'sync.scanFailed': 'Scan failed',
+  'sync.openFolder': 'Open folder',
+  'sync.loading': 'Reading sync status…',
+  'sync.error': 'Failed to load sync status',
+  'sync.readOnly': 'The library folder is read-only; writes will fail.',
+  'sync.external.title': 'External changes',
+  'sync.external.none': 'No changes from other devices or tools',
+  'sync.external.hint': 'These files were changed by another device or tool, detected by scanning fingerprints.',
+  'sync.external.added': 'Added',
+  'sync.external.changed': 'Changed',
+  'sync.external.removed': 'Removed',
+  'sync.conflicts.title': 'Conflict copies',
+  'sync.conflicts.none': 'No conflict copies',
+  'sync.conflicts.use': 'Overwrite with copy',
+  'sync.conflicts.discard': 'Discard copy',
+  'sync.conflicts.done': 'Conflict resolved',
+  'sync.conflicts.failed': 'Failed to resolve the conflict',
+  'sync.evicted.title': 'iCloud files not downloaded',
+  'sync.evicted.none': 'No files waiting for download',
+  'sync.evicted.download': 'Download',
+  'sync.evicted.downloading': 'Downloading…',
+  'sync.evicted.downloaded': 'iCloud download requested',
+  'sync.evicted.failed': 'Download failed',
+  'sync.noLibrary': 'No library configured yet',
+  'sync.retry': 'Reload',
+
+  // ── settings ───────────────────────────────────────────────────────────
+  'settings.title': 'Settings',
+  'settings.library': 'Library folder',
+  'settings.libraryHint': 'Everything is a normal file in this folder (meta.json / notes.md / paper.pdf), so any cloud drive can sync it.',
+  'settings.pathPlaceholder': '/Users/you/Documents/PaperDesk',
+  'settings.choose': 'Choose folder…',
+  'settings.save': 'Save settings',
+  'settings.saved': 'Settings saved',
+  'settings.saveFailed': 'Failed to save settings',
+  'settings.reload': 'Reload',
+  'settings.loading': 'Loading settings…',
+  'settings.error': 'Failed to load settings',
+  'settings.language': 'Interface language',
+  'settings.languageHint': '中文 / English',
+  'settings.enrich': 'Enrich metadata from Crossref on import',
+  'settings.enrichHint': 'Requires network; looks up Crossref by DOI or title.',
+  'settings.autoImportInbox': 'Scan _inbox on import',
+  'settings.autoImportHint': 'Drop PDFs into the library’s _inbox/ folder for batch import.',
+  'settings.inbox': 'Scan inbox',
+  'settings.inboxScanning': 'Scanning the inbox…',
+  'settings.inboxDone': 'Imported {n} papers from the inbox',
+  'settings.inboxEmpty': 'No importable PDFs in the inbox',
+  'settings.inboxFailed': 'Failed to scan the inbox',
+  'settings.device': 'Device ID',
+  'settings.deviceHint': 'Conflict copies carry a short device code so you can tell the sources apart.',
+  'settings.file': 'Settings file',
+  'settings.source': 'Config source',
+  'settings.source.file': 'Settings file',
+  'settings.source.config': 'Plugin config',
+  'settings.source.env': 'Environment variable',
+  'settings.source.none': 'Not configured',
+  'settings.openFolder': 'Show in Finder',
+  'settings.cloudDesign.title': 'Cloud-sync design',
+  'settings.cloudDesign.body': 'There is no database: one folder per paper, meta.json for metadata, notes.md for notes. Writes are atomic and conflicts are saved as copies instead of overwriting, so iCloud Drive, OneDrive, Dropbox and Nutstore all sync safely.',
+  'settings.dirty': 'Unsaved changes',
+  'settings.pathRequired': 'Please enter the library folder path',
+  'settings.requireConfigured': 'Configure the library before using these options.',
+
+  // ── first-run setup ────────────────────────────────────────────────────
+  'setup.title': 'Set up your library',
+  'setup.desc': 'Choose a folder for the library. Each paper gets its own subfolder; notes and metadata are plain files, so any cloud drive can sync them.',
+  'setup.path': 'Library folder',
+  'setup.choose': 'Choose folder',
+  'setup.default': 'Use default folder',
+  'setup.defaultHint': 'Default: {path}',
+  'setup.start': 'Start using it',
+  'setup.create': 'Create and start',
+  'setup.saving': 'Saving…',
+  'setup.stillMissing': 'Path saved; the folder will be created on the first PDF import.',
+  'setup.missing': 'The folder does not exist yet: {path}; it is created on the first PDF import.',
+  'setup.saveFailed': 'Failed to save the library path',
+  'setup.syncNote': 'Cloud-drive friendly: put the library in iCloud Drive / OneDrive / Dropbox / Nutstore and devices sync automatically; conflicts are written as copies, never overwritten.',
+  'setup.language': 'Interface language',
+  'setup.pathHint': 'The folder may not exist yet; papers/, _inbox/ and .paperdesk/ are created on import.',
+
+  // ── toasts / a11y ──────────────────────────────────────────────────────
+  'toast.copied': 'Copied',
+  'toast.dismiss': 'Dismiss notification',
+  'toast.notifications': 'Notifications',
+  'drop.hint': 'Release to import PDF',
+  'aria.statusFilter': 'Filter by status',
+  'aria.tagFilter': 'Filter by tag',
+  'aria.sort': 'Sort order',
+  'aria.notesEditor': 'Notes editor',
+  'aria.assistBar': 'Agent deep-read actions',
+  'aria.rating': 'Rating',
+  'aria.language': 'Switch interface language',
+  'aria.readerTabs': 'Paper content tabs',
+
+  // ── errors ─────────────────────────────────────────────────────────────
+  'error.generic': 'Something went wrong',
+  'error.loadStatus': 'Failed to load status',
+  'error.loadList': 'Failed to load the paper list',
+  'error.loadDetail': 'Failed to load paper details',
+  'error.loadNotes': 'Failed to load notes',
+  'error.loadSync': 'Failed to load sync status',
+  'error.loadSettings': 'Failed to load settings',
+  'error.loadText': 'Text extraction failed',
+  'error.saveSettings': 'Failed to save settings',
+  'error.patch': 'Failed to save metadata',
+  'error.enrich': 'Metadata enrichment failed',
+  'error.bibtex': 'Failed to export BibTeX',
+  'error.openFolder': 'Failed to open the folder',
+  'error.reveal': 'Could not reveal it in Finder',
+  'error.import': 'Import failed',
+  'error.delete': 'Delete failed',
+  'error.copy': 'Copy failed',
+}
+
+/** Complete dictionaries. `zh` is authoritative; `en` mirrors every key. */
+export const dict: Record<Lang, Record<string, string>> = { zh, en }
+
+export type Translate = (key: string, params?: Record<string, string | number>) => string
+
+interface I18nContextValue {
+  lang: Lang
+  t: Translate
+}
+
+const I18nContext = createContext<I18nContextValue | null>(null)
+
+function interpolate(template: string, params?: Record<string, string | number>): string {
+  if (params === undefined) return template
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = params[name]
+    return value === undefined ? match : String(value)
+  })
+}
+
+/** Pure translate used outside React (callbacks, helpers). */
+export function translate(lang: Lang, key: string, params?: Record<string, string | number>): string {
+  const text = dict[lang][key]
+  if (text !== undefined) return interpolate(text, params)
+  const fallback = dict.zh[key]
+  if (fallback !== undefined) return interpolate(fallback, params)
+  return key
+}
+
+export function I18nProvider({ lang, children }: { lang: Lang; children: ReactNode }) {
+  const value = useMemo<I18nContextValue>(
+    () => ({ lang, t: (key: string, params?: Record<string, string | number>) => translate(lang, key, params) }),
+    [lang],
+  )
+  return createElement(I18nContext.Provider, { value }, children)
+}
+
+/** Bound translate of the surrounding provider (zh fallback outside one). */
+export function useT(): Translate {
+  const value = useContext(I18nContext)
+  return value?.t ?? ((key, params) => translate('zh', key, params))
+}
+
+export function useLang(): Lang {
+  return useContext(I18nContext)?.lang ?? 'zh'
+}
+
+/** Localized cloud-provider label (API `label` is only a fallback). */
+export function cloudLabel(t: Translate, kind: CloudKind): string {
+  return t(`sync.cloud.${kind}`)
+}
+
+/** Localized paper-status label. */
+export function statusLabel(t: Translate, status: PaperStatus): string {
+  return t(`status.${status}`)
+}
+
+/** Localized import-source label. */
+export function sourceLabel(t: Translate, source: PaperSource): string {
+  return t(`meta.source.${source}`)
+}
+
+/** Localized annotation-kind label (highlight / underline / note / question). */
+export function annotationKindLabel(t: Translate, kind: AnnotationKind): string {
+  return t(`annotations.kind.${kind}`)
+}
+
+/** Thread-safe extraction of a user-displayable error message. */
+export function errorText(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) return error.message
+  if (typeof error === 'string' && error.length > 0) return error
+  return ''
+}
+
+function localeOf(lang: Lang): string {
+  return lang === 'zh' ? 'zh-CN' : 'en-US'
+}
+
+/** Locale-aware short date-time; `null`/invalid input renders an em dash. */
+export function formatDateTime(lang: Lang, iso: string | null | undefined): string {
+  if (iso === null || iso === undefined || iso === '') return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  try {
+    return new Intl.DateTimeFormat(localeOf(lang), { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  } catch {
+    return date.toISOString()
+  }
+}
+
+/** Locale-aware integer formatting. */
+export function formatNumber(lang: Lang, value: number): string {
+  try {
+    return new Intl.NumberFormat(localeOf(lang)).format(value)
+  } catch {
+    return String(value)
+  }
+}
+
+/** Human readable byte size (unit suffixes are conventional, not UI copy). */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let index = 0
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024
+    index += 1
+  }
+  const digits = index === 0 ? 0 : value >= 100 ? 0 : 1
+  return `${value.toFixed(digits)} ${units[index] ?? 'B'}`
+}

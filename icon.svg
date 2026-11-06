@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="PaperDesk">
+  <defs>
+    <linearGradient id="pd-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6df6"/>
+      <stop offset="1" stop-color="#7a4df0"/>
+    </linearGradient>
+    <linearGradient id="pd-page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eaf0ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#pd-bg)"/>
+  <!-- back sheet -->
+  <rect x="66" y="24" width="38" height="62" rx="6" fill="#ffffff" opacity="0.38" transform="rotate(9 85 55)"/>
+  <!-- front sheet -->
+  <rect x="30" y="26" width="52" height="66" rx="7" fill="url(#pd-page)"/>
+  <!-- text lines -->
+  <g fill="#b9c8f5">
+    <rect x="38" y="40" width="36" height="4" rx="2"/>
+    <rect x="38" y="50" width="30" height="4" rx="2"/>
+    <rect x="38" y="60" width="34" height="4" rx="2"/>
+    <rect x="38" y="70" width="24" height="4" rx="2"/>
+  </g>
+  <!-- bookmark ribbon -->
+  <path d="M64 26h12v20l-6-4.5-6 4.5z" fill="#ff8b3d"/>
+  <!-- highlight bar -->
+  <rect x="38" y="79" width="20" height="5" rx="2.5" fill="#ffe08a"/>
+  <!-- shelf -->
+  <rect x="22" y="92" width="84" height="6" rx="3" fill="#e9eefc" opacity="0.92"/>
+  <rect x="22" y="102" width="58" height="5" rx="2.5" fill="#e9eefc" opacity="0.6"/>
+</svg>

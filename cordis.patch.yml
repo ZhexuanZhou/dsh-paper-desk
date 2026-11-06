@@ -1,0 +1,16 @@
+# dsh-paper-desk bundle patch layer.
+# Installs the PaperDesk paper-library panel with safe defaults; override any
+# field through your profile's own cordis.patch.yml (later layers win).
+- insert:
+    - id: paper-desk
+      name: dsh-paper-desk
+      config:
+        # Absolute path of the managed paper library. Empty means "not
+        # configured" — the panel shows a first-run setup screen instead.
+        libraryPath: ''
+        language: zh
+        # Enable Crossref metadata enrichment when a DOI/title is recognized.
+        enrich: true
+        # Ask the agent to keep the web tools available for enrichment; the
+        # Host performs the request itself when this is true.
+        autoImportInbox: true
