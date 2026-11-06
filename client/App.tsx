@@ -343,6 +343,30 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     return relations.items.filter((relation) => relation.from === paperId || relation.to === paperId).length
   }, [relations, selectedId])
 
+  /* After importing papers with citationSync enabled, parse their reference
+     lists once per paper and refresh the graph the reader chip uses. */
+  const citationSyncTriedRef = useRef<Set<string>>(new Set())
+  const maybeSyncCitations = useCallback(
+    (paperIds: readonly string[]): void => {
+      if (status?.settings.citationSync !== true) return
+      const fresh = paperIds.filter((id) => id !== '' && !citationSyncTriedRef.current.has(id))
+      if (fresh.length === 0) return
+      for (const id of fresh) citationSyncTriedRef.current.add(id)
+      void (async () => {
+        try {
+          const result = await api.citationsSync(fresh)
+          if (result.added.length > 0) {
+            setRelations(await api.relations())
+            pushToast('success', tRef.current('settings.citationSyncDone', { added: result.added.length, skipped: result.skipped }))
+          }
+        } catch {
+          pushToast('warn', tRef.current('settings.citationSyncFailed'))
+        }
+      })()
+    },
+    [status?.settings.citationSync, pushToast],
+  )
+
   /* Attach the AI thread to the selected paper (re-runs only on paper/path/title change). */
   const aiOpenRef = useRef<{ paperId: string; title: string } | null>(null)
   /* `detail` still holds the previous paper for one render after a switch. */
@@ -1168,6 +1192,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       let lastId: string | null = null
       let lastTitle = ''
       let lastDuplicated = false
+      const importedIds: string[] = []
       for (const file of pdfs) {
         try {
           const result = await api.importUpload(file, enrich)
@@ -1175,6 +1200,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           lastId = result.id
           lastTitle = result.meta.title
           lastDuplicated = result.duplicated
+          if (!result.duplicated) importedIds.push(result.id)
         } catch (error) {
           failed += 1
           reportError(error, 'import.failed')
@@ -1194,9 +1220,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           pushToast('warn', tRef.current('import.partial', { n: imported, failed }))
         }
         void loadStatus(true)
+        maybeSyncCitations(importedIds)
       }
     },
-    [status, loadPapers, pushToast, reportError, loadStatus, requestAction],
+    [status, loadPapers, pushToast, reportError, loadStatus, requestAction, maybeSyncCitations],
   )
 
   const onDrop = useCallback(
@@ -1382,6 +1409,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         pushToast('success', tRef.current('settings.inboxDone', { n: result.imported.length }))
         await loadPapers()
         void loadStatus(true)
+        maybeSyncCitations(result.imported)
         const first = result.imported[0]
         if (first !== undefined) requestAction(() => setSelectedId(first))
       }
@@ -1390,7 +1418,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     } finally {
       setSettingsBusy(null)
     }
-  }, [pushToast, reportError, loadPapers, loadStatus, requestAction])
+  }, [pushToast, reportError, loadPapers, loadStatus, requestAction, maybeSyncCitations])
 
   const handleSettingsOpenFolder = useCallback(async (): Promise<void> => {
     setSettingsBusy('reveal')
@@ -1845,6 +1873,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       />
       <RelationsGraph
         open={overlay.kind === 'relations'}
+        ctx={ctx}
         focusPaperId={overlay.kind === 'relations' ? overlay.focusPaperId ?? null : null}
         lang={lang}
         onClose={closeOverlay}

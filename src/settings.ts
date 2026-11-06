@@ -24,6 +24,7 @@ export interface SettingsFile {
   enrich?: boolean
   autoImportInbox?: boolean
   maxPdfBytes?: number
+  citationSync?: boolean
 }
 
 /** 0 means no limit; uploads are streamed to disk, never buffered whole. */
@@ -98,6 +99,7 @@ export function effectiveSettings(base: Config): EffectiveSettings {
     enrich: file.enrich ?? Boolean(base.enrich),
     autoImportInbox: file.autoImportInbox ?? Boolean(base.autoImportInbox),
     maxPdfBytes: nonNegativeInt(file.maxPdfBytes) ?? nonNegativeInt(base.maxPdfBytes) ?? DEFAULT_MAX_PDF_BYTES,
+    citationSync: file.citationSync ?? base.citationSync,
     settingsFile: settingsFilePath(),
   }
 }
@@ -119,6 +121,7 @@ export function saveSettings(update: SettingsFile): SettingsFile {
   if (typeof update.autoImportInbox === 'boolean') next.autoImportInbox = update.autoImportInbox
   const maxPdfBytes = nonNegativeInt(update.maxPdfBytes)
   if (maxPdfBytes !== undefined) next.maxPdfBytes = maxPdfBytes
+  if (update.citationSync !== undefined) next.citationSync = update.citationSync
 
   const file = settingsFilePath()
   mkdirSync(path.dirname(file), { recursive: true })
@@ -164,6 +167,9 @@ export function validateSettingsInput(input: Record<string, unknown>): string | 
   }
   if (input.autoImportInbox !== undefined && typeof input.autoImportInbox !== 'boolean') {
     return 'autoImportInbox must be a boolean'
+  }
+  if (input.citationSync !== undefined && typeof input.citationSync !== 'boolean') {
+    return 'citationSync must be a boolean'
   }
   if (input.maxPdfBytes !== undefined) {
     const value = input.maxPdfBytes
@@ -232,6 +238,7 @@ function sanitizeSettings(raw: unknown): SettingsFile {
   if (typeof record.autoImportInbox === 'boolean') out.autoImportInbox = record.autoImportInbox
   const maxPdfBytes = nonNegativeInt(record.maxPdfBytes)
   if (maxPdfBytes !== undefined) out.maxPdfBytes = maxPdfBytes
+  if (typeof record.citationSync === 'boolean') out.citationSync = record.citationSync
   return out
 }
 

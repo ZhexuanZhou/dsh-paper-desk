@@ -238,6 +238,7 @@ export type AssistTask =
   | 'questions'
   | 'quote'
   | 'compare'
+  | 'discover'
   | 'custom'
 
 /** Request/response of `/api/paper-desk/assist`. */
@@ -276,6 +277,8 @@ export interface EffectiveSettings {
   maxPdfBytes: number
   /** Absolute path of the settings file (for diagnostics). */
   settingsFile: string
+  /** Parse PDF reference lists and auto-create cites edges after import. */
+  citationSync: boolean
 }
 
 /** Status payload of `/api/paper-desk/status`. */
@@ -460,4 +463,18 @@ export interface ComparisonSummary {
   updatedAt: string
   /** First ~180 chars of the markdown, for the saved list. */
   preview: string
+}
+
+/* ── Citation edges auto-extracted from PDF reference lists ─────────────── */
+
+export interface CitationSyncResult {
+  /** Number of papers whose references were parsed. */
+  scanned: number
+  /** Relations actually created. */
+  added: PaperRelation[]
+  /** Candidates skipped (already linked or below confidence). */
+  skipped: number
+  /** Paper ids whose text could not be extracted. */
+  skippedNoText: string[]
+  errors: string[]
 }

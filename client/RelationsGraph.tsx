@@ -20,16 +20,27 @@
  *   inline validation (self / duplicate / missing),
  * - focus mode (`focusPaperId`): ego-network highlight + 「查看全图」.
  *
- * Only imports: react, ./api.js, ../src/types.js.
+ * Only imports: react, ./api.js, ../src/types.js, ./aiSession.js and the
+ * ClientContext type (the AI discovery panel needs a controller for `ctx`).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactElement,
 } from 'react'
-import type { NewRelation, PaperRelation, PaperSummary, RelationKind } from '../src/types.js'
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type {
+  CitationSyncResult,
+  NewRelation,
+  PaperRelation,
+  PaperSummary,
+  RelationKind,
+  RelationsDocument,
+} from '../src/types.js'
+import { createAiThread } from './aiSession.js'
+import type { AiThreadState } from './aiSession.js'
 import { api } from './api.js'
 
 export type Lang = 'zh' | 'en'
@@ -47,6 +58,8 @@ export interface RelationsGraphProps {
   open: boolean
   focusPaperId?: string | null
   lang: Lang
+  /** Runtime client context; enables AI discovery. Optional so client-ui can wire it independently. */
+  ctx?: ClientContext
   onClose: () => void
   onOpenPaper: (paperId: string) => void
 }
@@ -143,6 +156,63 @@ const zhRelations: Record<string, string> = {
   'relations.aria.pickerFrom': '选择论文 A',
   'relations.aria.pickerTo': '选择论文 B',
   'relations.dismiss': '关闭提示',
+
+  // ── manual edge editing ──────────────────────────────────────────────
+  'relations.edit.title': '编辑关联',
+  'relations.edit.edit': '编辑',
+  'relations.edit.save': '保存',
+  'relations.edit.saving': '正在保存…',
+  'relations.edit.cancel': '取消',
+  'relations.edit.duplicate': '这对论文之间已经有同类型关联',
+  'relations.edit.failed': '保存关联失败',
+
+  // ── AI relation discovery ────────────────────────────────────────────
+  'relations.discover.action': '发现关联',
+  'relations.discover.title': 'AI 发现关联',
+  'relations.discover.threadTitle': '关系发现 · {n} 篇论文',
+  'relations.discover.intro':
+    'Agent 会阅读论文元数据、笔记和卡片，提出候选关联；候选默认勾选，但只有点击「加入选中」后才会写入。',
+  'relations.discover.starting': '正在连接 AI 会话…',
+  'relations.discover.running': 'Agent 正在分析 {n} 篇论文…',
+  'relations.discover.stop': '停止',
+  'relations.discover.analyse': '开始分析',
+  'relations.discover.reanalyse': '重新分析',
+  'relations.discover.report': '完整报告',
+  'relations.discover.reasoning': '思考过程',
+  'relations.discover.noReport': '还没有候选结果。点击「开始分析」让 Agent 提出关联。',
+  'relations.discover.failed': 'AI 发现关联失败',
+  'relations.discover.candidates': '候选关联 · {n}',
+  'relations.discover.selectAll': '全选',
+  'relations.discover.selectNone': '反选',
+  'relations.discover.selectedCount': '已选 {n} 条',
+  'relations.discover.addSelected': '加入选中',
+  'relations.discover.adding': '正在加入…',
+  'relations.discover.added': '已加入',
+  'relations.discover.skipped': '已存在，跳过',
+  'relations.discover.addFailed': '加入失败：{message}',
+  'relations.discover.summary': '新增 {added} 条，跳过 {skipped} 条',
+  'relations.discover.summaryFailed': '新增 {added} 条，跳过 {skipped} 条，失败 {failed} 条',
+  'relations.discover.emptyHint': '报告里没有解析到可用的候选关联；可以在上方查看完整报告。',
+  'relations.discover.needTwo': '论文库里至少需要两篇论文才能发现关联',
+  'relations.discover.noWorkspace': '论文库路径不可用，无法启动 AI 会话',
+  'relations.discover.issue.unresolved': '无法匹配到论文库里的论文',
+  'relations.discover.issue.unknownKind': '无法识别关系类型',
+  'relations.discover.issue.self': '同一篇论文，已忽略',
+  'relations.discover.issue.exists': '这对论文已有同类型关联',
+  'relations.discover.aria.candidates': '候选关联列表',
+
+  // ── citation edges from reference lists ──────────────────────────────
+  'relations.citations.action': '从参考文献补全引用',
+  'relations.citations.confirmTitle': '从参考文献补全引用？',
+  'relations.citations.confirmDesc':
+    '会解析尚未缓存的 PDF 参考文献，可能比较慢；只会为论文库里已有的论文建立 cites（引用）关联。',
+  'relations.citations.confirm': '开始解析',
+  'relations.citations.cancel': '取消',
+  'relations.citations.running': '正在解析参考文献…',
+  'relations.citations.result': '已解析 {scanned} 篇 · 新增 {added} 条引用 · 跳过 {skipped} 条',
+  'relations.citations.noText': '{n} 篇没有可提取的文本',
+  'relations.citations.errors': '{n} 个错误',
+  'relations.citations.failed': '补全引用失败',
 }
 
 const enRelations: Record<string, string> = {
@@ -236,6 +306,63 @@ const enRelations: Record<string, string> = {
   'relations.aria.pickerFrom': 'Choose paper A',
   'relations.aria.pickerTo': 'Choose paper B',
   'relations.dismiss': 'Dismiss message',
+
+  // ── manual edge editing ──────────────────────────────────────────────
+  'relations.edit.title': 'Edit relation',
+  'relations.edit.edit': 'Edit',
+  'relations.edit.save': 'Save',
+  'relations.edit.saving': 'Saving…',
+  'relations.edit.cancel': 'Cancel',
+  'relations.edit.duplicate': 'These papers already have a relation of this kind',
+  'relations.edit.failed': 'Failed to save the relation',
+
+  // ── AI relation discovery ────────────────────────────────────────────
+  'relations.discover.action': 'Discover relations',
+  'relations.discover.title': 'AI relation discovery',
+  'relations.discover.threadTitle': 'Relation discovery · {n} papers',
+  'relations.discover.intro':
+    'The agent reads metadata, notes and cards to propose candidate relations. Candidates are selected by default, but nothing is written until you click “Add selected”.',
+  'relations.discover.starting': 'Connecting the AI session…',
+  'relations.discover.running': 'The agent is analysing {n} papers…',
+  'relations.discover.stop': 'Stop',
+  'relations.discover.analyse': 'Analyse',
+  'relations.discover.reanalyse': 'Analyse again',
+  'relations.discover.report': 'Full report',
+  'relations.discover.reasoning': 'Reasoning',
+  'relations.discover.noReport': 'No candidates yet. Click “Analyse” and let the agent propose relations.',
+  'relations.discover.failed': 'AI relation discovery failed',
+  'relations.discover.candidates': 'Candidates · {n}',
+  'relations.discover.selectAll': 'Select all',
+  'relations.discover.selectNone': 'Invert',
+  'relations.discover.selectedCount': '{n} selected',
+  'relations.discover.addSelected': 'Add selected',
+  'relations.discover.adding': 'Adding…',
+  'relations.discover.added': 'Added',
+  'relations.discover.skipped': 'Already exists, skipped',
+  'relations.discover.addFailed': 'Failed to add: {message}',
+  'relations.discover.summary': 'Added {added}, skipped {skipped}',
+  'relations.discover.summaryFailed': 'Added {added}, skipped {skipped}, failed {failed}',
+  'relations.discover.emptyHint': 'No usable candidates were found in the report; open the full report above to review it.',
+  'relations.discover.needTwo': 'At least two papers are needed to discover relations',
+  'relations.discover.noWorkspace': 'The library path is unavailable, so the AI session cannot start',
+  'relations.discover.issue.unresolved': 'Could not match a paper in the library',
+  'relations.discover.issue.unknownKind': 'Unrecognised relation kind',
+  'relations.discover.issue.self': 'Same paper, ignored',
+  'relations.discover.issue.exists': 'This pair already has this relation',
+  'relations.discover.aria.candidates': 'Candidate relation list',
+
+  // ── citation edges from reference lists ──────────────────────────────
+  'relations.citations.action': 'Fill citations from references',
+  'relations.citations.confirmTitle': 'Fill citations from reference lists?',
+  'relations.citations.confirmDesc':
+    'This parses uncached PDF reference lists and may be slow; it only creates `cites` edges between papers already in the library.',
+  'relations.citations.confirm': 'Start',
+  'relations.citations.cancel': 'Cancel',
+  'relations.citations.running': 'Parsing reference lists…',
+  'relations.citations.result': 'Scanned {scanned} papers · added {added} citations · skipped {skipped}',
+  'relations.citations.noText': '{n} papers had no extractable text',
+  'relations.citations.errors': '{n} errors',
+  'relations.citations.failed': 'Citation extraction failed',
 }
 
 export const relationsDict: Record<Lang, Record<string, string>> = {
@@ -661,6 +788,8 @@ export const relationsCss = `
   flex-direction: column;
   gap: 7px;
   width: min(300px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
   padding: 11px 12px;
   border: 1px solid ${B4};
   border-radius: 10px;
@@ -955,6 +1084,109 @@ export const relationsCss = `
 .pd-rel-picker-year { flex: 0 0 auto; color: ${FG_2}; font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .pd-rel-picker-empty { padding: 4px 6px; color: ${FG_2}; font-size: 11px; line-height: 1.45; }
 
+/* ── manual edge editing (popover inline form + list modal) ───────────── */
+.pd-rel-edit { display: flex; flex-direction: column; gap: 7px; padding-top: 2px; }
+.pd-rel-edit .pd-rel-field-label { font-size: 11px; }
+.pd-rel-edit .pd-rel-input,
+.pd-rel-edit .pd-rel-select { min-height: 27px; font-size: 11.5px; }
+.pd-rel-edit .pd-rel-textarea { min-height: 56px; font-size: 11.5px; }
+.pd-rel-edit-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 1px; }
+.pd-rel-edit-modal { width: min(560px, 100%); }
+.pd-rel-btn .pd-rel-spinner { width: 13px; height: 13px; border-width: 1.5px; }
+
+/* ── AI relation discovery modal ──────────────────────────────────────── */
+.pd-rel-discover-modal { width: min(760px, 100%); }
+.pd-rel-discover-intro { margin: 0; color: ${FG_2}; font-size: 11.5px; line-height: 1.55; }
+.pd-rel-discover-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid ${B1};
+  border-radius: 9px;
+  background: ${L2};
+  color: ${FG_2};
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.pd-rel-discover-status-text { flex: 1 1 auto; min-width: 0; }
+.pd-rel-discover-report {
+  padding: 6px 9px;
+  border: 1px solid ${B1};
+  border-radius: 8px;
+  background: ${L1};
+}
+.pd-rel-discover-report > summary { color: ${FG_2}; font-size: 11px; cursor: pointer; }
+.pd-rel-discover-pre {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  color: ${FG};
+  font-family: var(--dsw-alias-mono-font-family, var(--dsw-font-family-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace));
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.pd-rel-discover-reasoning { border: 1px solid ${B1}; border-radius: 8px; background: ${L1}; padding: 6px 9px; }
+.pd-rel-discover-reasoning > summary { color: ${FG_2}; font-size: 11px; cursor: pointer; }
+.pd-rel-discover-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pd-rel-discover-head-title { color: ${FG}; font-size: 12px; font-weight: 600; }
+.pd-rel-discover-count { margin-left: auto; color: ${FG_2}; font-size: 11px; font-variant-numeric: tabular-nums; }
+.pd-rel-discover-list { display: flex; flex-direction: column; gap: 6px; }
+.pd-rel-cand {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid ${B1};
+  border-radius: 9px;
+  background: ${L1};
+  color: ${FG};
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.pd-rel-cand:hover { background: ${HOVER}; }
+.pd-rel-cand[data-disabled="true"] { cursor: default; opacity: 0.8; background: transparent; }
+.pd-rel-cand[data-state="added"] { border-color: color-mix(in srgb, ${OK} 38%, ${B1}); background: color-mix(in srgb, ${OK} 8%, transparent); }
+.pd-rel-cand[data-state="skipped"] { border-color: color-mix(in srgb, ${WARN} 34%, ${B1}); background: color-mix(in srgb, ${WARN} 7%, transparent); }
+.pd-rel-cand[data-state="error"] { border-color: color-mix(in srgb, ${ERR} 34%, ${B1}); background: color-mix(in srgb, ${ERR} 7%, transparent); }
+.pd-rel-cand-check { width: 15px; height: 15px; margin: 2px 0 0; flex: 0 0 auto; accent-color: ${BRAND}; }
+.pd-rel-cand-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.pd-rel-cand-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pd-rel-cand-pair { color: ${FG}; font-size: 12px; font-weight: 550; line-height: 1.4; word-break: break-word; }
+.pd-rel-cand-reason { color: ${FG_2}; font-size: 11px; line-height: 1.5; }
+.pd-rel-cand-issue { color: ${WARN}; font-size: 10.5px; line-height: 1.45; }
+.pd-rel-cand-result { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; line-height: 1.45; }
+.pd-rel-cand-result[data-state="added"] { color: ${OK}; }
+.pd-rel-cand-result[data-state="skipped"] { color: ${WARN}; }
+.pd-rel-cand-result[data-state="error"] { color: ${ERR}; }
+.pd-rel-cand-result .pd-rel-spinner { width: 12px; height: 12px; border-width: 1.5px; }
+.pd-rel-discover-summary {
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, ${OK} 32%, ${B1});
+  border-radius: 9px;
+  background: color-mix(in srgb, ${OK} 8%, transparent);
+  color: ${OK};
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.pd-rel-discover-empty { padding: 8px 2px; color: ${FG_2}; font-size: 11.5px; line-height: 1.5; }
+
+/* ── citation sync confirm / banners ──────────────────────────────────── */
+.pd-rel-citations-modal { width: min(520px, 100%); }
+.pd-rel-banner[data-kind="success"] {
+  background: color-mix(in srgb, ${OK} 8%, transparent);
+  color: ${OK};
+}
+.pd-rel-banner[data-kind="warn"] {
+  background: color-mix(in srgb, ${WARN} 8%, transparent);
+  color: ${WARN};
+}
+.pd-rel-banner-hint { color: ${FG_2}; font-size: 10.5px; }
+
 /* ── responsive: container queries follow the host panel width ─────────── */
 @container pd (max-width: 980px) {
   .pd-rel-aside { flex-basis: 224px; width: 224px; padding: 10px; }
@@ -986,6 +1218,10 @@ export const relationsCss = `
   .pd-rel-hint { display: none; }
   .pd-rel-zoom { right: 8px; bottom: 8px; }
   .pd-rel-pop { width: calc(100% - 16px); }
+  .pd-rel-discover-modal { width: 100%; }
+  .pd-rel-discover-head { gap: 4px; }
+  .pd-rel-cand { padding: 8px; }
+  .pd-rel-cand-pair { font-size: 11.5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pd-rel-btn,
@@ -1052,6 +1288,378 @@ function shortenTitle(title: string): string {
 
 function pairKey(left: string, right: string): string {
   return left < right ? `${left}\u0000${right}` : `${right}\u0000${left}`
+}
+
+/* ── AI relation discovery: parsing + name resolution ──────────────────── */
+
+/** Stable empty controller snapshot (used while `ctx` is absent). */
+const IDLE_THREAD_STATE: AiThreadState = {
+  status: 'idle',
+  threadKey: null,
+  paperId: null,
+  sessionId: null,
+  rows: [],
+  error: null,
+}
+
+const DISCOVER_MAX_CANDIDATES = 60
+
+const DISCOVER_TITLE_STOPWORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'of',
+  'for',
+  'and',
+  'with',
+  'on',
+  'in',
+  'to',
+  'is',
+  'are',
+  'via',
+  'using',
+  'towards',
+])
+
+/** Relation-kind spellings the discovery report may use (same as the compare parser). */
+const DISCOVER_KIND_ALIASES: Readonly<Record<string, RelationKind>> = {
+  cites: 'cites',
+  cite: 'cites',
+  citation: 'cites',
+  'cites-relation': 'cites',
+  引用: 'cites',
+  引用关系: 'cites',
+  被引: 'cites',
+  被引用: 'cites',
+  related: 'related',
+  'related-work': 'related',
+  relatedwork: 'related',
+  相关: 'related',
+  相关工作: 'related',
+  关联: 'related',
+  method: 'method',
+  methods: 'method',
+  方法: 'method',
+  方法相关: 'method',
+  方法关系: 'method',
+  contrast: 'contrast',
+  contrasting: 'contrast',
+  对比: 'contrast',
+  对比关系: 'contrast',
+  差异: 'contrast',
+  相反: 'contrast',
+  'same-topic': 'same-topic',
+  same: 'same-topic',
+  同主题: 'same-topic',
+  同一主题: 'same-topic',
+  相同主题: 'same-topic',
+  custom: 'custom',
+  自定义: 'custom',
+  其他: 'custom',
+}
+
+function stripDiscoveryMarkdown(value: string): string {
+  return value
+    .replace(/\*\*|__|`/g, '')
+    .replace(/^[《<"'“”'「『【[]+/, '')
+    .replace(/[》>"'“”'」』】\]]+$/, '')
+    .trim()
+}
+
+function normalizeDiscoveryName(value: string): string {
+  return value
+    .replace(/\*\*|__|`/g, '')
+    .replace(/[《》<>「」『』【】[\]()（）"'“”'‘’«»]/g, ' ')
+    .replace(/[.,;:!?，。；：！？、·•—–~～…/\\|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+function discoveryTokens(value: string): Set<string> {
+  return new Set(value.split(/\s+/).filter((token) => token.length > 1))
+}
+
+function discoveryBigrams(value: string): Set<string> {
+  const compact = value.replace(/\s+/g, '')
+  const set = new Set<string>()
+  for (let index = 0; index + 1 < compact.length; index += 1) {
+    set.add(compact.slice(index, index + 2))
+  }
+  return set
+}
+
+function discoverySurname(author: string): string {
+  const cleaned = author
+    .replace(/\bet\s+al\.?/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (cleaned === '') return ''
+  const comma = cleaned.indexOf(',')
+  if (comma > 0) return cleaned.slice(0, comma).trim()
+  const parts = cleaned.split(' ')
+  return parts[parts.length - 1] ?? cleaned
+}
+
+function discoveryTitleNickname(title: string): string {
+  const words = title
+    .replace(/[^A-Za-z0-9\u4e00-\u9fff\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !DISCOVER_TITLE_STOPWORDS.has(word.toLowerCase()))
+  return words[0] ?? ''
+}
+
+/** Names a discovery report might use for one paper (title, id, first author + year). */
+function discoveryAliases(paper: PaperSummary): string[] {
+  const values: string[] = [paper.title, paper.id]
+  const firstAuthor = paper.authors[0]
+  if (firstAuthor !== undefined) {
+    values.push(firstAuthor)
+    const surname = discoverySurname(firstAuthor)
+    if (surname !== '') {
+      values.push(surname)
+      if (paper.year !== null) {
+        values.push(`${firstAuthor} ${paper.year}`)
+        values.push(`${surname} ${paper.year}`)
+        values.push(`${surname} et al ${paper.year}`)
+        values.push(`${surname} et al. ${paper.year}`)
+      }
+    }
+  }
+  if (paper.year !== null) {
+    const nickname = discoveryTitleNickname(paper.title)
+    if (nickname !== '') values.push(`${nickname} ${paper.year}`)
+  }
+  const aliases: string[] = []
+  for (const value of values) {
+    const normalized = normalizeDiscoveryName(value)
+    if (normalized !== '' && !aliases.includes(normalized)) aliases.push(normalized)
+  }
+  return aliases
+}
+
+function discoveryNameScore(rawName: string, alias: string): number {
+  const query = normalizeDiscoveryName(rawName)
+  if (query === '' || alias === '') return 0
+  if (query === alias) return 1
+  const shorter = Math.min(query.length, alias.length)
+  const longer = Math.max(query.length, alias.length)
+  const ratio = longer === 0 ? 0 : shorter / longer
+  if (query.length >= 3 && alias.startsWith(query)) return 0.74 + 0.24 * ratio
+  if (alias.length >= 3 && query.startsWith(alias)) return 0.7 + 0.24 * ratio
+  if (query.length >= 6 && alias.includes(query)) return 0.64 + 0.2 * ratio
+  if (alias.length >= 6 && query.includes(alias)) return 0.62 + 0.2 * ratio
+
+  const left = discoveryTokens(query)
+  const right = discoveryTokens(alias)
+  if (left.size > 0 && right.size > 0) {
+    let shared = 0
+    for (const token of left) if (right.has(token)) shared += 1
+    if (shared > 0) {
+      const overlap = Math.min(shared / right.size, shared / left.size)
+      if (overlap >= 0.6) return 0.6 + 0.25 * overlap
+    }
+  }
+
+  if (/[\u3400-\u9fff]/.test(query) || /[\u3400-\u9fff]/.test(alias)) {
+    const a = discoveryBigrams(query)
+    const b = discoveryBigrams(alias)
+    if (a.size > 0 && b.size > 0) {
+      let shared = 0
+      for (const gram of a) if (b.has(gram)) shared += 1
+      const overlap = shared / Math.max(a.size, b.size)
+      if (overlap >= 0.55) return 0.6 + 0.3 * overlap
+    }
+  }
+  return 0
+}
+
+/**
+ * Resolve one report name to a library paper. Handles full/truncated titles,
+ * "first-author surname + year", the paper id and `paper N` (1-based in the
+ * order the discovery prompt listed the papers).
+ */
+function resolveDiscoveryPaper(
+  rawName: string,
+  papers: readonly PaperSummary[],
+  orderIds: readonly string[],
+): PaperSummary | null {
+  const cleaned = stripDiscoveryMarkdown(rawName)
+    .replace(/^\s*(?:论文|paper)\s*/i, '')
+    .trim()
+  if (cleaned === '') return null
+
+  const numeric = cleaned.match(/^#?\s*(\d{1,2})$/)
+  if (numeric !== null) {
+    const index = Number.parseInt(numeric[1] ?? '', 10) - 1
+    const order = orderIds.length > 0 ? orderIds : papers.map((paper) => paper.id)
+    const id = order[index]
+    const found = id === undefined ? undefined : papers.find((paper) => paper.id === id)
+    if (found !== undefined) return found
+  }
+
+  let best: { paper: PaperSummary; score: number } | null = null
+  let second = 0
+  for (const paper of papers) {
+    let score = 0
+    for (const alias of discoveryAliases(paper)) {
+      const candidate = discoveryNameScore(cleaned, alias)
+      if (candidate > score) score = candidate
+    }
+    if (best === null || score > best.score) {
+      second = best === null ? 0 : best.score
+      best = { paper, score }
+    } else if (score > second) {
+      second = score
+    }
+  }
+  if (best === null || best.score < 0.58) return null
+  if (best.score < 0.95 && second >= best.score - 0.02) return null
+  return best.paper
+}
+
+/** Extract the paper order from the discovery prompt (`- id: …` lines). */
+function parsePromptPaperOrder(prompt: string): string[] {
+  const ids: string[] = []
+  for (const line of prompt.split('\n')) {
+    const match = line.match(/^\s*-\s*id:\s*([A-Za-z0-9._-]+)/)
+    if (match === null) continue
+    const id = match[1]
+    if (id !== undefined && id !== '' && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+type DiscoveryIssue = 'unresolved' | 'unknownKind' | 'self' | 'exists'
+
+interface DiscoveryCandidate {
+  key: string
+  kind: RelationKind | null
+  rawKind: string
+  fromName: string
+  toName: string
+  fromPaper: PaperSummary | null
+  toPaper: PaperSummary | null
+  reason: string
+  issue: DiscoveryIssue | null
+}
+
+function discoverRelationKind(raw: string): RelationKind | null {
+  const cleaned = stripDiscoveryMarkdown(raw).trim().toLowerCase()
+  if (cleaned === '') return null
+  const variants = [
+    cleaned,
+    cleaned.replace(/\s+/g, ' '),
+    cleaned.replace(/[\s_]+/g, '-'),
+    cleaned.replace(/^关系类型[:：]?/, '').replace(/关系$/, ''),
+  ]
+  for (const variant of variants) {
+    const found = DISCOVER_KIND_ALIASES[variant]
+    if (found !== undefined) return found
+  }
+  return null
+}
+
+function discoveryRelationExists(
+  relations: readonly PaperRelation[],
+  fromId: string,
+  toId: string,
+  kind: RelationKind,
+): boolean {
+  return relations.some(
+    (relation) =>
+      relation.kind === kind &&
+      ((relation.from === fromId && relation.to === toId) ||
+        (relation.from === toId && relation.to === fromId)),
+  )
+}
+
+/**
+ * Parse `- [kind] Paper A ↔ Paper B: reason` lines out of the discovery report.
+ * Unresolvable / self / duplicate candidates are kept with an `issue` so the
+ * card can explain why they cannot be added.
+ */
+function parseDiscoveryCandidates(
+  markdown: string,
+  papers: readonly PaperSummary[],
+  relations: readonly PaperRelation[],
+  orderIds: readonly string[],
+): DiscoveryCandidate[] {
+  const candidates: DiscoveryCandidate[] = []
+  const seen = new Set<string>()
+  for (const rawLine of markdown.split('\n')) {
+    const line = rawLine.trim()
+    if (!/^[-*+]\s*\[/.test(line)) continue
+    const head = line.match(/^[-*+]\s*\[([^\]]+)\]\s*(.+)$/)
+    if (head === null) continue
+    const rawKind = stripDiscoveryMarkdown(head[1] ?? '').trim()
+    if (rawKind === '') continue
+    const rest = (head[2] ?? '').trim()
+    const arrow = rest.match(/\s*(?:↔\uFE0F?|<->|⇄|⇆)\s*/)
+    if (arrow === null) continue
+    const arrowIndex = arrow.index
+    if (arrowIndex === undefined) continue
+    const arrowText = arrow[0] ?? '↔'
+    const left = rest.slice(0, arrowIndex).trim()
+    const right = rest.slice(arrowIndex + arrowText.length).trim()
+    if (left === '' || right === '') continue
+
+    let toRaw = right
+    let reason = ''
+    const colonIndexes: number[] = []
+    for (let index = 0; index < right.length; index += 1) {
+      const char = right[index]
+      if (char === ':' || char === '：') colonIndexes.push(index)
+    }
+    if (colonIndexes.length > 0) {
+      let splitAt = -1
+      for (const index of colonIndexes) {
+        const candidate = right.slice(0, index).trim()
+        if (candidate === '') continue
+        if (resolveDiscoveryPaper(candidate, papers, orderIds) !== null) {
+          splitAt = index
+          break
+        }
+      }
+      if (splitAt < 0) {
+        const last = colonIndexes[colonIndexes.length - 1]
+        splitAt = last === undefined ? -1 : last
+      }
+      if (splitAt >= 0) {
+        toRaw = right.slice(0, splitAt).trim()
+        reason = right.slice(splitAt + 1).trim()
+      }
+    }
+
+    const fromName = stripDiscoveryMarkdown(left)
+    const toName = stripDiscoveryMarkdown(toRaw)
+    if (fromName === '' || toName === '') continue
+    const kind = discoverRelationKind(rawKind)
+    const fromPaper = resolveDiscoveryPaper(fromName, papers, orderIds)
+    const toPaper = resolveDiscoveryPaper(toName, papers, orderIds)
+    const issue: DiscoveryIssue | null =
+      kind === null
+        ? 'unknownKind'
+        : fromPaper === null || toPaper === null
+          ? 'unresolved'
+          : fromPaper.id === toPaper.id
+            ? 'self'
+            : discoveryRelationExists(relations, fromPaper.id, toPaper.id, kind)
+              ? 'exists'
+              : null
+    const key = [
+      kind ?? normalizeDiscoveryName(rawKind),
+      fromPaper?.id ?? normalizeDiscoveryName(fromName),
+      toPaper?.id ?? normalizeDiscoveryName(toName),
+      reason.slice(0, 80),
+    ].join('|')
+    if (seen.has(key)) continue
+    seen.add(key)
+    candidates.push({ key, kind, rawKind, fromName, toName, fromPaper, toPaper, reason, issue })
+    if (candidates.length >= DISCOVER_MAX_CANDIDATES) break
+  }
+  return candidates
 }
 
 /* ── force layout model ────────────────────────────────────────────────── */
@@ -1293,7 +1901,10 @@ function edgeGeometry(edge: SimEdge): { path: string; midX: number; midY: number
   const dx = b.x - a.x
   const dy = b.y - a.y
   const length = Math.hypot(dx, dy) || 1
-  const offset = edge.count > 1 ? (edge.index - (edge.count - 1) / 2) * 26 : 0
+  // The two directions of the same pair must fan out to the same physical
+  // side: flip the offset when the stored direction is reversed.
+  const flip = a.id < b.id ? 1 : -1
+  const offset = edge.count > 1 ? (edge.index - (edge.count - 1) / 2) * 26 * flip : 0
 
   if (offset === 0) {
     const ux = dx / length
@@ -1339,6 +1950,23 @@ interface EdgeSelection {
   /** Popover anchor, in stage CSS pixels. */
   x: number
   y: number
+}
+
+interface EditDraft {
+  id: string
+  mode: 'popover' | 'list'
+  kind: RelationKind
+  label: string
+  note: string
+  saving: boolean
+  error: string | null
+}
+
+type DiscoveryAddState = 'adding' | 'added' | 'skipped' | 'error'
+
+interface DiscoveryAddResult {
+  state: DiscoveryAddState
+  message?: string
 }
 
 interface DragState {
@@ -1492,16 +2120,123 @@ function PaperPicker(props: PaperPickerProps): ReactElement {
   )
 }
 
+/* ── shared relation edit form (edge popover + list modal) ─────────────── */
+
+interface RelationEditFormProps {
+  formId: string
+  kind: RelationKind
+  label: string
+  note: string
+  saving: boolean
+  error: string | null
+  compact?: boolean
+  t: (key: string, vars?: Record<string, string | number>) => string
+  onKind: (kind: RelationKind) => void
+  onLabel: (value: string) => void
+  onNote: (value: string) => void
+  onSubmit: () => void
+  onCancel: () => void
+}
+
+function RelationEditForm(props: RelationEditFormProps): ReactElement {
+  const { formId, t } = props
+  return (
+    <form
+      className={props.compact === true ? 'pd-rel-edit pd-rel-edit-compact' : 'pd-rel-edit'}
+      onSubmit={(event) => {
+        event.preventDefault()
+        props.onSubmit()
+      }}
+      noValidate
+    >
+      <div className="pd-rel-field">
+        <label className="pd-rel-field-label" htmlFor={`${formId}-kind`}>
+          {t('relations.form.kind')}
+        </label>
+        <select
+          id={`${formId}-kind`}
+          className="pd-rel-select"
+          value={props.kind}
+          onChange={(event) => props.onKind(event.target.value as RelationKind)}
+        >
+          {RELATION_KINDS.map((kind) => (
+            <option key={kind} value={kind}>
+              {t(`relations.kind.${kind}`)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="pd-rel-field">
+        <label className="pd-rel-field-label" htmlFor={`${formId}-label`}>
+          {t('relations.form.label')}
+        </label>
+        <input
+          id={`${formId}-label`}
+          className="pd-rel-input"
+          value={props.label}
+          maxLength={LABEL_MAX}
+          placeholder={t('relations.form.labelPlaceholder')}
+          onChange={(event) => props.onLabel(event.target.value)}
+        />
+      </div>
+      <div className="pd-rel-field">
+        <label className="pd-rel-field-label" htmlFor={`${formId}-note`}>
+          {t('relations.form.note')}
+        </label>
+        <textarea
+          id={`${formId}-note`}
+          className="pd-rel-textarea"
+          value={props.note}
+          maxLength={NOTE_MAX}
+          placeholder={t('relations.form.notePlaceholder')}
+          onChange={(event) => props.onNote(event.target.value)}
+        />
+      </div>
+      {props.error !== null ? (
+        <div className="pd-rel-error" role="alert">
+          {props.error}
+        </div>
+      ) : null}
+      <div className="pd-rel-edit-actions">
+        <button type="button" className="pd-rel-btn pd-rel-btn-sm" onClick={props.onCancel} disabled={props.saving}>
+          {t('relations.edit.cancel')}
+        </button>
+        <button type="submit" className="pd-rel-btn pd-rel-btn-primary pd-rel-btn-sm" disabled={props.saving}>
+          {props.saving ? t('relations.edit.saving') : t('relations.edit.save')}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 /* ── the overlay ───────────────────────────────────────────────────────── */
 
 export function RelationsGraph(props: RelationsGraphProps): ReactElement | null {
-  const { open, focusPaperId = null, lang, onClose, onOpenPaper } = props
+  const { open, focusPaperId = null, lang, ctx, onClose, onOpenPaper } = props
   const dict = relationsDict[lang]
   const t = useCallback(
     (key: string, vars?: Record<string, string | number>): string => interpolate(dict[key] ?? key, vars),
     [dict],
   )
   const kindLabel = useCallback((kind: RelationKind): string => t(`relations.kind.${kind}`), [t])
+
+  /* AI discovery thread (only present when client-ui passes `ctx`). */
+  const thread = useMemo(() => (ctx === undefined ? null : createAiThread(ctx)), [ctx])
+  const subscribeThread = useCallback(
+    (listener: () => void) => (thread === null ? () => {} : thread.subscribe(listener)),
+    [thread],
+  )
+  const getThreadSnapshot = useCallback(
+    () => (thread === null ? IDLE_THREAD_STATE : thread.getSnapshot()),
+    [thread],
+  )
+  const threadSnapshot = useSyncExternalStore(subscribeThread, getThreadSnapshot)
+  useEffect(() => {
+    if (thread === null) return
+    return () => {
+      thread.dispose()
+    }
+  }, [thread])
 
   /* data */
   const [papers, setPapers] = useState<PaperSummary[]>([])
@@ -1535,6 +2270,26 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
   const [addError, setAddError] = useState<string | null>(null)
   const [addSaving, setAddSaving] = useState(false)
 
+  /* manual edge editing */
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
+
+  /* AI discovery panel */
+  const [discoverOpen, setDiscoverOpen] = useState(false)
+  const [discoverStarting, setDiscoverStarting] = useState(false)
+  const [discoverError, setDiscoverError] = useState<string | null>(null)
+  const [discoverOrder, setDiscoverOrder] = useState<string[]>([])
+  const [discoverCandidates, setDiscoverCandidates] = useState<DiscoveryCandidate[]>([])
+  const [discoverChecked, setDiscoverChecked] = useState<Record<string, boolean>>({})
+  const [discoverResults, setDiscoverResults] = useState<Record<string, DiscoveryAddResult>>({})
+  const [discoverAdding, setDiscoverAdding] = useState(false)
+  const [discoverSummary, setDiscoverSummary] = useState<{ added: number; skipped: number; failed: number } | null>(null)
+
+  /* citation sync */
+  const [citationConfirm, setCitationConfirm] = useState(false)
+  const [citationBusy, setCitationBusy] = useState(false)
+  const [citationResult, setCitationResult] = useState<CitationSyncResult | null>(null)
+  const [citationError, setCitationError] = useState<string | null>(null)
+
   /* list / deletion */
   const [listConfirmId, setListConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -1552,6 +2307,11 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
   const centerRequestRef = useRef<CenterRequest | null>(null)
   const sizeRef = useRef({ w: 0, h: 0 })
   const viewRef = useRef<ViewState>({ x: 0, y: 0, k: 1 })
+  const editLockRef = useRef(false)
+  const discoverRunLockRef = useRef(false)
+  const discoverAddLockRef = useRef(false)
+  const parsedDiscoverReportRef = useRef('')
+  const citationLockRef = useRef(false)
 
   const paperById = useMemo(() => new Map(papers.map((paper) => [paper.id, paper])), [papers])
   const degreeById = useMemo(() => {
@@ -1631,6 +2391,33 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
   }, [hoverNodeId, hoverEdgeId, relations])
   const hoverActive = hoverNodeIds !== null && hoverEdgeIds !== null
 
+  /* The discovery report is the assistant text of the latest turn (rows since
+   * the last user prompt), so re-analysing never mixes in an older report. */
+  const discoveryTurn = useMemo(() => {
+    const rows = threadSnapshot.rows
+    let start = 0
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const row = rows[index]
+      if (row !== undefined && row.kind === 'user') {
+        start = index + 1
+        break
+      }
+    }
+    const current = rows.slice(start)
+    return {
+      report: current
+        .filter((row) => row.kind === 'assistant')
+        .map((row) => row.text)
+        .join('\n\n')
+        .trim(),
+      reasoning: current
+        .filter((row) => row.kind === 'reasoning')
+        .map((row) => row.text)
+        .join('\n\n')
+        .trim(),
+    }
+  }, [threadSnapshot.rows])
+
   const graphVisible =
     open &&
     tab === 'graph' &&
@@ -1683,6 +2470,12 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setAddOpen(false)
     setAddError(null)
     setActionError(null)
+    setEditDraft(null)
+    setDiscoverOpen(false)
+    setDiscoverError(null)
+    setCitationConfirm(false)
+    setCitationResult(null)
+    setCitationError(null)
     setView({ x: 0, y: 0, k: 1 })
     centerRequestRef.current = null
     alphaRef.current = 1
@@ -1699,17 +2492,35 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     }
   }, [open])
 
-  /* ── Escape: modal → popover → overlay ───────────────────────────────── */
+  /* ── Escape: innermost modal/form → popover → overlay ────────────────── */
 
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      if (discoverOpen) {
+        event.preventDefault()
+        event.stopPropagation()
+        setDiscoverOpen(false)
+        return
+      }
+      if (citationConfirm) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!citationBusy) setCitationConfirm(false)
+        return
+      }
       if (addOpen) {
         event.preventDefault()
         event.stopPropagation()
         setAddOpen(false)
         setAddError(null)
+        return
+      }
+      if (editDraft !== null) {
+        event.preventDefault()
+        event.stopPropagation()
+        setEditDraft(null)
         return
       }
       if (edgeSel !== null) {
@@ -1724,7 +2535,41 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     }
     document.addEventListener('keydown', onKeyDown, true)
     return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [open, addOpen, edgeSel, onClose])
+  }, [open, discoverOpen, citationConfirm, citationBusy, addOpen, editDraft !== null, edgeSel, onClose])
+
+  /* Parse discovery candidates once per settled report (stable keys, checked by default). */
+  useEffect(() => {
+    if (!discoverOpen || thread === null) return
+    if (discoverStarting) return
+    if (
+      threadSnapshot.status === 'running' ||
+      threadSnapshot.status === 'attaching' ||
+      threadSnapshot.status === 'idle'
+    ) {
+      return
+    }
+    const report = discoveryTurn.report
+    if (report === '' || report === parsedDiscoverReportRef.current) return
+    parsedDiscoverReportRef.current = report
+    const candidates = parseDiscoveryCandidates(report, papers, relations, discoverOrder)
+    setDiscoverCandidates(candidates)
+    const checked: Record<string, boolean> = {}
+    for (const candidate of candidates) {
+      if (candidate.issue === null) checked[candidate.key] = true
+    }
+    setDiscoverChecked(checked)
+    setDiscoverResults({})
+    setDiscoverSummary(null)
+  }, [
+    discoverOpen,
+    thread,
+    discoverStarting,
+    threadSnapshot.status,
+    discoveryTurn.report,
+    papers,
+    relations,
+    discoverOrder,
+  ])
 
   /* keep latest values reachable from imperative pointer / rAF code */
   useEffect(() => {
@@ -1926,6 +2771,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
         setSelectedId(drag.id)
         setEdgeSel(null)
         setEdgeConfirm(false)
+        setEditDraft(null)
       }
       return
     }
@@ -1960,6 +2806,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setSelectedId(null)
     setEdgeSel(null)
     setEdgeConfirm(false)
+    setEditDraft(null)
   }
 
   const handleNodePointerDown = (event: ReactPointerEvent<SVGGElement>, nodeId: string) => {
@@ -1989,6 +2836,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setSelectedId(nodeId)
     setEdgeSel(null)
     setEdgeConfirm(false)
+    setEditDraft(null)
   }
 
   const openEdgeAt = (relation: PaperRelation, x: number, y: number) => {
@@ -1996,6 +2844,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setEdgeConfirm(false)
     setSelectedId(null)
     setHoverEdgeId(null)
+    setEditDraft(null)
   }
 
   const openEdgeFromEvent = (
@@ -2058,6 +2907,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setTab('graph')
     setSelectedId(null)
     setEdgeConfirm(false)
+    setEditDraft(null)
     centerRequestRef.current = null
     const stage = sizeRef.current
     const a = nodesRef.current.find((node) => node.id === relation.from)
@@ -2081,6 +2931,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setAddNote('')
     setAddError(null)
     setActionError(null)
+    setEditDraft(null)
     setAddOpen(true)
   }
 
@@ -2171,12 +3022,259 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
         const document = await api.deleteRelation(relationId)
         setRelations(Array.isArray(document.items) ? document.items : [])
         setEdgeSel((current) => (current !== null && current.id === relationId ? null : current))
+        setEditDraft((current) => (current !== null && current.id === relationId ? null : current))
         setListConfirmId(null)
         setEdgeConfirm(false)
       } catch (error) {
         setActionError(relationMutationError(error, 'relations.deleteFailed'))
       } finally {
         setDeletingId(null)
+      }
+    })()
+  }
+
+  /* ── manual edge editing ─────────────────────────────────────────────── */
+
+  const updateEditDraft = (patch: Partial<EditDraft>): void => {
+    setEditDraft((current) => (current === null ? current : { ...current, ...patch }))
+  }
+
+  const openEdit = (relation: PaperRelation, mode: EditDraft['mode']): void => {
+    setAddOpen(false)
+    setEdgeConfirm(false)
+    setListConfirmId(null)
+    setActionError(null)
+    setEditDraft({
+      id: relation.id,
+      mode,
+      kind: relation.kind,
+      label: relation.label,
+      note: relation.note,
+      saving: false,
+      error: null,
+    })
+  }
+
+  const cancelEdit = (): void => {
+    setEditDraft(null)
+  }
+
+  const submitEdit = (): void => {
+    const draft = editDraft
+    if (draft === null || draft.saving || editLockRef.current) return
+    const relation = relations.find((item) => item.id === draft.id)
+    if (relation === undefined) {
+      setEditDraft(null)
+      return
+    }
+    const label = draft.label.trim()
+    const note = draft.note.trim()
+    if (label.length > LABEL_MAX) {
+      setEditDraft({ ...draft, error: t('relations.form.labelTooLong') })
+      return
+    }
+    if (note.length > NOTE_MAX) {
+      setEditDraft({ ...draft, error: t('relations.form.noteTooLong') })
+      return
+    }
+    const duplicate = relations.some(
+      (item) =>
+        item.id !== draft.id &&
+        item.kind === draft.kind &&
+        ((item.from === relation.from && item.to === relation.to) ||
+          (item.from === relation.to && item.to === relation.from)),
+    )
+    if (duplicate) {
+      setEditDraft({ ...draft, error: t('relations.edit.duplicate') })
+      return
+    }
+    editLockRef.current = true
+    setEditDraft({ ...draft, saving: true, error: null })
+    void (async () => {
+      try {
+        const document = await api.updateRelation(draft.id, { kind: draft.kind, label, note })
+        setRelations(Array.isArray(document.items) ? document.items : [])
+        setEditDraft(null)
+      } catch (error) {
+        const message = errorText(error)
+        const duplicateError = /already exists|duplicate/i.test(message)
+        setEditDraft((current) =>
+          current !== null && current.id === draft.id
+            ? {
+                ...current,
+                saving: false,
+                error: duplicateError
+                  ? t('relations.edit.duplicate')
+                  : message !== ''
+                    ? message
+                    : t('relations.edit.failed'),
+              }
+            : current,
+        )
+      } finally {
+        editLockRef.current = false
+      }
+    })()
+  }
+
+  /* ── AI relation discovery ───────────────────────────────────────────── */
+
+  const openDiscovery = (): void => {
+    setDiscoverOpen(true)
+    setDiscoverError(null)
+    setActionError(null)
+  }
+
+  const runDiscovery = (): void => {
+    if (thread === null || discoverRunLockRef.current || papers.length < 2) return
+    discoverRunLockRef.current = true
+    setDiscoverStarting(true)
+    setDiscoverError(null)
+    setDiscoverSummary(null)
+    setDiscoverResults({})
+    setDiscoverChecked({})
+    setDiscoverCandidates([])
+    setDiscoverOrder([])
+    parsedDiscoverReportRef.current = ''
+    void (async () => {
+      try {
+        const status = await api.status()
+        const workspacePath = status.settings.libraryPath
+        if (workspacePath.trim() === '') throw new Error(t('relations.discover.noWorkspace'))
+        await thread.openThread('relations:discover', {
+          workspacePath,
+          title: t('relations.discover.threadTitle', { n: papers.length }),
+        })
+        const payload = await api.discoverAssist()
+        setDiscoverOrder(parsePromptPaperOrder(payload.prompt))
+        const result = await thread.run(payload.prompt)
+        if (!result.ok && typeof result.error === 'string' && result.error !== '') {
+          setDiscoverError(result.error)
+        }
+      } catch (error) {
+        setDiscoverError(errorText(error) || t('relations.discover.failed'))
+      } finally {
+        discoverRunLockRef.current = false
+        setDiscoverStarting(false)
+      }
+    })()
+  }
+
+  const stopDiscovery = (): void => {
+    if (thread === null) return
+    void thread.stop()
+  }
+
+  const selectAllCandidates = (): void => {
+    const next: Record<string, boolean> = {}
+    for (const candidate of discoverCandidates) {
+      if (candidate.issue === null) next[candidate.key] = true
+    }
+    setDiscoverChecked(next)
+  }
+
+  const invertCandidates = (): void => {
+    setDiscoverChecked((current) => {
+      const next: Record<string, boolean> = {}
+      for (const candidate of discoverCandidates) {
+        if (candidate.issue === null) next[candidate.key] = !current[candidate.key]
+      }
+      return next
+    })
+  }
+
+  const addSelectedCandidates = (): void => {
+    if (thread === null || discoverAddLockRef.current) return
+    if (discoverStarting || threadSnapshot.status === 'running') return
+    const selected = discoverCandidates.filter(
+      (candidate) => candidate.issue === null && discoverChecked[candidate.key] === true,
+    )
+    if (selected.length === 0) return
+    discoverAddLockRef.current = true
+    setDiscoverAdding(true)
+    setDiscoverError(null)
+    setDiscoverSummary(null)
+    void (async () => {
+      let added = 0
+      let skipped = 0
+      let failed = 0
+      let latest: RelationsDocument | null = null
+      try {
+        for (const candidate of selected) {
+          const from = candidate.fromPaper
+          const to = candidate.toPaper
+          const kind = candidate.kind
+          if (from === null || to === null || kind === null) continue
+          setDiscoverResults((current) => ({ ...current, [candidate.key]: { state: 'adding' } }))
+          try {
+            const document = await api.addRelation({
+              from: from.id,
+              to: to.id,
+              kind,
+              note: candidate.reason.slice(0, NOTE_MAX),
+              source: 'agent',
+            })
+            latest = document
+            added += 1
+            setDiscoverResults((current) => ({ ...current, [candidate.key]: { state: 'added' } }))
+            setDiscoverChecked((current) => ({ ...current, [candidate.key]: false }))
+          } catch (error) {
+            const message = errorText(error)
+            if (/already exists|duplicate|已存在/i.test(message)) {
+              skipped += 1
+              setDiscoverResults((current) => ({ ...current, [candidate.key]: { state: 'skipped' } }))
+              setDiscoverChecked((current) => ({ ...current, [candidate.key]: false }))
+            } else {
+              failed += 1
+              setDiscoverResults((current) => ({
+                ...current,
+                [candidate.key]: {
+                  state: 'error',
+                  message: message !== '' ? message : t('relations.discover.failed'),
+                },
+              }))
+            }
+          }
+        }
+      } finally {
+        if (latest !== null) setRelations(Array.isArray(latest.items) ? latest.items : [])
+        setDiscoverSummary({ added, skipped, failed })
+        discoverAddLockRef.current = false
+        setDiscoverAdding(false)
+      }
+    })()
+  }
+
+  /* ── citation edges from reference lists ─────────────────────────────── */
+
+  const openCitations = (): void => {
+    setCitationConfirm(true)
+    setCitationError(null)
+    setActionError(null)
+  }
+
+  const runCitationSync = (): void => {
+    if (citationLockRef.current) return
+    citationLockRef.current = true
+    setCitationBusy(true)
+    setCitationError(null)
+    setCitationResult(null)
+    void (async () => {
+      try {
+        const result = await api.citationsSync()
+        setCitationResult(result)
+        setCitationConfirm(false)
+        try {
+          const document = await api.relations()
+          setRelations(Array.isArray(document.items) ? document.items : [])
+        } catch (error) {
+          setActionError(errorText(error) || t('relations.loadFailed'))
+        }
+      } catch (error) {
+        setCitationError(errorText(error) || t('relations.citations.failed'))
+      } finally {
+        citationLockRef.current = false
+        setCitationBusy(false)
       }
     })()
   }
@@ -2194,9 +3292,26 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
 
   const titleOf = (paperId: string): string => paperById.get(paperId)?.title ?? paperId
 
+  const editRelation = editDraft === null ? undefined : relations.find((relation) => relation.id === editDraft.id)
+  const discoverRunning = threadSnapshot.status === 'running'
+  const discoverAttaching = discoverStarting || threadSnapshot.status === 'attaching'
+  const discoverBusy = discoverAttaching || discoverRunning || discoverAdding
+  const discoveryError =
+    discoverError ?? (threadSnapshot.status === 'error' ? threadSnapshot.error : null)
+  const selectableCandidates = discoverCandidates.filter((candidate) => candidate.issue === null)
+  const selectedCandidateCount = selectableCandidates.filter(
+    (candidate) => discoverChecked[candidate.key] === true,
+  ).length
+  const hasDiscoveryResult = discoveryTurn.report !== '' || discoverCandidates.length > 0
+  const canDiscover = ctx !== undefined && thread !== null && papers.length >= 2
+
   /* ── render: graph tab ───────────────────────────────────────────────── */
 
   const renderGraphTab = (): ReactElement => {
+    const editingEdge =
+      editDraft !== null && editDraft.mode === 'popover' && edgeSel !== null && editDraft.id === edgeSel.id
+        ? editDraft
+        : null
     if (showLoadingState) {
       return (
         <div className="pd-rel-state" role="status" aria-live="polite">
@@ -2445,6 +3560,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
                 onClick={() => {
                   setEdgeSel(null)
                   setEdgeConfirm(false)
+                  setEditDraft(null)
                 }}
               >
                 ×
@@ -2457,55 +3573,88 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
               </span>
               <span>{titleOf(selectedEdge.to)}</span>
             </div>
-            <div className="pd-rel-kv">
-              <span className="pd-rel-kv-key">{t('relations.form.kind')}</span>
-              <span className="pd-rel-kv-val">{kindLabel(selectedEdge.kind)}</span>
-            </div>
-            <div className="pd-rel-kv">
-              <span className="pd-rel-kv-key">{t('relations.edge.label')}</span>
-              <span className="pd-rel-kv-val">{selectedEdge.label !== '' ? selectedEdge.label : t('relations.none')}</span>
-            </div>
-            <div className="pd-rel-kv">
-              <span className="pd-rel-kv-key">{t('relations.edge.note')}</span>
-              <span className="pd-rel-kv-val">{selectedEdge.note !== '' ? selectedEdge.note : t('relations.none')}</span>
-            </div>
-            <div className="pd-rel-kv">
-              <span className="pd-rel-kv-key">{t('relations.edge.source')}</span>
-              <span className="pd-rel-kv-val">
-                {selectedEdge.source === 'agent' ? t('relations.edge.source.agent') : t('relations.edge.source.user')}
-              </span>
-            </div>
-            {edgeConfirm ? (
-              <div className="pd-rel-pop-confirm">
-                <span className="pd-rel-pop-confirm-text">{t('relations.edge.deleteConfirm')}</span>
-                <div className="pd-rel-pop-confirm-actions">
-                  <button
-                    type="button"
-                    className="pd-rel-btn pd-rel-btn-sm"
-                    onClick={() => setEdgeConfirm(false)}
-                  >
-                    {t('relations.edge.deleteNo')}
-                  </button>
-                  <button
-                    type="button"
-                    className="pd-rel-btn pd-rel-btn-danger pd-rel-btn-sm"
-                    disabled={deletingId === selectedEdge.id}
-                    onClick={() => removeRelation(selectedEdge.id)}
-                  >
-                    {deletingId === selectedEdge.id ? t('relations.loading') : t('relations.edge.deleteYes')}
-                  </button>
-                </div>
-              </div>
+            {editingEdge !== null ? (
+              <RelationEditForm
+                formId={`pd-rel-edit-${editingEdge.id}-pop`}
+                kind={editingEdge.kind}
+                label={editingEdge.label}
+                note={editingEdge.note}
+                saving={editingEdge.saving}
+                error={editingEdge.error}
+                compact
+                t={t}
+                onKind={(kind) => updateEditDraft({ kind, error: null })}
+                onLabel={(label) => updateEditDraft({ label, error: null })}
+                onNote={(note) => updateEditDraft({ note, error: null })}
+                onSubmit={submitEdit}
+                onCancel={cancelEdit}
+              />
             ) : (
-              <div className="pd-rel-pop-actions">
-                <button
-                  type="button"
-                  className="pd-rel-btn pd-rel-btn-danger pd-rel-btn-sm"
-                  onClick={() => setEdgeConfirm(true)}
-                >
-                  {t('relations.edge.delete')}
-                </button>
-              </div>
+              <>
+                <div className="pd-rel-kv">
+                  <span className="pd-rel-kv-key">{t('relations.form.kind')}</span>
+                  <span className="pd-rel-kv-val">{kindLabel(selectedEdge.kind)}</span>
+                </div>
+                <div className="pd-rel-kv">
+                  <span className="pd-rel-kv-key">{t('relations.edge.label')}</span>
+                  <span className="pd-rel-kv-val">
+                    {selectedEdge.label !== '' ? selectedEdge.label : t('relations.none')}
+                  </span>
+                </div>
+                <div className="pd-rel-kv">
+                  <span className="pd-rel-kv-key">{t('relations.edge.note')}</span>
+                  <span className="pd-rel-kv-val">
+                    {selectedEdge.note !== '' ? selectedEdge.note : t('relations.none')}
+                  </span>
+                </div>
+                <div className="pd-rel-kv">
+                  <span className="pd-rel-kv-key">{t('relations.edge.source')}</span>
+                  <span className="pd-rel-kv-val">
+                    {selectedEdge.source === 'agent'
+                      ? t('relations.edge.source.agent')
+                      : t('relations.edge.source.user')}
+                  </span>
+                </div>
+                {edgeConfirm ? (
+                  <div className="pd-rel-pop-confirm">
+                    <span className="pd-rel-pop-confirm-text">{t('relations.edge.deleteConfirm')}</span>
+                    <div className="pd-rel-pop-confirm-actions">
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-sm"
+                        onClick={() => setEdgeConfirm(false)}
+                      >
+                        {t('relations.edge.deleteNo')}
+                      </button>
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-danger pd-rel-btn-sm"
+                        disabled={deletingId === selectedEdge.id}
+                        onClick={() => removeRelation(selectedEdge.id)}
+                      >
+                        {deletingId === selectedEdge.id ? t('relations.loading') : t('relations.edge.deleteYes')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pd-rel-pop-actions">
+                    <button
+                      type="button"
+                      className="pd-rel-btn pd-rel-btn-sm"
+                      onClick={() => openEdit(selectedEdge, 'popover')}
+                    >
+                      {t('relations.edit.edit')}
+                    </button>
+                    <button
+                      type="button"
+                      className="pd-rel-btn pd-rel-btn-danger pd-rel-btn-sm"
+                      onClick={() => setEdgeConfirm(true)}
+                    >
+                      {t('relations.edge.delete')}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         ) : null}
@@ -2596,13 +3745,22 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
                       </button>
                     </>
                   ) : (
-                    <button
-                      type="button"
-                      className="pd-rel-btn pd-rel-btn-ghost pd-rel-btn-sm"
-                      onClick={() => setListConfirmId(relation.id)}
-                    >
-                      {t('relations.list.delete')}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-ghost pd-rel-btn-sm"
+                        onClick={() => openEdit(relation, 'list')}
+                      >
+                        {t('relations.edit.edit')}
+                      </button>
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-ghost pd-rel-btn-sm"
+                        onClick={() => setListConfirmId(relation.id)}
+                      >
+                        {t('relations.list.delete')}
+                      </button>
+                    </>
                   )}
                 </div>
               </li>
@@ -2679,6 +3837,19 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
             >
               {t('relations.add')}
             </button>
+            {ctx !== undefined ? (
+              <button type="button" className="pd-rel-btn" onClick={openDiscovery}>
+                {t('relations.discover.action')}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="pd-rel-btn"
+              disabled={papers.length === 0 || citationBusy}
+              onClick={openCitations}
+            >
+              {t('relations.citations.action')}
+            </button>
             <button
               type="button"
               className="pd-rel-iconbtn"
@@ -2739,6 +3910,50 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
               aria-label={t('relations.dismiss')}
               title={t('relations.dismiss')}
               onClick={() => setActionError(null)}
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
+        {citationResult !== null ? (
+          <div
+            className="pd-rel-banner"
+            data-kind={citationResult.errors.length > 0 ? 'warn' : 'success'}
+            role="status"
+          >
+            <span title={citationResult.errors.join('\n')}>
+              {t('relations.citations.result', {
+                scanned: citationResult.scanned,
+                added: citationResult.added.length,
+                skipped: citationResult.skipped,
+              })}
+              {citationResult.skippedNoText.length > 0
+                ? ` · ${t('relations.citations.noText', { n: citationResult.skippedNoText.length })}`
+                : ''}
+              {citationResult.errors.length > 0
+                ? ` · ${t('relations.citations.errors', { n: citationResult.errors.length })}`
+                : ''}
+            </span>
+            <button
+              type="button"
+              className="pd-rel-banner-x"
+              aria-label={t('relations.dismiss')}
+              title={t('relations.dismiss')}
+              onClick={() => setCitationResult(null)}
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
+        {citationError !== null && !citationConfirm ? (
+          <div className="pd-rel-banner" role="alert">
+            <span>{citationError}</span>
+            <button
+              type="button"
+              className="pd-rel-banner-x"
+              aria-label={t('relations.dismiss')}
+              title={t('relations.dismiss')}
+              onClick={() => setCitationError(null)}
             >
               ×
             </button>
@@ -2958,6 +4173,362 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        ) : null}
+
+        {editDraft !== null && editDraft.mode === 'list' ? (
+          <div
+            className="pd-rel-modal-mask"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !editDraft.saving) cancelEdit()
+            }}
+          >
+            <div
+              className="pd-rel-modal pd-rel-edit-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pd-rel-edit-title"
+            >
+              <div className="pd-rel-modal-head">
+                <h3 className="pd-rel-modal-title" id="pd-rel-edit-title">
+                  {t('relations.edit.title')}
+                </h3>
+                <button
+                  type="button"
+                  className="pd-rel-iconbtn"
+                  aria-label={t('relations.close')}
+                  title={t('relations.close')}
+                  disabled={editDraft.saving}
+                  onClick={cancelEdit}
+                >
+                  <IconClose />
+                </button>
+              </div>
+              <div className="pd-rel-modal-body">
+                {editRelation !== undefined ? (
+                  <p className="pd-rel-modal-desc">
+                    {titleOf(editRelation.from)} ↔ {titleOf(editRelation.to)}
+                  </p>
+                ) : null}
+                <RelationEditForm
+                  formId={`pd-rel-edit-${editDraft.id}-list`}
+                  kind={editDraft.kind}
+                  label={editDraft.label}
+                  note={editDraft.note}
+                  saving={editDraft.saving}
+                  error={editDraft.error}
+                  t={t}
+                  onKind={(kind) => updateEditDraft({ kind, error: null })}
+                  onLabel={(label) => updateEditDraft({ label, error: null })}
+                  onNote={(note) => updateEditDraft({ note, error: null })}
+                  onSubmit={submitEdit}
+                  onCancel={cancelEdit}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {discoverOpen ? (
+          <div
+            className="pd-rel-modal-mask"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setDiscoverOpen(false)
+            }}
+          >
+            <div
+              className="pd-rel-modal pd-rel-discover-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pd-rel-discover-title"
+            >
+              <div className="pd-rel-modal-head">
+                <h3 className="pd-rel-modal-title" id="pd-rel-discover-title">
+                  {t('relations.discover.title')}
+                </h3>
+                <button
+                  type="button"
+                  className="pd-rel-iconbtn"
+                  aria-label={t('relations.close')}
+                  title={t('relations.close')}
+                  onClick={() => setDiscoverOpen(false)}
+                >
+                  <IconClose />
+                </button>
+              </div>
+              <div className="pd-rel-modal-body">
+                <p className="pd-rel-discover-intro">{t('relations.discover.intro')}</p>
+
+                {discoverAttaching && !discoverRunning ? (
+                  <div className="pd-rel-discover-status" role="status" aria-live="polite">
+                    <span className="pd-rel-spinner" aria-hidden="true" />
+                    <span className="pd-rel-discover-status-text">
+                      {t('relations.discover.starting')}
+                    </span>
+                  </div>
+                ) : null}
+                {discoverRunning ? (
+                  <div className="pd-rel-discover-status" role="status" aria-live="polite">
+                    <span className="pd-rel-spinner" aria-hidden="true" />
+                    <span className="pd-rel-discover-status-text">
+                      {t('relations.discover.running', { n: papers.length })}
+                    </span>
+                    <button type="button" className="pd-rel-btn pd-rel-btn-sm" onClick={stopDiscovery}>
+                      {t('relations.discover.stop')}
+                    </button>
+                  </div>
+                ) : null}
+                {papers.length < 2 ? (
+                  <div className="pd-rel-error" role="alert">
+                    {t('relations.discover.needTwo')}
+                  </div>
+                ) : null}
+                {discoveryError !== null ? (
+                  <div className="pd-rel-error" role="alert">
+                    {discoveryError}
+                  </div>
+                ) : null}
+
+                {discoveryTurn.reasoning !== '' ? (
+                  <details className="pd-rel-discover-reasoning">
+                    <summary>{t('relations.discover.reasoning')}</summary>
+                    <pre className="pd-rel-discover-pre">{discoveryTurn.reasoning}</pre>
+                  </details>
+                ) : null}
+                {discoveryTurn.report !== '' ? (
+                  <details className="pd-rel-discover-report">
+                    <summary>{t('relations.discover.report')}</summary>
+                    <pre className="pd-rel-discover-pre">{discoveryTurn.report}</pre>
+                  </details>
+                ) : null}
+
+                <div className="pd-rel-discover-head">
+                  <button
+                    type="button"
+                    className="pd-rel-btn pd-rel-btn-primary"
+                    disabled={!canDiscover || discoverBusy}
+                    onClick={runDiscovery}
+                  >
+                    {discoverAttaching ? <span className="pd-rel-spinner" aria-hidden="true" /> : null}
+                    {hasDiscoveryResult
+                      ? t('relations.discover.reanalyse')
+                      : t('relations.discover.analyse')}
+                  </button>
+                </div>
+
+                {discoverCandidates.length > 0 ? (
+                  <>
+                    <div className="pd-rel-discover-head">
+                      <span className="pd-rel-discover-head-title">
+                        {t('relations.discover.candidates', { n: discoverCandidates.length })}
+                      </span>
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-sm"
+                        disabled={discoverAdding}
+                        onClick={selectAllCandidates}
+                      >
+                        {t('relations.discover.selectAll')}
+                      </button>
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-sm"
+                        disabled={discoverAdding}
+                        onClick={invertCandidates}
+                      >
+                        {t('relations.discover.selectNone')}
+                      </button>
+                      <span className="pd-rel-discover-count">
+                        {t('relations.discover.selectedCount', { n: selectedCandidateCount })}
+                      </span>
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-primary pd-rel-btn-sm"
+                        disabled={discoverAdding || discoverBusy || selectedCandidateCount === 0}
+                        onClick={addSelectedCandidates}
+                      >
+                        {discoverAdding
+                          ? t('relations.discover.adding')
+                          : t('relations.discover.addSelected')}
+                      </button>
+                    </div>
+                    <div
+                      className="pd-rel-discover-list"
+                      role="group"
+                      aria-label={t('relations.discover.aria.candidates')}
+                    >
+                      {discoverCandidates.map((candidate) => {
+                        const result = discoverResults[candidate.key]
+                        const candidateDisabled = candidate.issue !== null
+                        const settled = result?.state === 'added' || result?.state === 'skipped'
+                        return (
+                          <label
+                            key={candidate.key}
+                            className="pd-rel-cand"
+                            data-disabled={candidateDisabled ? 'true' : 'false'}
+                            data-state={result?.state}
+                          >
+                            <input
+                              type="checkbox"
+                              className="pd-rel-cand-check"
+                              checked={discoverChecked[candidate.key] === true}
+                              disabled={candidateDisabled || discoverAdding || settled}
+                              onChange={(event) =>
+                                setDiscoverChecked((current) => ({
+                                  ...current,
+                                  [candidate.key]: event.target.checked,
+                                }))
+                              }
+                            />
+                            <span className="pd-rel-cand-main">
+                              <span className="pd-rel-cand-top">
+                                <span className="pd-rel-kind">
+                                  {candidate.kind !== null ? (
+                                    <span
+                                      className="pd-rel-swatch"
+                                      data-kind={candidate.kind}
+                                      aria-hidden="true"
+                                    />
+                                  ) : null}
+                                  {candidate.kind !== null
+                                    ? kindLabel(candidate.kind)
+                                    : candidate.rawKind}
+                                </span>
+                                <span className="pd-rel-cand-pair">
+                                  {candidate.fromPaper?.title ?? candidate.fromName} ↔{' '}
+                                  {candidate.toPaper?.title ?? candidate.toName}
+                                </span>
+                              </span>
+                              {candidate.reason !== '' ? (
+                                <span className="pd-rel-cand-reason">{candidate.reason}</span>
+                              ) : null}
+                              {candidate.issue !== null ? (
+                                <span className="pd-rel-cand-issue">
+                                  {t(`relations.discover.issue.${candidate.issue}`)}
+                                </span>
+                              ) : null}
+                              {result !== undefined ? (
+                                <span className="pd-rel-cand-result" data-state={result.state}>
+                                  {result.state === 'adding' ? (
+                                    <span className="pd-rel-spinner" aria-hidden="true" />
+                                  ) : null}
+                                  {result.state === 'adding'
+                                    ? t('relations.discover.adding')
+                                    : result.state === 'added'
+                                      ? t('relations.discover.added')
+                                      : result.state === 'skipped'
+                                        ? t('relations.discover.skipped')
+                                        : t('relations.discover.addFailed', {
+                                            message: result.message ?? '',
+                                          })}
+                                </span>
+                              ) : null}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </>
+                ) : discoveryTurn.report !== '' && !discoverBusy ? (
+                  <div className="pd-rel-discover-empty">{t('relations.discover.emptyHint')}</div>
+                ) : discoveryTurn.report === '' && !discoverBusy ? (
+                  <div className="pd-rel-discover-empty">{t('relations.discover.noReport')}</div>
+                ) : null}
+
+                {discoverSummary !== null ? (
+                  <div className="pd-rel-discover-summary">
+                    {discoverSummary.failed > 0
+                      ? t('relations.discover.summaryFailed', {
+                          added: discoverSummary.added,
+                          skipped: discoverSummary.skipped,
+                          failed: discoverSummary.failed,
+                        })
+                      : t('relations.discover.summary', {
+                          added: discoverSummary.added,
+                          skipped: discoverSummary.skipped,
+                        })}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {citationConfirm ? (
+          <div
+            className="pd-rel-modal-mask"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !citationBusy) {
+                setCitationConfirm(false)
+                setCitationError(null)
+              }
+            }}
+          >
+            <div
+              className="pd-rel-modal pd-rel-citations-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pd-rel-citations-title"
+            >
+              <div className="pd-rel-modal-head">
+                <h3 className="pd-rel-modal-title" id="pd-rel-citations-title">
+                  {t('relations.citations.confirmTitle')}
+                </h3>
+                <button
+                  type="button"
+                  className="pd-rel-iconbtn"
+                  aria-label={t('relations.close')}
+                  title={t('relations.close')}
+                  disabled={citationBusy}
+                  onClick={() => {
+                    setCitationConfirm(false)
+                    setCitationError(null)
+                  }}
+                >
+                  <IconClose />
+                </button>
+              </div>
+              <div className="pd-rel-modal-body">
+                <p className="pd-rel-modal-desc">{t('relations.citations.confirmDesc')}</p>
+                {citationBusy ? (
+                  <div className="pd-rel-discover-status" role="status" aria-live="polite">
+                    <span className="pd-rel-spinner" aria-hidden="true" />
+                    <span className="pd-rel-discover-status-text">
+                      {t('relations.citations.running')}
+                    </span>
+                  </div>
+                ) : null}
+                {citationError !== null ? (
+                  <div className="pd-rel-error" role="alert">
+                    {citationError}
+                  </div>
+                ) : null}
+              </div>
+              <div className="pd-rel-modal-foot">
+                <button
+                  type="button"
+                  className="pd-rel-btn"
+                  disabled={citationBusy}
+                  onClick={() => {
+                    setCitationConfirm(false)
+                    setCitationError(null)
+                  }}
+                >
+                  {t('relations.citations.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="pd-rel-btn pd-rel-btn-primary"
+                  disabled={citationBusy}
+                  onClick={runCitationSync}
+                >
+                  {citationBusy ? <span className="pd-rel-spinner" aria-hidden="true" /> : null}
+                  {citationBusy
+                    ? t('relations.citations.running')
+                    : t('relations.citations.confirm')}
+                </button>
+              </div>
             </div>
           </div>
         ) : null}

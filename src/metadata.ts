@@ -596,8 +596,11 @@ export async function guessFromPdf(absPath: string): Promise<PdfGuess> {
 
     const documentText = pageTexts.join('\n')
     const firstPageText = pageTexts[0] ?? ''
+    // A DOI in the reference list belongs to a cited paper, not to this one:
+    // cut the references/bibliography section before guessing the DOI.
+    const doiText = stripReferencesSection(documentText)
     const doi =
-      findDoi(documentText) ??
+      findDoi(doiText) ??
       findDoi(rawXmp) ??
       findDoi(fileName) ??
       undefined
@@ -930,4 +933,16 @@ export function mergeGuess(base: PdfGuess, extra: CrossrefRecord): PdfGuess {
   if (!merged.doi && extra.doi) merged.doi = normalizeDoi(extra.doi) ?? extra.doi
   if (!merged.abstract && extra.abstract) merged.abstract = extra.abstract
   return merged
+}
+
+
+/**
+ * Remove the reference/bibliography section from page text so the metadata DOI
+ * guess never picks up a DOI that belongs to a cited paper.
+ */
+function stripReferencesSection(text: string): string {
+  const heading = /^[ \t]*(?:\d{1,2}[\.)]\s*)?(references|bibliography|works cited|literature cited|参考文献|引用文献)[ \t]*$/im
+  const match = heading.exec(text)
+  if (match !== null && match.index > 0) return text.slice(0, match.index)
+  return text
 }

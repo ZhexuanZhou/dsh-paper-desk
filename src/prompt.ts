@@ -4,6 +4,7 @@
  */
 import type {
   AnnotationDocument,
+  RelationsDocument,
   AssistPayload,
   AssistRequest,
   AssistTask,
@@ -20,6 +21,7 @@ const TASK_LABEL: Record<AssistTask, { zh: string; en: string }> = {
   questions: { zh: '生成理解问题', en: 'Generate study questions' },
   quote: { zh: '解释选中内容', en: 'Explain the selected passage' },
   compare: { zh: '多篇论文对比', en: 'Compare these papers' },
+  discover: { zh: '发现论文关联', en: 'Discover paper relations' },
   custom: { zh: '与 Agent 讨论这篇论文', en: 'Discuss this paper with the agent' },
 }
 
@@ -51,6 +53,10 @@ const TASK_INSTRUCTION: Record<AssistTask, { zh: string; en: string }> = {
   compare: {
     zh: '请对比这些论文：先给出结构化对比表，再给横向结论，最后给出建议的论文关联（引用/相关/方法/对比）。所有结论尽量标注页码。',
     en: 'Compare these papers: a structured comparison table, then cross-paper conclusions, then suggested relations (cites/related/method/contrast). Cite pages where possible.',
+  },
+  discover: {
+    zh: '请分析论文库中的论文，提出候选关联（引用/相关/方法/对比/同主题/自定义），并说明理由；只提出有证据的关联。',
+    en: 'Analyse the library and propose candidate paper relations (cites/related/method/contrast/same-topic/custom) with evidence; only propose supported relations.',
   },
   custom: {
     zh: '请阅读这篇论文，等我提问；先给出 5 条最值得关注的要点，然后回答我的问题。',
@@ -272,4 +278,74 @@ export function comparePrompt(papers: PaperMeta[], settings: EffectiveSettings):
 function shortenTitle(title: string): string {
   const trimmed = title.trim()
   return trimmed.length > 32 ? `${trimmed.slice(0, 30)}…` : trimmed
+}
+
+
+/**
+ * Prompt for AI relation discovery. The answer is parsed into candidate cards
+ * in the relation graph; the user confirms before anything is written.
+ */
+export function discoverRelationsPrompt(
+  papers: PaperMeta[],
+  relations: RelationsDocument,
+  settings: EffectiveSettings,
+): AssistPayload {
+  const zh = isZh(settings)
+  const root = settings.libraryPath
+  const lines: string[] = []
+  if (zh) {
+    lines.push(`请分析论文库里的 ${papers.length} 篇论文，提出彼此之间值得建立的关联（候选）。`)
+  } else {
+    lines.push(`Analyse the ${papers.length} papers in the library and propose candidate relations between them.`)
+  }
+  lines.push('')
+  if (zh) lines.push('论文清单：')
+  else lines.push('Papers:')
+  for (const paper of papers.slice(0, 80)) {
+    const authors = paper.authors.slice(0, 3).join(', ')
+    const venue = paper.venue.length > 0 ? paper.venue : '—'
+    lines.push(`- id: ${paper.id} · 《${paper.title}》 · ${authors}${paper.year === null ? '' : ` · ${paper.year}`} · ${venue}`)
+    if (paper.abstract.trim().length > 0) {
+      lines.push(`  ${zh ? '摘要' : 'Abstract'}: ${paper.abstract.replace(/\s+/g, ' ').slice(0, 400)}`)
+    }
+    if (paper.tags.length > 0) lines.push(`  ${zh ? '标签' : 'Tags'}: ${paper.tags.join(', ')}`)
+  }
+  lines.push('')
+  lines.push(zh ? '已有关系（不要重复提出）：' : 'Existing relations (do not propose again):')
+  if (relations.items.length === 0) {
+    lines.push(zh ? '（暂无）' : '(none)')
+  } else {
+    for (const relation of relations.items.slice(0, 120)) {
+      lines.push(`- [${relation.kind}] ${relation.from} ↔ ${relation.to}${relation.label ? ` (${relation.label})` : ''}`)
+    }
+  }
+  lines.push('')
+  lines.push(
+    zh
+      ? [
+          '分析方式：优先依据标题/摘要/标签/作者/期刊；需要时用 `paper_info`、`paper_cards`、`paper_notes_read` 或 `paper_relations` 补充证据；只有确有必要时才用 `paper_text` 读少量页面（每篇不超过 3 页）。不要逐篇通读。',
+          '',
+          '输出结构（Markdown）：',
+          '1. **分析说明**：你用哪些信息判断的（1-3 句即可）。',
+          '2. **候选关联**：每行严格使用格式 `- [关系类型] 论文A ↔ 论文B：理由（证据来源）`。关系类型只能是 cites / related / method / contrast / same-topic / custom 之一；论文名用「第一作者姓 + 年份」或标题简称；理由要具体（共同方法/数据集/作者/引用关系/相反结论）。',
+          '3. **信息不足**：列出无法判断或需要更多信息的论文（可为空）。',
+          '',
+          '要求：提出 5-15 条高置信度候选；宁可少提也不要编造；不要提出清单中不存在的论文；不要与已有关系重复。',
+        ].join('\n')
+      : [
+          'How to analyse: prefer titles/abstracts/tags/authors/venue; use `paper_info`, `paper_cards`, `paper_notes_read` or `paper_relations` when useful; only read a few pages with `paper_text` when necessary (≤3 pages per paper). Do not read whole papers.',
+          '',
+          'Output (Markdown):',
+          '1. **Basis**: 1-3 sentences on the evidence used.',
+          '2. **Candidate relations**: one per line, exactly `- [kind] Paper A ↔ Paper B: reason (evidence)`. kind ∈ cites/related/method/contrast/same-topic/custom; name papers as “first-author surname + year” or a short title; make the reason concrete.',
+          '3. **Insufficient information**: papers that cannot be judged (may be empty).',
+          '',
+          'Requirements: 5-15 high-confidence candidates; prefer fewer over invented ones; never reference papers not in the list; do not duplicate existing relations.',
+        ].join('\n'),
+  )
+  return {
+    workspacePath: root,
+    prompt: lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+    title: zh ? `关系发现 · ${papers.length} 篇论文` : `Relation discovery · ${papers.length} papers`,
+  }
 }

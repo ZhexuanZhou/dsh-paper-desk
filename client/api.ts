@@ -23,6 +23,7 @@ import type {
   NoteAppendInput,
   NewAnnotation,
   NotesDocument,
+  CitationSyncResult,
   NotesWriteResult,
   PaperDetail,
   PaperMeta,
@@ -56,6 +57,7 @@ export interface SettingsPatch {
   enrich?: boolean
   autoImportInbox?: boolean
   maxPdfBytes?: number
+  citationSync?: boolean
 }
 
 /** `GET/POST /settings` payload. */
@@ -395,6 +397,20 @@ export const api = {
 
   deleteComparison(id: string): Promise<{ ok: boolean }> {
     return requestJson<{ ok: boolean }>(`/comparisons${query({ id })}`, { method: 'DELETE' })
+  },
+
+  /** Prompt for AI relation discovery (then run it in an AI thread). */
+  discoverAssist(): Promise<AssistPayload> {
+    const body: AssistRequest = { paperId: '', task: 'discover' }
+    return requestJson<AssistPayload>('/assist', { method: 'POST', body: JSON.stringify(body) })
+  },
+
+  /** Parse PDF reference lists and create cites edges for library papers. */
+  citationsSync(ids?: string[]): Promise<CitationSyncResult> {
+    return requestJson<CitationSyncResult>('/relations/citations', {
+      method: 'POST',
+      body: JSON.stringify(ids === undefined ? {} : { ids }),
+    })
   },
 
   /** Prompt for comparing papers (then run it in an AI thread). */

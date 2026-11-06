@@ -27,6 +27,7 @@ import {
   saveComparison,
 } from './comparisons.js'
 import { addRelation, readRelations, removeRelation, updateRelation } from './relations.js'
+import { syncCitationEdges } from './references.js'
 import {
   bibtexOf,
   createPaper,
@@ -40,7 +41,7 @@ import {
 import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { ensureText } from './pdf.js'
-import { assistPayload, comparePrompt } from './prompt.js'
+import { assistPayload, comparePrompt, discoverRelationsPrompt } from './prompt.js'
 import { listTags, queryPapers, searchLibrary } from './search.js'
 import {
   deviceShort,
@@ -421,6 +422,7 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
         if (body['language'] !== undefined) update.language = body['language'] as 'zh' | 'en'
         if (body['enrich'] !== undefined) update.enrich = Boolean(body['enrich'])
         if (body['autoImportInbox'] !== undefined) update.autoImportInbox = Boolean(body['autoImportInbox'])
+        if (body['citationSync'] !== undefined) update.citationSync = Boolean(body['citationSync'])
         if (body['maxPdfBytes'] !== undefined) update.maxPdfBytes = Number(body['maxPdfBytes'])
         saveSettings(update)
         const effective = effectiveSettings(config)
@@ -664,6 +666,25 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
       return methodNotAllowed(res)
     }
 
+    if (route === 'relations/citations') {
+      if (method !== 'POST') return methodNotAllowed(res)
+      const body = await readJsonBody(req)
+      const rawIds = Array.isArray(body['ids']) ? body['ids'] : undefined
+      let ids: string[] | undefined
+      if (rawIds !== undefined) {
+        ids = []
+        for (const value of rawIds) {
+          if (typeof value !== 'string') throw new HttpError(400, 'ids must be strings')
+          const id = requirePdfId(value)
+          if (!ids.includes(id)) ids.push(id)
+        }
+        if (ids.length === 0) throw new HttpError(400, 'ids must not be empty')
+        if (ids.length > 20) throw new HttpError(400, 'at most 20 papers per scan')
+      }
+      json(res, 200, await syncCitationEdges(root, ids))
+      return
+    }
+
     if (route === 'graph') {
       if (method !== 'GET') return methodNotAllowed(res)
       const [papers, relations] = await Promise.all([queryPapers(root, { limit: 1000 }), readRelations(root)])
@@ -809,6 +830,18 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
       const body = await readJsonBody(req)
       const task = body['task']
       if (!isAssistTask(task)) throw new HttpError(400, 'invalid assist task')
+      if (task === 'discover') {
+        const { listPaperIds } = await import('./library.js')
+        const ids = (await listPaperIds(root)).slice(0, 80)
+        const papers = []
+        for (const discoverId of ids) {
+          const meta = await readMeta(root, discoverId)
+          if (meta !== null) papers.push(meta)
+        }
+        const graph = await readRelations(root)
+        json(res, 200, discoverRelationsPrompt(papers, graph, settings))
+        return
+      }
       if (task === 'compare') {
         const rawIds = Array.isArray(body['paperIds']) ? body['paperIds'] : []
         const ids: string[] = []
@@ -873,7 +906,7 @@ function methodNotAllowed(res: Res): void {
   json(res, 405, { error: 'method not allowed' })
 }
 
-function isAssistTask(value: unknown): value is 'summary' | 'method' | 'critique' | 'related' | 'questions' | 'quote' | 'compare' | 'custom' {
+function isAssistTask(value: unknown): value is 'summary' | 'method' | 'critique' | 'related' | 'questions' | 'quote' | 'compare' | 'discover' | 'custom' {
   return (
     value === 'summary' ||
     value === 'method' ||
@@ -882,6 +915,7 @@ function isAssistTask(value: unknown): value is 'summary' | 'method' | 'critique
     value === 'questions' ||
     value === 'quote' ||
     value === 'compare' ||
+    value === 'discover' ||
     value === 'custom'
   )
 }

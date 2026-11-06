@@ -29,6 +29,7 @@ interface SettingsForm {
   language: 'zh' | 'en'
   enrich: boolean
   autoImportInbox: boolean
+  citationSync: boolean
 }
 
 export function SettingsView(props: SettingsViewProps) {
@@ -42,6 +43,7 @@ export function SettingsView(props: SettingsViewProps) {
     language: effective?.language ?? 'zh',
     enrich: effective?.enrich ?? true,
     autoImportInbox: effective?.autoImportInbox ?? true,
+    citationSync: effective?.citationSync ?? false,
   })
   const [pathError, setPathError] = useState<string | null>(null)
 
@@ -52,6 +54,7 @@ export function SettingsView(props: SettingsViewProps) {
       language: effective.language,
       enrich: effective.enrich,
       autoImportInbox: effective.autoImportInbox,
+      citationSync: effective.citationSync,
     })
     setPathError(null)
   }, [effective])
@@ -65,7 +68,8 @@ export function SettingsView(props: SettingsViewProps) {
     (form.path !== effective.libraryPath ||
       form.language !== effective.language ||
       form.enrich !== effective.enrich ||
-      form.autoImportInbox !== effective.autoImportInbox)
+      form.autoImportInbox !== effective.autoImportInbox ||
+      form.citationSync !== effective.citationSync)
 
   const pick = async (): Promise<void> => {
     try {
@@ -92,6 +96,7 @@ export function SettingsView(props: SettingsViewProps) {
         language: form.language,
         enrich: form.enrich,
         autoImportInbox: form.autoImportInbox,
+        citationSync: form.citationSync,
       })
     } catch {
       // Toast handled by App.
@@ -187,6 +192,13 @@ export function SettingsView(props: SettingsViewProps) {
               onChange={(checked) => setForm((previous) => ({ ...previous, autoImportInbox: checked }))}
               label={t('settings.autoImportInbox')}
               hint={t('settings.autoImportHint')}
+              disabled={saving}
+            />
+            <Checkbox
+              checked={form.citationSync}
+              onChange={(checked) => setForm((previous) => ({ ...previous, citationSync: checked }))}
+              label={t('settings.citationSync')}
+              hint={t('settings.citationSyncHint')}
               disabled={saving}
             />
             <div className="pd-settings-actions">

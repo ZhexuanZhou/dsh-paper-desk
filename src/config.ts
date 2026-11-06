@@ -20,6 +20,8 @@ export interface Config {
   autoImportInbox: boolean
   /** Maximum accepted PDF upload size in bytes; 0 = no limit (default). */
   maxPdfBytes: number
+  /** Auto-create citation edges from PDF references after import. */
+  citationSync: boolean
 }
 
 /** Result type of the schemastery object below. */
@@ -31,4 +33,5 @@ export const Config: ConfigSchema = Schema.object({
   enrich: Schema.boolean().default(true),
   autoImportInbox: Schema.boolean().default(true),
   maxPdfBytes: Schema.natural().default(0),
+  citationSync: Schema.boolean().default(false),
 })
