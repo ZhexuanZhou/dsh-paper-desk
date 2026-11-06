@@ -3,3 +3,6 @@ lib
 *.tgz
 .DS_Store
 *.log
+
+# release assets
+paperdesk-demo-library.zip

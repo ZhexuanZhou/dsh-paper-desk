@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "continuous-time-generative-models-a-survey-grace-f1d2c452",
+  "title": "Continuous-Time Generative Models: A Survey",
+  "authors": [
+    "Grace Lee"
+  ],
+  "year": 2026,
+  "venue": "arXiv",
+  "doi": "",
+  "url": "https://arxiv.org/abs/2602.09876",
+  "abstract": "A survey of continuous-time generative models, comparing flow matching, diffusion and drifting across training and inference costs.",
+  "keywords": [],
+  "tags": [
+    "demo"
+  ],
+  "status": "unread",
+  "rating": 0,
+  "addedAt": "2026-11-06T09:51:57.950Z",
+  "updatedAt": "2026-11-06T09:51:57.951Z",
+  "pdfFile": "paper.pdf",
+  "pdfSha256": "f1d2c4521bdd7fc476462b586488a130c6d10d2713e29e92b37a5771acc20b0e",
+  "pageCount": 1,
+  "source": "import",
+  "sourceUrl": ""
+}

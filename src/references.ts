@@ -253,13 +253,23 @@ function splitChunks(text: string): string[] {
   return chunks
 }
 
-/** Hits for one page slice; duplicate DOIs/arXiv ids inside a page are merged. */
-function hitsFromSlice(slice: PageSlice): ReferenceHit[] {
+/**
+ * Hits for one page slice; duplicate DOIs/arXiv ids inside a page are merged.
+ * Inside an explicit reference section, entries without a DOI/arXiv id are
+ * still kept so the title-containment matcher can resolve them (the threshold
+ * is high and title matching is disabled for fallback scans).
+ */
+function hitsFromSlice(slice: PageSlice, allowTitleOnly: boolean): ReferenceHit[] {
   const hits: ReferenceHit[] = []
   for (const chunk of splitChunks(slice.text)) {
     const doi = findDoi(chunk)
     const arxivId = findArxivId(chunk)
-    if (doi === undefined && arxivId === undefined) continue
+    if (doi === undefined && arxivId === undefined) {
+      if (!allowTitleOnly) continue
+      if (chunk.length < 40 || !/(?:19|20)\d{2}/.test(chunk)) continue
+      hits.push({ page: slice.page, raw: chunk })
+      continue
+    }
     const hit: ReferenceHit = { page: slice.page, raw: chunk }
     if (doi !== undefined) hit.doi = doi
     if (arxivId !== undefined) hit.arxivId = arxivId
@@ -334,7 +344,7 @@ function buildExtraction(slices: PageSlice[], fallback: boolean): Extraction {
   const hits: ReferenceHit[] = []
   const pagesWithHits = new Set<number>()
   for (const slice of slices) {
-    for (const hit of hitsFromSlice(slice)) {
+    for (const hit of hitsFromSlice(slice, !fallback)) {
       hits.push(hit)
       pagesWithHits.add(hit.page)
     }

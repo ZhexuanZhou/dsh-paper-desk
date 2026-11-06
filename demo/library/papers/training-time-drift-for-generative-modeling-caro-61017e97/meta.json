@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "training-time-drift-for-generative-modeling-caro-61017e97",
+  "title": "Training-Time Drift for Generative Modeling",
+  "authors": [
+    "Carol White",
+    "Dan Brown"
+  ],
+  "year": 2026,
+  "venue": "arXiv",
+  "doi": "",
+  "url": "https://arxiv.org/abs/2601.01234",
+  "abstract": "We replace inference-time iterations with a training-time drift field, reaching one-step generation while keeping the distributional target.",
+  "keywords": [],
+  "tags": [
+    "demo"
+  ],
+  "status": "unread",
+  "rating": 0,
+  "addedAt": "2026-11-06T09:51:57.939Z",
+  "updatedAt": "2026-11-06T09:51:57.940Z",
+  "pdfFile": "paper.pdf",
+  "pdfSha256": "61017e97a44f5a3a35e5c28cdca281610d374e25070ce23a8126cda9837aebec",
+  "pageCount": 1,
+  "source": "import",
+  "sourceUrl": ""
+}

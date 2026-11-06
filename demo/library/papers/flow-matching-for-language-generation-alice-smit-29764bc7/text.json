@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sourceSha256": "29764bc71fcf52cad5dafdf70970abd7d360b478b479837dcebae76f9167dbd5",
+  "pageCount": 1,
+  "extractedAt": "2026-11-06T09:51:57.966Z",
+  "pages": [
+    {
+      "page": 1,
+      "text": "Flow Matching for Language Generation\nAlice Smith, Bob Jones\nJournal of Synthetic Tests, 2026\nAbstract: We study continuous-time flow matching for discrete language generation,\nmapping noise to token embeddings with a learned velocity field.\nWe propose a continuous-time flow matching objective for language generation.\nThe model learns a velocity field that transports a prior to token embeddings.\nSampling solves an ODE with 32 Euler steps in our experiments."
+    }
+  ],
+  "lowText": false
+}

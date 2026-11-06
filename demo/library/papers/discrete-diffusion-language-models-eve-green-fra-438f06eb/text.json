@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sourceSha256": "438f06ebc495b63b6f317ae9651c285717340ff749febc35788ef83ad7c76f91",
+  "pageCount": 1,
+  "extractedAt": "2026-11-06T09:51:57.962Z",
+  "pages": [
+    {
+      "page": 1,
+      "text": "Discrete Diffusion Language Models\nEve Green, Frank Black\nNeurIPS 2025, 2025\nAbstract: Masked discrete diffusion for language: corruption processes, sampling\nschedules and the trade-off between parallel decoding and quality.\nDiscrete diffusion corrupts tokens with a masking process and learns to reverse it.\nParallel decoding reduces the number of sampling steps.\nReferences\n[1] Smith, A., Jones, B. (2026). Flow Matching for Language Generation. Journal of\nSynthetic Tests. https://doi.org/10.1234/flowlm.2026\n[2] White, C., Brown, D. (2026). Training-Time Drift for Generative Modeling.\narXiv:2601.01234."
+    }
+  ],
+  "lowText": false
+}

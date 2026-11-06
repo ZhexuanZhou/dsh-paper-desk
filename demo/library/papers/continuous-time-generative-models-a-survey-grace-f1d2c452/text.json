@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sourceSha256": "f1d2c4521bdd7fc476462b586488a130c6d10d2713e29e92b37a5771acc20b0e",
+  "pageCount": 1,
+  "extractedAt": "2026-11-06T09:51:57.957Z",
+  "pages": [
+    {
+      "page": 1,
+      "text": "Continuous-Time Generative Models: A Survey\nGrace Lee\narXiv, 2026\nAbstract: A survey of continuous-time generative models, comparing flow matching,\ndiffusion and drifting across training and inference costs.\nContinuous-time models trade training complexity for sampling efficiency.\nWe compare flow matching, diffusion and training-time drifting.\nReferences\n[1] Smith, A., Jones, B. (2026). Flow Matching for Language Generation. Journal of\nSynthetic Tests. https://doi.org/10.1234/flowlm.2026\n[2] White, C., Brown, D. (2026). Training-Time Drift for Generative Modeling.\narXiv:2601.01234.\n[3] Green, E., Black, F. (2025). Discrete Diffusion Language Models. NeurIPS 2025."
+    }
+  ],
+  "lowText": false
+}

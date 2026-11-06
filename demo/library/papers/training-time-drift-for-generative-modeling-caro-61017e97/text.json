@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sourceSha256": "61017e97a44f5a3a35e5c28cdca281610d374e25070ce23a8126cda9837aebec",
+  "pageCount": 1,
+  "extractedAt": "2026-11-06T09:51:57.968Z",
+  "pages": [
+    {
+      "page": 1,
+      "text": "Training-Time Drift for Generative Modeling\nCarol White, Dan Brown\narXiv, 2026\nAbstract: We replace inference-time iterations with a training-time drift field,\nreaching one-step generation while keeping the distributional target.\nDrifting moves the iterative process from inference to training.\nA single forward pass matches the pushforward distribution.\nReferences\n[1] Smith, A., Jones, B. (2026). Flow Matching for Language Generation. Journal of\nSynthetic Tests. https://doi.org/10.1234/flowlm.2026"
+    }
+  ],
+  "lowText": false
+}

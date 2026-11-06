@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-06T09:51:57.969Z",
+  "items": [
+    {
+      "id": "r-5f1508d6",
+      "from": "flow-matching-for-language-generation-alice-smit-29764bc7",
+      "to": "training-time-drift-for-generative-modeling-caro-61017e97",
+      "kind": "contrast",
+      "label": "训练时漂移 vs 推理时迭代",
+      "note": "两者对迭代位置的选择相反：一个在推理端迭代，一个把迭代放进训练。",
+      "source": "user",
+      "createdAt": "2026-11-06T09:51:57.951Z",
+      "updatedAt": "2026-11-06T09:51:57.951Z"
+    },
+    {
+      "id": "r-4ff65984",
+      "from": "flow-matching-for-language-generation-alice-smit-29764bc7",
+      "to": "discrete-diffusion-language-models-eve-green-fra-438f06eb",
+      "kind": "method",
+      "label": "连续空间 vs 离散扩散",
+      "note": "都在做语言生成，但一个在连续嵌入空间定义场，一个在离散 token 上做扩散。",
+      "source": "user",
+      "createdAt": "2026-11-06T09:51:57.952Z",
+      "updatedAt": "2026-11-06T09:51:57.952Z"
+    },
+    {
+      "id": "r-403e75bb",
+      "from": "training-time-drift-for-generative-modeling-caro-61017e97",
+      "to": "continuous-time-generative-models-a-survey-grace-f1d2c452",
+      "kind": "related",
+      "label": "扩散生成综述",
+      "note": "综述把训练时漂移列为连续时间生成的一条路线。",
+      "source": "user",
+      "createdAt": "2026-11-06T09:51:57.952Z",
+      "updatedAt": "2026-11-06T09:51:57.952Z"
+    },
+    {
+      "id": "r-0a5c45fa",
+      "from": "discrete-diffusion-language-models-eve-green-fra-438f06eb",
+      "to": "continuous-time-generative-models-a-survey-grace-f1d2c452",
+      "kind": "same-topic",
+      "label": "离散语言模型综述",
+      "note": "综述覆盖离散扩散语言模型与并行解码。",
+      "source": "user",
+      "createdAt": "2026-11-06T09:51:57.953Z",
+      "updatedAt": "2026-11-06T09:51:57.953Z"
+    },
+    {
+      "id": "r-106d7fb4",
+      "from": "flow-matching-for-language-generation-alice-smit-29764bc7",
+      "to": "continuous-time-generative-models-a-survey-grace-f1d2c452",
+      "kind": "custom",
+      "label": "综述覆盖本方向",
+      "note": "综述把 Flow Matching 作为连续时间生成的代表方法之一。",
+      "source": "user",
+      "createdAt": "2026-11-06T09:51:57.953Z",
+      "updatedAt": "2026-11-06T09:51:57.953Z"
+    },
+    {
+      "id": "r-9dc75455",
+      "from": "continuous-time-generative-models-a-survey-grace-f1d2c452",
+      "to": "flow-matching-for-language-generation-alice-smit-29764bc7",
+      "kind": "cites",
+      "label": "自动解析",
+      "note": "[1] Smith, A., Jones, B. (2026). Flow Matching for Language Generation. Journal of\nSynthetic Tests. https://doi.org/10.1234/flowlm.2026",
+      "source": "agent",
+      "createdAt": "2026-11-06T09:51:57.959Z",
+      "updatedAt": "2026-11-06T09:51:57.959Z"
+    },
+    {
+      "id": "r-15ab9267",
+      "from": "continuous-time-generative-models-a-survey-grace-f1d2c452",
+      "to": "training-time-drift-for-generative-modeling-caro-61017e97",
+      "kind": "cites",
+      "label": "自动解析",
+      "note": "[2] White, C., Brown, D. (2026). Training-Time Drift for Generative Modeling.\narXiv:2601.01234.",
+      "source": "agent",
+      "createdAt": "2026-11-06T09:51:57.959Z",
+      "updatedAt": "2026-11-06T09:51:57.959Z"
+    },
+    {
+      "id": "r-45ca50ec",
+      "from": "continuous-time-generative-models-a-survey-grace-f1d2c452",
+      "to": "discrete-diffusion-language-models-eve-green-fra-438f06eb",
+      "kind": "cites",
+      "label": "自动解析",
+      "note": "[3] Green, E., Black, F. (2025). Discrete Diffusion Language Models. NeurIPS 2025.",
+      "source": "agent",
+      "createdAt": "2026-11-06T09:51:57.960Z",
+      "updatedAt": "2026-11-06T09:51:57.960Z"
+    },
+    {
+      "id": "r-e5a7dc37",
+      "from": "discrete-diffusion-language-models-eve-green-fra-438f06eb",
+      "to": "flow-matching-for-language-generation-alice-smit-29764bc7",
+      "kind": "cites",
+      "label": "自动解析",
+      "note": "[1] Smith, A., Jones, B. (2026). Flow Matching for Language Generation. Journal of\nSynthetic Tests. https://doi.org/10.1234/flowlm.2026",
+      "source": "agent",
+      "createdAt": "2026-11-06T09:51:57.963Z",
+      "updatedAt": "2026-11-06T09:51:57.963Z"
+    },
+    {
+      "id": "r-5d71bc79",
+      "from": "discrete-diffusion-language-models-eve-green-fra-438f06eb",
+      "to": "training-time-drift-for-generative-modeling-caro-61017e97",
+      "kind": "cites",
+      "label": "自动解析",
+      "note": "[2] White, C., Brown, D. (2026). Training-Time Drift for Generative Modeling.\narXiv:2601.01234.",
+      "source": "agent",
+      "createdAt": "2026-11-06T09:51:57.964Z",
+      "updatedAt": "2026-11-06T09:51:57.964Z"
+    },
+    {
+      "id": "r-007fb74b",
+      "from": "training-time-drift-for-generative-modeling-caro-61017e97",
+      "to": "flow-matching-for-language-generation-alice-smit-29764bc7",
+      "kind": "cites",
+      "label": "自动解析",
+      "note": "[1] Smith, A., Jones, B. (2026). Flow Matching for Language Generation. Journal of\nSynthetic Tests. https://doi.org/10.1234/flowlm.2026",
+      "source": "agent",
+      "createdAt": "2026-11-06T09:51:57.969Z",
+      "updatedAt": "2026-11-06T09:51:57.969Z"
+    }
+  ]
+}

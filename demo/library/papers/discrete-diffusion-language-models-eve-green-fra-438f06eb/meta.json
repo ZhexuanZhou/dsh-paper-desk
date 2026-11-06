@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "discrete-diffusion-language-models-eve-green-fra-438f06eb",
+  "title": "Discrete Diffusion Language Models",
+  "authors": [
+    "Eve Green",
+    "Frank Black"
+  ],
+  "year": 2025,
+  "venue": "NeurIPS 2025",
+  "doi": "",
+  "url": "",
+  "abstract": "Masked discrete diffusion for language: corruption processes, sampling schedules and the trade-off between parallel decoding and quality.",
+  "keywords": [],
+  "tags": [
+    "demo"
+  ],
+  "status": "unread",
+  "rating": 0,
+  "addedAt": "2026-11-06T09:51:57.944Z",
+  "updatedAt": "2026-11-06T09:51:57.945Z",
+  "pdfFile": "paper.pdf",
+  "pdfSha256": "438f06ebc495b63b6f317ae9651c285717340ff749febc35788ef83ad7c76f91",
+  "pageCount": 1,
+  "source": "import",
+  "sourceUrl": ""
+}

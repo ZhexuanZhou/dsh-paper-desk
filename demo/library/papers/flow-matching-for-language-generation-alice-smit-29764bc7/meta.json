@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "flow-matching-for-language-generation-alice-smit-29764bc7",
+  "title": "Flow Matching for Language Generation",
+  "authors": [
+    "Alice Smith",
+    "Bob Jones"
+  ],
+  "year": 2026,
+  "venue": "Journal of Synthetic Tests",
+  "doi": "10.1234/flowlm.2026",
+  "url": "",
+  "abstract": "We study continuous-time flow matching for discrete language generation, mapping noise to token embeddings with a learned velocity field.",
+  "keywords": [],
+  "tags": [
+    "demo"
+  ],
+  "status": "unread",
+  "rating": 0,
+  "addedAt": "2026-11-06T09:51:57.927Z",
+  "updatedAt": "2026-11-06T09:51:57.929Z",
+  "pdfFile": "paper.pdf",
+  "pdfSha256": "29764bc71fcf52cad5dafdf70970abd7d360b478b479837dcebae76f9167dbd5",
+  "pageCount": 1,
+  "source": "import",
+  "sourceUrl": ""
+}

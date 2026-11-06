@@ -27,6 +27,14 @@
 | 管理与导出 | 阅读状态（未读/在读/已读/归档）、星级、标签、在 Finder 中显示、BibTeX 导出、删除进回收站。 |
 | 本地化 | 中英双语界面，跟随设置里的语言开关。 |
 
+## 示例数据
+
+仓库里带一份可复现的演示论文库 **`demo/library/`**（4 篇合成论文、5 条手写关系 + 5 条按参考文献自动解析出的 `cites` 边，PDF 只有几十 KB），用来直接看关联图谱、AI 发现和引用补全的效果；已复制一份到 `~/Documents/PaperDesk-Demo/library`。
+
+- 打开方式：面板「设置 → 库路径」选 `~/Documents/PaperDesk-Demo/library`（或仓库里的 `demo/library`），切回来时改回自己的论文库即可。
+- 重新生成 / 换目录：`node scripts/make-demo-library.mjs --out <dir> --force`（需要先 `pnpm run build` 生成 `lib/`）。
+- 这些是合成论文，只用于演示与测试，不是真实文献。
+
 ## 快速开始
 
 1. 点左侧栏的 **论文库图标**（在插件/日程图标一组里）打开面板。
@@ -135,6 +143,16 @@ AI 侧栏里每条回答右下角有 **「生成卡片」**：打开编辑器，
 | `paper_update` | 改元数据、标签、状态、评分 |
 | `paper_sync` | 网盘同步健康度、外部变更、冲突 |
 
+## 安装到其它机器 / 发布到市场
+
+本插件是标准 DSH 插件包（`dsh.bundle` + `cordis.patch.yml` + `lib/` 预构建产物），可以：
+
+- 从本地目录安装：`dsh plugin --profile <profile> add /path/to/dsh-paper-desk`
+- 从 npm 安装（发布后）：`dsh plugin --profile <profile> add dsh-paper-desk`
+- 发布到社区市场：需要在 npm 发布，并向 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提交一个条目（市场 dshmarket 从该列表同步）。
+
+完整步骤、市场条目模板和自检清单见 **[docs/PUBLISHING.md](docs/PUBLISHING.md)**。
+
 ## 目录结构与同步原理
 
 ```
@@ -215,6 +233,6 @@ node scripts/smoke.mjs [可选真实PDF路径]   # 28 项领域冒烟测试
 
 ## English summary
 
-PaperDesk is a Mendeley-style paper library for DeepSeek Harness. Pick a directory (ideally inside iCloud Drive / Dropbox / Nutstore), then drag PDFs in: metadata is inferred and optionally enriched from Crossref, each paper gets a Markdown notes file with fixed sections, the built-in reader shows the PDF and extracted text, and one click hands the paper to the agent (summary / method / critique / related work / study questions) with a prepared prompt. Nine `paper_*` tools let any session list, search, read and annotate papers. Everything is plain files under your chosen root, so any cloud drive syncs it; writes are hash-guarded and conflicting edits become conflict copies instead of overwrites, with a Sync page for external changes, conflicts and iCloud placeholders.
+PaperDesk is a Mendeley-style paper library for DeepSeek Harness. Pick a directory (ideally inside iCloud Drive / Dropbox / Nutstore), then drag PDFs in: metadata is inferred and optionally enriched from Crossref, each paper gets a Markdown notes file with fixed sections, the built-in reader shows the PDF and extracted text, and one click hands the paper to the agent (summary / method / critique / related work / study questions) with a prepared prompt. Nine `paper_*` tools let any session list, search, read and annotate papers. A reproducible demo library (`demo/library/`, 4 synthetic papers and 10 relations) ships in the repo for trying the graph, and the package is prepared for npm + the community plugin market (see docs/PUBLISHING.md). Everything is plain files under your chosen root, so any cloud drive syncs it; writes are hash-guarded and conflicting edits become conflict copies instead of overwrites, with a Sync page for external changes, conflicts and iCloud placeholders.
 
 Beyond reading, the library builds knowledge: AI answers become editable **note cards** next to your notes, any 2–6 papers can be **compared** (metadata matrix + an AI report that can be saved and reopened), and papers are linked in a typed **relation graph** (cites / related / method / contrast / same-topic / custom) with a force-directed view; relation suggestions from a comparison can be added to the graph in one click.
