@@ -14,11 +14,11 @@ export type Lang = 'zh' | 'en'
 const zh = {
   // ── panel registration (used by client/index.tsx) ──────────────────────
   'title': '论文库 PaperDesk',
-  'description': '管理论文：导入 PDF、自动补全元数据、记笔记与高亮，并让 Agent 精读论文。',
+  'description': '管理论文：导入 PDF、自动补全元数据、记笔记与高亮，并让 AI 帮你读论文。',
 
   // ── app shell ──────────────────────────────────────────────────────────
   'app.title': '论文库 · PaperDesk',
-  'app.subtitle': 'PDF 论文库 · 笔记 · Agent 精读 · 网盘同步',
+  'app.subtitle': 'PDF 论文库 · 笔记 · AI 助读 · 网盘同步',
   'app.lang.zh': '中文',
   'app.lang.en': 'English',
   'app.lang.label': '界面语言',
@@ -196,7 +196,7 @@ const zh = {
   'annotations.saveFailed': '保存批注失败',
   'annotations.deleteFailed': '删除批注失败',
   'annotations.askTitle': '针对这条批注问 Agent',
-  'annotations.askDesc': '问题会和引用原文一起带给 Agent，并在新会话中发送。',
+  'annotations.askDesc': '问题会和引用原文一起发给 AI 助读，并在右侧面板中继续。',
   'annotations.askPlaceholder': '想问什么？',
   'annotations.askSubmit': '发送',
   'annotations.askFailed': '无法向 Agent 提问',
@@ -288,8 +288,8 @@ const zh = {
   'notes.retry': '重新加载',
 
   // ── in-panel AI drawer ─────────────────────────────────────────────────
-  'ai.title': 'AI 解读',
-  'ai.emptyHint': '选择上面的任务，让 Agent 在这里精读这篇论文。',
+  'ai.title': 'AI 助读',
+  'ai.emptyHint': '点上方任务快速开始，或在下方直接提问。',
   'ai.thinking': '正在思考…',
   'ai.attaching': '正在连接会话…',
   'ai.stop': '停止',
@@ -305,7 +305,7 @@ const zh = {
   'ai.openInSessionFailed': '无法打开完整会话',
   'ai.jumpHint': '引用页',
   'ai.retry': '重试',
-  'ai.error': 'AI 解读失败',
+  'ai.error': 'AI 助读失败',
   'ai.attachFailed': '无法连接 AI 会话',
   'ai.nothingToSave': '还没有可保存的回复',
   'ai.scrolledUpHint': '跳到最新',
@@ -313,8 +313,8 @@ const zh = {
   'ai.reasoning': '推理过程',
 
   // ── agent assist ───────────────────────────────────────────────────────
-  'assist.title': 'Agent 精读',
-  'assist.hint': '在右侧面板中运行 Agent',
+  'assist.title': 'AI 助读',
+  'assist.hint': '在右侧面板中让 AI 帮你读这篇论文',
   'assist.summary': '总结',
   'assist.method': '方法精读',
   'assist.critique': '审阅',
@@ -323,8 +323,8 @@ const zh = {
   'assist.quote': '针对选中内容提问',
   'assist.custom': '自定义',
   'assist.failed': '无法启动新会话',
-  'assist.question.title': '向 Agent 提问',
-  'assist.question.desc': '问题会带着选中内容一起发送给右侧面板中的 Agent。',
+  'assist.question.title': '向 AI 助读提问',
+  'assist.question.desc': '问题会带着选中内容一起发送到右侧 AI 助读面板。',
   'assist.question.placeholder': '输入你的问题…',
   'assist.question.ask': '开始提问',
 
@@ -443,7 +443,7 @@ const zh = {
   'aria.tagFilter': '按标签筛选',
   'aria.sort': '排序方式',
   'aria.notesEditor': '笔记编辑器',
-  'aria.assistBar': 'Agent 精读操作',
+  'aria.assistBar': 'AI 助读操作',
   'aria.rating': '评分',
   'aria.language': '切换界面语言',
   'aria.readerTabs': '论文内容标签',
@@ -454,7 +454,7 @@ const zh = {
   'cards.create': '新建卡片',
   'cards.loading': '正在加载卡片…',
   'cards.empty': '还没有卡片',
-  'cards.emptyHint': '从 AI 解读的回答生成卡片，把结论沉淀在笔记旁边。',
+  'cards.emptyHint': '从 AI 助读的回答生成卡片，把结论沉淀在笔记旁边。',
   'cards.editorCreate': '生成卡片',
   'cards.editorEdit': '编辑卡片',
   'cards.editorHint': '卡片保存在论文目录的 cards.json 中，可以编辑后再插入笔记。',
@@ -523,11 +523,11 @@ type DictKey = keyof typeof zh
 const en: Record<DictKey, string> = {
   // ── panel registration (used by client/index.tsx) ──────────────────────
   'title': 'PaperDesk Library',
-  'description': 'Manage papers: import PDFs, enrich metadata, take notes and let the agent deep-read them.',
+  'description': 'Manage papers: import PDFs, enrich metadata, take notes and let AI help you read them.',
 
   // ── app shell ──────────────────────────────────────────────────────────
   'app.title': 'PaperDesk · Library',
-  'app.subtitle': 'PDF library · notes · agent deep-reads · cloud sync',
+  'app.subtitle': 'PDF library · notes · AI reading · cloud sync',
   'app.lang.zh': '中文',
   'app.lang.en': 'English',
   'app.lang.label': 'Interface language',
@@ -798,7 +798,7 @@ const en: Record<DictKey, string> = {
 
   // ── in-panel AI drawer ─────────────────────────────────────────────────
   'ai.title': 'AI reading',
-  'ai.emptyHint': 'Pick a task above and let the agent read this paper right here.',
+  'ai.emptyHint': 'Pick a task above to start, or ask below.',
   'ai.thinking': 'Thinking…',
   'ai.attaching': 'Connecting the session…',
   'ai.stop': 'Stop',
@@ -822,8 +822,8 @@ const en: Record<DictKey, string> = {
   'ai.reasoning': 'Reasoning',
 
   // ── agent assist ───────────────────────────────────────────────────────
-  'assist.title': 'Agent deep-read',
-  'assist.hint': 'runs the agent in the side panel',
+  'assist.title': 'AI reading',
+  'assist.hint': 'Read this paper with AI in the side panel',
   'assist.summary': 'Summary',
   'assist.method': 'Method deep-dive',
   'assist.critique': 'Critique',
@@ -832,8 +832,8 @@ const en: Record<DictKey, string> = {
   'assist.quote': 'Ask about selection',
   'assist.custom': 'Custom',
   'assist.failed': 'Could not start a new session',
-  'assist.question.title': 'Ask the agent',
-  'assist.question.desc': 'The question and the selection are sent to the agent in the side panel.',
+  'assist.question.title': 'Ask the AI reader',
+  'assist.question.desc': 'The question and the selection are sent to the AI panel on the right.',
   'assist.question.placeholder': 'Type your question…',
   'assist.question.ask': 'Ask',
 
@@ -952,7 +952,7 @@ const en: Record<DictKey, string> = {
   'aria.tagFilter': 'Filter by tag',
   'aria.sort': 'Sort order',
   'aria.notesEditor': 'Notes editor',
-  'aria.assistBar': 'Agent deep-read actions',
+  'aria.assistBar': 'AI reading actions',
   'aria.rating': 'Rating',
   'aria.language': 'Switch interface language',
   'aria.readerTabs': 'Paper content tabs',

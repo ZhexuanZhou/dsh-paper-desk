@@ -11,10 +11,6 @@ import type { AiRow, AiThreadController } from './aiSession.js'
 import { Markdown } from './markdown.js'
 import { Button, Spinner } from './ui.js'
 
-/** Tasks rendered as chips (提问 focuses the follow-up box instead). */
-type PanelTask = 'summary' | 'method' | 'critique' | 'related'
-const PANEL_TASKS: readonly PanelTask[] = ['summary', 'method', 'critique', 'related']
-
 /** Every string the panel renders (owned by i18n, zh + en). */
 export interface AiPanelLabels {
   title: string
@@ -42,7 +38,8 @@ export interface AiPanelProps {
   busyTask: AssistTask | null
   labels: AiPanelLabels
   onRunTask: (task: AssistTask, extra?: string) => void | Promise<void>
-  onAsk: (question: string) => void | Promise<void>
+  /** Resolves true when the prompt was accepted by the session. */
+  onAsk: (question: string) => boolean | Promise<boolean>
   onStop: () => void | Promise<void>
   onSaveToNotes: (text: string) => void | Promise<void>
   onCopy: (text: string) => void | Promise<void>
@@ -84,22 +81,22 @@ function firstLine(text: string): string {
 }
 
 export function AiPanel(props: AiPanelProps) {
-  const { ai, busyTask, labels, onRunTask, onAsk, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
+  const { ai, labels, onAsk, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
 
   const subscribe = useCallback((listener: () => void) => ai.subscribe(listener), [ai])
   const getSnapshot = useCallback(() => ai.getSnapshot(), [ai])
   const snapshot = useSyncExternalStore(subscribe, getSnapshot)
 
   const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
   const [follow, setFollow] = useState(true)
   const [hasNew, setHasNew] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   const rows = snapshot.rows
   const running = snapshot.status === 'running'
   const attaching = snapshot.status === 'attaching'
-  const disabled = running || attaching
+  const disabled = running || attaching || sending
   const answer = ai.lastAnswer()
   const pages = useMemo(() => collectCitedPages(rows), [rows])
 
@@ -149,21 +146,19 @@ export function AiPanel(props: AiPanelProps) {
     setHasNew(false)
   }
 
-  const focusFollowUp = (): void => {
-    inputRef.current?.focus()
-  }
-
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (text === '' || disabled) return
-    setDraft('')
     setFollow(true)
-    await onAsk(text)
-  }
-
-  const runTask = (task: AssistTask): void => {
-    if (disabled || busyTask !== null) return
-    void onRunTask(task)
+    setSending(true)
+    try {
+      const accepted = await onAsk(text)
+      // Keep the question in the box when the session refused it, so the
+      // failure is visible and the user can retry instead of losing the text.
+      if (accepted) setDraft('')
+    } finally {
+      setSending(false)
+    }
   }
 
   const retryLast = (prompt: string): void => {
@@ -237,24 +232,6 @@ export function AiPanel(props: AiPanelProps) {
 
   return (
     <div className="pd-ai" role="region" aria-label={labels.title}>
-      <div className="pd-ai-tasks" role="group" aria-label={labels.title}>
-        {PANEL_TASKS.map((task) => (
-          <Button
-            key={task}
-            size="sm"
-            variant="ghost"
-            disabled={disabled || busyTask !== null}
-            loading={busyTask === task}
-            onClick={() => runTask(task)}
-          >
-            {labels.taskLabels[task]}
-          </Button>
-        ))}
-        <Button size="sm" variant="ghost" disabled={disabled || busyTask !== null} onClick={focusFollowUp}>
-          {labels.taskLabels.questions}
-        </Button>
-      </div>
-
       <div className="pd-ai-body">
         <div className="pd-ai-scroll" ref={scrollRef} onScroll={onScroll}>
           {attaching ? (
@@ -295,7 +272,7 @@ export function AiPanel(props: AiPanelProps) {
             </div>
           ))}
 
-          {running ? (
+          {running || sending ? (
             <div className="pd-ai-thinking">
               <Spinner size={11} label={labels.thinking} />
               <span>{labels.thinking}</span>
@@ -353,7 +330,6 @@ export function AiPanel(props: AiPanelProps) {
         </div>
         <div className="pd-ai-inputRow">
           <textarea
-            ref={inputRef}
             className="pd-textarea pd-ai-input"
             rows={2}
             value={draft}

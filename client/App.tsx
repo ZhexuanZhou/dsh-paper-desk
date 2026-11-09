@@ -1096,12 +1096,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   /** Follow-up / retry inside the AI panel: send raw text into the same session. */
   const handleAiAsk = useCallback(
-    async (question: string): Promise<void> => {
+    async (question: string): Promise<boolean> => {
       const paperId = selectedId
-      if (paperId === null) return
+      if (paperId === null) return false
       const text = question.trim()
-      if (text === '') return
-      if (!(await ensureAiPaper(paperId))) return
+      if (text === '') return false
+      if (!(await ensureAiPaper(paperId))) return false
       try {
         const emptyThread = ai.getSnapshot().rows.length === 0
         const title = detail?.meta.title ?? paperId
@@ -1110,8 +1110,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         if (!result.ok) {
           pushToast('error', result.error !== undefined && result.error !== '' ? result.error : tRef.current('ai.error'))
         }
+        return result.ok
       } catch (error) {
         reportError(error, 'ai.error')
+        return false
       }
     },
     [selectedId, ai, ensureAiPaper, pushToast, reportError],

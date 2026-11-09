@@ -119,7 +119,7 @@ export interface ReaderViewProps {
   onUndo: () => Promise<void>
   onAskAboutSelection: (payload: { quote: string; page: number; question: string; rects: AnnotationRect[] }) => Promise<void>
   ai: AiThreadController
-  onAiAsk: (question: string) => Promise<void>
+  onAiAsk: (question: string) => Promise<boolean>
   onAiStop: () => Promise<void>
   onAiSaveToNotes: (text: string) => Promise<void>
   onAiCopy: (text: string) => Promise<void>
@@ -760,23 +760,6 @@ export function ReaderView(props: ReaderViewProps) {
             <Button
               size="sm"
               variant="ghost"
-              icon={<IconSpark size={13} />}
-              aria-pressed={drawerButtonPressed(drawer, 'ai')}
-              onClick={() => {
-                if (tab !== 'read') {
-                  setTab('read')
-                  openDrawer('ai')
-                  return
-                }
-                toggleDrawer('ai')
-              }}
-              title={t('ai.title')}
-            >
-              {t('ai.title')}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
               onClick={onOpenRelations}
               title={t('reader.relations', { n: relationCount })}
             >
@@ -892,10 +875,19 @@ export function ReaderView(props: ReaderViewProps) {
               tabs={READER_TABS.map((id) => ({ id, label: tabLabel(t, id) }))}
             />
             <div className="pd-assist-inline" role="group" aria-label={t('aria.assistBar')} title={t('assist.hint')}>
-              <span className="pd-assist-inline-label">
-                <IconSpark size={12} />
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<IconSpark size={12} />}
+                aria-pressed={drawerButtonPressed(drawer, 'ai')}
+                onClick={() => {
+                  setTab('read')
+                  openDrawer('ai')
+                }}
+                title={t('assist.hint')}
+              >
                 {t('assist.title')}
-              </span>
+              </Button>
               {ASSIST_TASKS.map((task) => (
                 <Button
                   key={task}
@@ -1048,7 +1040,7 @@ export function ReaderView(props: ReaderViewProps) {
                     busyTask={assistBusy}
                     labels={aiLabels}
                     onRunTask={(task) => runTask(task)}
-                    onAsk={(text) => void onAiAsk(text)}
+                    onAsk={(text) => onAiAsk(text)}
                     onStop={() => void onAiStop()}
                     onSaveToNotes={(text) => void onAiSaveToNotes(text)}
                     onCopy={(text) => void onAiCopy(text)}
