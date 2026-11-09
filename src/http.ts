@@ -824,7 +824,7 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
     }
 
     if (route === 'file') {
-      if (method !== 'GET') return methodNotAllowed(res)
+      if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed(res)
       const id = requirePdfId(q['id'] ?? null)
       const meta = await readMeta(root, id)
       if (meta === null) throw new HttpError(404, `paper not found: ${id}`)
@@ -834,12 +834,57 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
       if (bytes === undefined) {
         throw new HttpError(404, 'PDF file is missing locally (it may still need to download from the cloud drive)')
       }
-      res.writeHead(200, {
+      const etag = meta.pdfSha256 !== null && meta.pdfSha256 !== ''
+        ? `"${meta.pdfSha256}"`
+        : `W/${bytes.length}-${bytes.length}`
+      const reqHeaders = req.headers ?? {}
+      if (reqHeaders['if-none-match'] === etag) {
+        res.writeHead(304, { etag, 'cache-control': 'private, max-age=3600' })
+        res.end('')
+        return
+      }
+      const headers: Record<string, string> = {
         'content-type': 'application/pdf',
         'content-disposition': 'inline',
-        'cache-control': 'no-store',
-      })
-      res.end(new Uint8Array(bytes))
+        'accept-ranges': 'bytes',
+        etag,
+        'cache-control': 'private, max-age=3600',
+      }
+      const rangeHeader = reqHeaders['range']
+      let start = 0
+      let end = bytes.length - 1
+      let status = 200
+      if (typeof rangeHeader === 'string') {
+        const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim())
+        if (match === null) {
+          res.writeHead(416, { 'content-range': `bytes */${bytes.length}` })
+          res.end('')
+          return
+        }
+        const rawStart = match[1] === '' ? Number.NaN : Number.parseInt(match[1] ?? '', 10)
+        const rawEnd = match[2] === '' ? Number.NaN : Number.parseInt(match[2] ?? '', 10)
+        if (Number.isFinite(rawStart)) start = rawStart
+        if (Number.isFinite(rawEnd)) end = rawEnd
+        if (!Number.isFinite(rawStart) && Number.isFinite(rawEnd)) {
+          start = Math.max(0, bytes.length - end)
+          end = bytes.length - 1
+        }
+        if (start < 0 || end < start || start >= bytes.length) {
+          res.writeHead(416, { 'content-range': `bytes */${bytes.length}` })
+          res.end('')
+          return
+        }
+        end = Math.min(end, bytes.length - 1)
+        status = 206
+        headers['content-range'] = `bytes ${start}-${end}/${bytes.length}`
+      }
+      headers['content-length'] = String(end - start + 1)
+      res.writeHead(status, headers)
+      if (method === 'HEAD') {
+        res.end('')
+        return
+      }
+      res.end(bytes.subarray(start, end + 1))
       return
     }
 

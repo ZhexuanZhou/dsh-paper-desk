@@ -77,12 +77,12 @@ const MIN_ZOOM = 0.25
 const MAX_ZOOM = 5
 /** Horizontal breathing room around pages inside the scroll area. */
 const PAGE_GUTTER = 16
-const MAX_DPR = 3
+const MAX_DPR = 2
 /** Host validator bound (`ANNOTATION_LIMITS`) mirrored client-side. */
 const MAX_QUOTE = 4000
 const MAX_RECTS = 60
 /** Render pages comfortably before they enter the viewport. */
-const RENDER_MARGIN = '900px 0px'
+const RENDER_MARGIN = '600px 0px'
 const STYLE_ATTR = 'paper-desk-viewer'
 
 /* ── scoped styles (injected once, removed on unmount) ───────────────────── */
@@ -1039,33 +1039,42 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       view.renderedKey = key
       view.renderTask = undefined
 
-      // Selectable text layer (pdf.js TextLayer + served web/pdf_viewer.css).
-      // A fresh `.textLayer` container per render means a stale, cancelled layer
-      // can only ever write into its own detached node.
-      const container = document.createElement('div')
-      container.className = 'textLayer'
-      container.dataset.pdvPage = String(pageNumber)
-      view.textHost.replaceChildren(container)
-      try {
-        const source =
-          typeof page.streamTextContent === 'function'
-            ? page.streamTextContent({ includeMarkedContent: true, disableNormalization: true })
-            : await page.getTextContent({ includeMarkedContent: true, disableNormalization: true })
+      // Selectable text is useful but not on the raster critical path. Build it
+      // on idle so scrolling starts as soon as the canvas is painted.
+      const buildTextLayer = async (): Promise<void> => {
         if (epoch !== epochRef.current || token !== view.token) return
-        const textLayer = new pdfjs.TextLayer({ textContentSource: source, container, viewport })
-        await textLayer.render()
-        if (epoch !== epochRef.current || token !== view.token) return
-        const hasText = (container.textContent ?? '').trim().length > 0
-        setLowTextPages((previous) => {
-          const isLow = !hasText
-          if (previous.has(pageNumber) === isLow) return previous
-          const next = new Set(previous)
-          if (isLow) next.add(pageNumber)
-          else next.delete(pageNumber)
-          return next
-        })
-      } catch {
-        // Text layer failure is not fatal: the raster page stays usable.
+        // A fresh `.textLayer` container per render means a stale, cancelled
+        // layer can only ever write into its own detached node.
+        const container = document.createElement('div')
+        container.className = 'textLayer'
+        container.dataset.pdvPage = String(pageNumber)
+        view.textHost.replaceChildren(container)
+        try {
+          const source =
+            typeof page.streamTextContent === 'function'
+              ? page.streamTextContent({ includeMarkedContent: true, disableNormalization: true })
+              : await page.getTextContent({ includeMarkedContent: true, disableNormalization: true })
+          if (epoch !== epochRef.current || token !== view.token) return
+          const textLayer = new pdfjs.TextLayer({ textContentSource: source, container, viewport })
+          await textLayer.render()
+          if (epoch !== epochRef.current || token !== view.token) return
+          const hasText = (container.textContent ?? '').trim().length > 0
+          setLowTextPages((previous) => {
+            const isLow = !hasText
+            if (previous.has(pageNumber) === isLow) return previous
+            const next = new Set(previous)
+            if (isLow) next.add(pageNumber)
+            else next.delete(pageNumber)
+            return next
+          })
+        } catch {
+          // Text layer failure is not fatal: the raster page stays usable.
+        }
+      }
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(() => void buildTextLayer(), { timeout: 600 })
+      } else {
+        window.setTimeout(() => void buildTextLayer(), 0)
       }
     } catch (error) {
       if (epoch !== epochRef.current || token !== view.token) return

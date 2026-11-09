@@ -2074,6 +2074,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         </div>
 
         <div className="pd-top-actions">
+          {nav === 'library' && listCollapsed ? (
+            <Button variant="ghost" icon={<IconBook />} onClick={toggleListCollapsed}>
+              {t('list.restore')}
+            </Button>
+          ) : null}
           <Button
             variant="primary"
             icon={<IconImport />}
