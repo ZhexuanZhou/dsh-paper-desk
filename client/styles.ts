@@ -1289,6 +1289,21 @@ export const CSS = `
 .pd-ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
 .pd-ai-actions .pd-btn { min-height: 24px; padding: 2px 6px; color: ${FG_2}; font-size: 11.5px; }
 .pd-ai-actions .pd-btn:hover:not(:disabled) { color: ${FG}; }
+.pd-ai-tools-toggle {
+  align-self: flex-start;
+  margin: 2px 0 6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: ${FG_2};
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.pd-ai-tools-toggle:hover { background: ${L2}; color: ${FG}; }
+.pd-md math { font-size: 1.05em; }
+
 .pd-ai-ime-hint {
   margin-top: 3px;
   color: ${FG_2};

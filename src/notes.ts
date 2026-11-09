@@ -197,9 +197,10 @@ function appendedBlock(input: NoteAppendInput): string[] {
     }
   }
 
-  const lines = [`- ${stamp} · ${by}`]
-  for (const line of text.split('\n')) lines.push(line.length > 0 ? `  ${line}` : '  ')
-  return lines
+  // Keep the appended Markdown block-level (no per-line 2-space indent):
+  // indenting every line made fenced/list content render as a code block in
+  // the notes preview.
+  return [`- ${stamp} · ${by}`, '', ...text.split('\n')]
 }
 
 /** Insert the block into the matching canonical section of `markdown`. */

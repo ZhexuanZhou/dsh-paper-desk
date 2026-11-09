@@ -6,6 +6,7 @@
  * a note written by another device cannot inject markup or script.
  */
 import { useMemo } from 'react'
+import katex from 'katex'
 import { Marked } from 'marked'
 import type { RendererObject } from 'marked'
 
@@ -51,11 +52,71 @@ const renderer: RendererObject = {
 
 const marked = new Marked({ gfm: true, breaks: true, renderer })
 
+/** Kinds of formulas worth passing to KaTeX (avoids treating `$5` as math). */
+function looksLikeMath(source: string): boolean {
+  const trimmed = source.trim()
+  if (trimmed === '' || trimmed.length > 500) return false
+  if (/[\\^_{}=]/.test(trimmed)) return true
+  return /\\[a-zA-Z]+/.test(trimmed)
+}
+
+/**
+ * Render Markdown with inline/display LaTeX typeset by KaTeX. Formulas are
+ * replaced by placeholders before marked runs (so Markdown escaping cannot
+ * break them), then expanded to MathML. Code spans/fences are protected too.
+ */
+function renderMarkdownWithMath(markdown: string): string {
+  const codeParts: string[] = []
+  const mathParts: string[] = []
+  const codeToken = (index: number): string => `PAPERDESKCODEBLOCK${index}`
+  const mathToken = (index: number): string => `PAPERDESKMATHFORMULA${index}`
+
+  let text = markdown.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, (block) => {
+    codeParts.push(block)
+    return ` ${codeToken(codeParts.length - 1)} `
+  })
+  text = text.replace(/`[^`\n]*`/g, (span) => {
+    codeParts.push(span)
+    return ` ${codeToken(codeParts.length - 1)} `
+  })
+
+  const replaceMath = (source: string, displayMode: boolean): string => {
+    if (!looksLikeMath(source)) return displayMode ? `$$${source}$$` : `$${source}$`
+    try {
+      const rendered = katex.renderToString(source, {
+        displayMode,
+        output: 'mathml',
+        throwOnError: false,
+        strict: 'ignore',
+      })
+      mathParts.push(rendered)
+      return ` ${mathToken(mathParts.length - 1)} `
+    } catch {
+      return displayMode ? `$$${source}$$` : `$${source}$`
+    }
+  }
+
+  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_match, source: string) => replaceMath(source, true))
+  text = text.replace(/\$([^$\n]{1,400}?)\$/g, (_match, source: string) => replaceMath(source, false))
+
+  const html = marked.parse(text)
+  const rendered = typeof html === 'string' ? html : escapeHtml(text)
+  return rendered
+    .replace(/PAPERDESKMATHFORMULA(\d+)/g, (_m, index: string) => mathParts[Number(index)] ?? '')
+    .replace(/PAPERDESKCODEBLOCK(\d+)/g, (_m, index: string) => {
+      const original = codeParts[Number(index)] ?? ''
+      if (original.startsWith('```') || original.startsWith('~~~')) {
+        const body = original.replace(/^(```|~~~)[^\n]*\n?/, '').replace(/\n?(```|~~~)\s*$/, '')
+        return `<pre><code>${escapeHtml(body)}</code></pre>`
+      }
+      return `<code>${escapeHtml(original.replace(/^`|`$/g, ''))}</code>`
+    })
+}
+
 /** Render markdown to a safe HTML string (never throws). */
 export function renderMarkdown(markdown: string): string {
   try {
-    const html = marked.parse(markdown)
-    return typeof html === 'string' ? html : escapeHtml(markdown)
+    return renderMarkdownWithMath(markdown)
   } catch {
     return `<p>${escapeHtml(markdown)}</p>`
   }

@@ -8,12 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@deepseek-ai/dsh-tools':
-        specifier: 0.2.2-rc.1
-        version: 0.2.2-rc.1(e35b5bf90050f29264a4d936e4d34502)
-      '@deepseek-ai/schemastery':
-        specifier: ^3.18.1
-        version: 3.19.0
+      katex:
+        specifier: ^0.19.1
+        version: 0.19.1
       marked:
         specifier: ^16.4.2
         version: 16.4.2
@@ -33,6 +30,12 @@ importers:
       '@deepseek-ai/dsh-host-webserver':
         specifier: 0.2.2-rc.1
         version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.2.2-rc.1
+        version: 0.2.2-rc.1(e35b5bf90050f29264a4d936e4d34502)
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.19.0
       '@types/node':
         specifier: ^24.0.0
         version: 24.19.2
@@ -872,6 +875,10 @@ packages:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
     engines: {node: '>= 0.8'}
 
+  commander@15.1.0:
+    resolution: {integrity: sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ==}
+    engines: {node: '>=22.12.0'}
+
   compressible@2.0.18:
     resolution: {integrity: sha512-AF3r7P5dWxL8MxyITRMlORQNaOA2IkAFaTr4k7BUumjPtRpGDTZpl0Pb1XCO6JeDCBdp126Cgs9sMxqSjgYyRg==}
     engines: {node: '>= 0.6'}
@@ -916,6 +923,10 @@ packages:
 
   js-yaml@4.3.2:
     resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
+    hasBin: true
+
+  katex@0.19.1:
+    resolution: {integrity: sha512-jG8uKntjSEcm2EpQOh0XturpPuuC9r3Sq5HLHdsFdWZT27E672SF19QEi+of0/YeOy15lDgRhKvr5614uRrEfA==}
     hasBin: true
 
   marked@16.4.2:
@@ -1739,6 +1750,8 @@ snapshots:
 
   bytes@3.1.2: {}
 
+  commander@15.1.0: {}
+
   compressible@2.0.18:
     dependencies:
       mime-db: 1.54.0
@@ -1804,6 +1817,10 @@ snapshots:
   js-yaml@4.3.2:
     dependencies:
       argparse: 2.0.1
+
+  katex@0.19.1:
+    dependencies:
+      commander: 15.1.0
 
   marked@16.4.2: {}
 

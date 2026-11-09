@@ -474,6 +474,8 @@ export interface CitationSyncResult {
   added: PaperRelation[]
   /** Candidates skipped (already linked or below confidence). */
   skipped: number
+  /** Existing citation edges whose evidence note was corrected. */
+  updated: number
   /** Paper ids whose text could not be extracted. */
   skippedNoText: string[]
   errors: string[]

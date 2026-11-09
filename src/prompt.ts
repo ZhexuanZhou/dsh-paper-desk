@@ -253,6 +253,7 @@ export function comparePrompt(papers: PaperMeta[], settings: EffectiveSettings):
           '5. **我实际读过的页**：列出每篇读了哪些页。',
           '',
           '约束：只根据 PDF 内容与元数据作答，不编造数字；不确定的地方明确写“推断”。',
+          '本次任务只读：不要调用任何写工具（包括但不限于 paper_note_append、paper_update、paper_add、paper_sync 或关系写入）；不要修改论文笔记、卡片或图谱。报告生成后由用户在界面上决定是否保存。',
         ].join('\n')
       : [
           'Reading: for each paper use `paper_info` for metadata, then `paper_text` for abstract/intro and 3-6 key method/experiment pages; `paper_annotations` if useful. Do not read whole papers.',
@@ -265,6 +266,7 @@ export function comparePrompt(papers: PaperMeta[], settings: EffectiveSettings):
           '5. **Pages actually read.**',
           '',
           'Constraints: answer only from the PDFs/metadata; never invent numbers; mark uncertain claims as inference.',
+          'This task is read-only: do not call any write tool (including paper_note_append, paper_update, paper_add, paper_sync or relation writes); leave notes, cards and the graph untouched. The user decides whether to save the report in the UI.',
         ].join('\n'),
   )
   const title = papers.map((paper) => shortenTitle(paper.title)).join(' vs ')
@@ -331,6 +333,7 @@ export function discoverRelationsPrompt(
           '3. **信息不足**：列出无法判断或需要更多信息的论文（可为空）。',
           '',
           '要求：提出 5-15 条高置信度候选；宁可少提也不要编造；不要提出清单中不存在的论文；不要与已有关系重复。',
+          '本次任务只读：不要调用任何写工具（paper_note_append、paper_update、paper_add、关系写入等）；候选只展示，由用户勾选后再写入。',
         ].join('\n')
       : [
           'How to analyse: prefer titles/abstracts/tags/authors/venue; use `paper_info`, `paper_cards`, `paper_notes_read` or `paper_relations` when useful; only read a few pages with `paper_text` when necessary (≤3 pages per paper). Do not read whole papers.',
@@ -341,6 +344,7 @@ export function discoverRelationsPrompt(
           '3. **Insufficient information**: papers that cannot be judged (may be empty).',
           '',
           'Requirements: 5-15 high-confidence candidates; prefer fewer over invented ones; never reference papers not in the list; do not duplicate existing relations.',
+          'This task is read-only: do not call any write tool (paper_note_append, paper_update, paper_add, relation writes); candidates are displayed and only written after the user selects them.',
         ].join('\n'),
   )
   return {

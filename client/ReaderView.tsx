@@ -162,6 +162,7 @@ export interface ReaderViewProps {
   activeChatId: string | null
   /** Thread key the AI panel may render; anything else is treated as empty. */
   aiThreadKey: string | null
+  aiDraftKey: string | null
   onSelectChat: (chatId: string) => void
   onCreateChat: () => void
   onRenameChat: (chatId: string, title: string) => void
@@ -397,6 +398,7 @@ export function ReaderView(props: ReaderViewProps) {
     chats,
     activeChatId,
     aiThreadKey,
+    aiDraftKey,
     onSelectChat,
     onCreateChat,
     onRenameChat,
@@ -429,6 +431,7 @@ export function ReaderView(props: ReaderViewProps) {
   const pageRef = useRef<{ paperId: string; page: number | null } | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [focusTarget, setFocusTarget] = useState<{ page?: number; annotationId?: string | null } | null>(null)
+  const [focusNonce, setFocusNonce] = useState(0)
   const [editRequestId, setEditRequestId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<AnnotationItem | null>(null)
   const [deletingAnnotation, setDeletingAnnotation] = useState(false)
@@ -473,6 +476,18 @@ export function ReaderView(props: ReaderViewProps) {
     setPendingCardDelete(null)
     setDeletingCard(false)
   }, [paperId])
+
+  /* Restore the exact page when coming back from a non-reading tab. */
+  const previousTabRef = useRef(tab)
+  useEffect(() => {
+    const previous = previousTabRef.current
+    previousTabRef.current = tab
+    if (tab !== 'read' || previous === 'read' || paperId === null) return
+    const page = pageRef.current?.page ?? currentPage
+    if (page === null || page <= 0) return
+    setFocusTarget({ page })
+    setFocusNonce((value) => value + 1)
+  }, [tab, paperId, currentPage])
 
   /* Remember the reading page when leaving a paper; restore it on return. */
   useEffect(() => {
@@ -583,6 +598,8 @@ export function ReaderView(props: ReaderViewProps) {
       newThread: t('ai.newThread'),
       newThreadHint: t('ai.newThreadHint'),
       noResponse: t('ai.noResponse'),
+      toolsToggle: t('ai.toolsToggle'),
+      toolsHide: t('ai.toolsHide'),
       historyTitle: t('ai.historyTitle'),
       taskLabels: {
         summary: t('assist.summary'),
@@ -1087,11 +1104,13 @@ export function ReaderView(props: ReaderViewProps) {
                     openDrawer('annotations')
                   }}
                   onPageChange={(page) => {
+                    if (tab !== 'read') return
                     setCurrentPage(page)
                     if (pageRef.current !== null && pageRef.current.paperId === paperId) {
                       pageRef.current = { paperId, page }
                     }
                   }}
+                  focusNonce={focusNonce}
                   focusPage={focusTarget?.page}
                   focusAnnotationId={focusTarget?.annotationId ?? null}
                   lowTextHint={detail.text?.lowText === true ? t('viewer.lowText') : undefined}
@@ -1188,6 +1207,7 @@ export function ReaderView(props: ReaderViewProps) {
                   <AiPanel
                     ai={ai}
                     expectedThreadKey={aiThreadKey}
+                    draftKey={aiDraftKey}
                     history={activeChat?.messages ?? []}
                     busyTask={assistBusy}
                     labels={aiLabels}

@@ -2075,6 +2075,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
                   ? chatThreadKey(selectedId, activeChat.id)
                   : null
               }
+              aiDraftKey={
+                selectedId !== null
+                  ? `${selectedId}:${activeChat !== null ? activeChat.id : 'new'}`
+                  : null
+              }
               onSelectChat={selectChat}
               onCreateChat={() => void createChat()}
               onRenameChat={(chatId, title) => void renameChat(chatId, title)}

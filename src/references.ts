@@ -26,7 +26,7 @@ import type {
 import { listPaperIds, readMeta } from './library.js'
 import { normalizeDoi } from './metadata.js'
 import { ensureText } from './pdf.js'
-import { addRelation } from './relations.js'
+import { addRelation, readRelations, updateRelation } from './relations.js'
 import { posixJoin, safeJoin, sha256File } from './util.js'
 
 export interface ReferenceHit {
@@ -48,7 +48,7 @@ export interface PaperIndex {
    * import); matching skips the source paper and can still resolve the target. */
   byDoi: Map<string, string[]>
   byArxiv: Map<string, string[]>
-  byTitle: Map<string, { id: string; tokens: Set<string> }[]>
+  byTitle: Map<string, { id: string; tokens: Set<string>; surnames: Set<string> }[]>
 }
 
 const PAPERS_DIR = 'papers'
@@ -68,7 +68,7 @@ const FALLBACK_PAGES = 3
 /** Only titles with this many normalized tokens are used for title matching. */
 const TITLE_MIN_TOKENS = 4
 /** Required coverage of the paper title's tokens inside a reference chunk. */
-const TITLE_COVERAGE = 0.9
+const TITLE_COVERAGE = 0.95
 /** Label written on auto-extracted edges. */
 const CITES_LABEL = '自动解析'
 /** Note is the raw reference slice, capped to stay readable on the edge. */
@@ -173,7 +173,14 @@ export async function buildPaperIndex(root: string): Promise<PaperIndex> {
     if (tokens.size >= TITLE_MIN_TOKENS) {
       const key = [...tokens].join(' ')
       const list = index.byTitle.get(key)
-      const entry = { id: paperId, tokens }
+      const surnames = new Set<string>()
+      for (const author of meta.authors) {
+        const parts = author.replace(/,/g, ' ').trim().split(/\s+/)
+        const surname = parts[parts.length - 1] ?? ''
+        const normalized = surname.toLowerCase().replace(/[^a-z]/g, '')
+        if (normalized.length >= 2) surnames.add(normalized)
+      }
+      const entry = { id: paperId, tokens, surnames }
       if (list === undefined) index.byTitle.set(key, [entry])
       else list.push(entry)
     }
@@ -438,7 +445,21 @@ function matchCandidates(
         if (entry.id === paperId) continue
         if (entry.tokens.size < TITLE_MIN_TOKENS) continue
         if (coverage(entry.tokens, referenceTokens) < TITLE_COVERAGE) continue
-        offer({ toId: entry.id, via: 'title', reference: hit.raw, confidence: 0.8 })
+        // A generic title can appear inside a different paper's reference.
+        // Require one of the target's author surnames to occur in the entry.
+        if (entry.surnames.size > 0) {
+          let authorHit = false
+          for (const surname of entry.surnames) {
+            if (referenceTokens.has(surname)) {
+              authorHit = true
+              break
+            }
+          }
+          if (!authorHit) continue
+        } else {
+          continue
+        }
+        offer({ toId: entry.id, via: 'title', reference: hit.raw, confidence: 0.85 })
       }
     }
   }
@@ -485,6 +506,7 @@ export async function syncCitationEdges(
     scanned: 0,
     added: [],
     skipped: 0,
+    updated: 0,
     skippedNoText: [],
     errors: [],
   }
@@ -526,7 +548,25 @@ export async function syncCitationEdges(
         if (relation !== undefined) result.added.push(relation)
       } catch (error) {
         if ((error as { status?: unknown })?.status === 409) {
-          result.skipped += 1
+          const existing = (await readRelations(root)).items.find(
+            (item) =>
+              item.from === paperId &&
+              item.to === candidate.toId &&
+              item.kind === 'cites' &&
+              item.source === 'agent' &&
+              item.label === CITES_LABEL,
+          )
+          const note = candidate.reference.slice(0, NOTE_CAP)
+          if (existing !== undefined && existing.note !== note) {
+            try {
+              await updateRelation(root, existing.id, { note })
+              result.updated += 1
+            } catch {
+              result.skipped += 1
+            }
+          } else {
+            result.skipped += 1
+          }
           continue
         }
         result.errors.push(`${paperId} → ${candidate.toId}: ${errorMessage(error)}`)

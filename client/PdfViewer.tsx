@@ -63,6 +63,8 @@ export interface PdfViewerProps {
   onFocusAnnotation?: (id: string) => void
   onPageChange?: (page: number) => void
   focusPage?: number
+  /** Bump to re-apply focusPage even when the page number is unchanged. */
+  focusNonce?: number
   focusAnnotationId?: string | null
   lowTextHint?: string
 }
@@ -723,7 +725,7 @@ function renderAnnotationNodes(
 /* ── component ───────────────────────────────────────────────────────────── */
 
 export function PdfViewer(props: PdfViewerProps): ReactElement {
-  const { annotations, assetBase, focusAnnotationId, focusPage, labels, lowTextHint, src } = props
+  const { annotations, assetBase, focusAnnotationId, focusNonce, focusPage, labels, lowTextHint, src } = props
 
   /* DOM refs (imperative pdf.js work stays out of React's virtual DOM). */
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -1223,7 +1225,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     scrollPageIntoView(scroller, view.pageEl, 'start')
     currentPageRef.current = page
     setCurrentPage(page)
-  }, [focusPage, status, numPages])
+  }, [focusPage, focusNonce, status, numPages])
 
   useEffect(() => {
     if (focusAnnotationId === undefined || focusAnnotationId === null || focusAnnotationId.length === 0) {

@@ -111,6 +111,9 @@ const zhRelations: Record<string, string> = {
   'relations.edge.source': '来源',
   'relations.edge.source.user': '手动创建',
   'relations.edge.source.agent': 'AI / 自动生成',
+  'relations.edge.source.citation': '参考文献解析',
+  'relations.edge.openFrom': '打开源论文',
+  'relations.edge.openTo': '打开目标论文',
   'relations.edge.delete': '删除关联',
   'relations.edge.deleteConfirm': '确定删除这条关联？',
   'relations.edge.deleteYes': '确认删除',
@@ -261,6 +264,9 @@ const enRelations: Record<string, string> = {
   'relations.edge.source': 'Source',
   'relations.edge.source.user': 'Created manually',
   'relations.edge.source.agent': 'AI / auto-generated',
+  'relations.edge.source.citation': 'Parsed from references',
+  'relations.edge.openFrom': 'Open source paper',
+  'relations.edge.openTo': 'Open target paper',
   'relations.edge.delete': 'Delete relation',
   'relations.edge.deleteConfirm': 'Delete this relation?',
   'relations.edge.deleteYes': 'Delete',
@@ -2555,11 +2561,8 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     parsedDiscoverReportRef.current = report
     const candidates = parseDiscoveryCandidates(report, papers, relations, discoverOrder)
     setDiscoverCandidates(candidates)
-    const checked: Record<string, boolean> = {}
-    for (const candidate of candidates) {
-      if (candidate.issue === null) checked[candidate.key] = true
-    }
-    setDiscoverChecked(checked)
+    // Nothing is accepted implicitly: every candidate starts unchecked.
+    setDiscoverChecked({})
     setDiscoverResults({})
     setDiscoverSummary(null)
   }, [
@@ -3649,10 +3652,28 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
                 <div className="pd-rel-kv">
                   <span className="pd-rel-kv-key">{t('relations.edge.source')}</span>
                   <span className="pd-rel-kv-val">
-                    {selectedEdge.source === 'agent'
-                      ? t('relations.edge.source.agent')
-                      : t('relations.edge.source.user')}
+                    {selectedEdge.kind === 'cites' && selectedEdge.label === '自动解析'
+                      ? t('relations.edge.source.citation')
+                      : selectedEdge.source === 'agent'
+                        ? t('relations.edge.source.agent')
+                        : t('relations.edge.source.user')}
                   </span>
+                </div>
+                <div className="pd-rel-pop-actions">
+                  <button
+                    type="button"
+                    className="pd-rel-btn pd-rel-btn-sm"
+                    onClick={() => onOpenPaper(selectedEdge.from)}
+                  >
+                    {t('relations.edge.openFrom')}
+                  </button>
+                  <button
+                    type="button"
+                    className="pd-rel-btn pd-rel-btn-sm"
+                    onClick={() => onOpenPaper(selectedEdge.to)}
+                  >
+                    {t('relations.edge.openTo')}
+                  </button>
                 </div>
                 {edgeConfirm ? (
                   <div className="pd-rel-pop-confirm">

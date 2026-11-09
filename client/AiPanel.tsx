@@ -36,6 +36,8 @@ export interface AiPanelLabels {
   newThreadHint: string
   noResponse: string
   historyTitle: string
+  toolsToggle: string
+  toolsHide: string
   taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
 }
 
@@ -43,6 +45,8 @@ export interface AiPanelProps {
   ai: AiThreadController
   /** Thread key belonging to the visible paper/chat; mismatched state renders empty. */
   expectedThreadKey: string | null
+  /** Stable key for the unsent draft (per paper + active chat, or 'new'). */
+  draftKey: string | null
   /** Persisted transcript shown while the DSH session is empty (e.g. deleted). */
   history: readonly { role: 'user' | 'assistant'; text: string }[]
   busyTask: AssistTask | null
@@ -106,10 +110,13 @@ export function AiPanel(props: AiPanelProps) {
     : { status: 'idle' as const, threadKey: null, paperId: null, sessionId: null, rows: [], error: null }
 
   const [draft, setDraft] = useState('')
+  const draftKey = props.draftKey
   const [sending, setSending] = useState(false)
   const [composing, setComposing] = useState(false)
+  const draftStoreKey = draftKey === null ? null : `paperdesk:ai-draft:${draftKey}`
   const composingRef = useRef(false)
   const [noResponse, setNoResponse] = useState(false)
+  const [showTools, setShowTools] = useState(false)
   const [zoom, setZoom] = useState<number>(() => {
     try {
       const raw = localStorage.getItem('paperdesk:ai-zoom')
@@ -139,19 +146,37 @@ export function AiPanel(props: AiPanelProps) {
     return null
   }, [rows])
 
+  const toolCount = rows.reduce((count, row) => count + (row.kind === 'tool' ? 1 : 0), 0)
+  const visibleRows = useMemo(
+    () => (showTools ? rows : rows.filter((row) => row.kind !== 'tool')),
+    [rows, showTools],
+  )
   const lastAssistantIndex = useMemo(() => {
-    for (let index = rows.length - 1; index >= 0; index -= 1) {
-      const row = rows[index]
+    for (let index = visibleRows.length - 1; index >= 0; index -= 1) {
+      const row = visibleRows[index]
       if (row !== undefined && row.kind === 'assistant') return index
     }
     return -1
-  }, [rows])
+  }, [visibleRows])
 
   useEffect(() => {
     return () => {
       if (watchdogRef.current !== null) clearTimeout(watchdogRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (draftStoreKey === null) {
+      setDraft('')
+      return
+    }
+    try {
+      const stored = localStorage.getItem(draftStoreKey)
+      setDraft(stored ?? '')
+    } catch {
+      setDraft('')
+    }
+  }, [draftStoreKey])
 
   /* Auto-follow the stream unless the user scrolled away from the bottom. */
   useEffect(() => {
@@ -196,6 +221,9 @@ export function AiPanel(props: AiPanelProps) {
       // failure is visible and the user can retry instead of losing the text.
       if (accepted) {
         setDraft('')
+        if (draftStoreKey !== null) {
+          try { localStorage.removeItem(draftStoreKey) } catch {}
+        }
         const baseline = ai.getSnapshot().rows.length
         watchdogRef.current = setTimeout(() => {
           const snapshot = ai.getSnapshot()
@@ -293,6 +321,18 @@ export function AiPanel(props: AiPanelProps) {
             </div>
           ) : null}
 
+          {toolCount > 0 ? (
+            <button
+              type="button"
+              className="pd-ai-tools-toggle"
+              onClick={() => setShowTools((value) => !value)}
+            >
+              {showTools
+                ? labels.toolsHide
+                : labels.toolsToggle.replace('{n}', String(toolCount))}
+            </button>
+          ) : null}
+
           {rows.length === 0 && history.length > 0 ? (
             <div className="pd-ai-history">
               <div className="pd-ai-history-title">{labels.historyTitle}</div>
@@ -316,7 +356,7 @@ export function AiPanel(props: AiPanelProps) {
             <div className="pd-ai-empty">{labels.emptyHint}</div>
           ) : null}
 
-          {rows.map((row, index) => (
+          {visibleRows.map((row, index) => (
             <div key={row.id} className="pd-ai-row">
               {renderRow(row)}
               {index === lastAssistantIndex && pages.length > 0 ? (
@@ -443,7 +483,18 @@ export function AiPanel(props: AiPanelProps) {
             placeholder={labels.placeholder}
             aria-label={labels.placeholder}
             disabled={disabled}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value
+              setDraft(value)
+              if (draftStoreKey !== null) {
+                try {
+                  if (value === '') localStorage.removeItem(draftStoreKey)
+                  else localStorage.setItem(draftStoreKey, value)
+                } catch {
+                  // Draft persistence is a convenience only.
+                }
+              }
+            }}
             onCompositionStart={() => {
               composingRef.current = true
               setComposing(true)

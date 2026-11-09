@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import type { StatusPayload, SyncStatus } from '../src/types.js'
 import type { SettingsPatch, SettingsPayload } from './api.js'
 import { IconFolder, IconRefresh, IconSync } from './icons.js'
-import { useT } from './i18n.js'
+import { errorText, useT } from './i18n.js'
 import { Button, Checkbox, Field, Select, Spinner, TextInput } from './ui.js'
 
 export interface SettingsViewProps {
@@ -62,6 +62,7 @@ export function SettingsView(props: SettingsViewProps) {
   const configured = status?.configured === true && status.libraryExists === true
   const saving = busy === 'save'
   const picking = busy === 'pick'
+  const [pickError, setPickError] = useState<string | null>(null)
 
   const dirty =
     effective !== null &&
@@ -72,14 +73,16 @@ export function SettingsView(props: SettingsViewProps) {
       form.citationSync !== effective.citationSync)
 
   const pick = async (): Promise<void> => {
+    setPickError(null)
     try {
       const picked = await onPickDirectory()
       if (picked !== null) {
         setForm((previous) => ({ ...previous, path: picked }))
         setPathError(null)
       }
-    } catch {
-      // App surfaces the failure as a toast; keep the form usable.
+    } catch (error) {
+      // Show the failure inline as well: a toast can be missed behind the dialog.
+      setPickError(errorText(error) || t('settings.chooseFailed'))
     }
   }
 
@@ -151,7 +154,7 @@ export function SettingsView(props: SettingsViewProps) {
             ) : null}
           </div>
           <div className="pd-section-body">
-            <Field label={t('settings.library')} hint={t('settings.libraryHint')} error={pathError} htmlFor="pd-settings-path">
+            <Field label={t('settings.library')} hint={t('settings.libraryHint')} error={pathError ?? pickError} htmlFor="pd-settings-path">
               <div className="pd-path-row">
                 <TextInput
                   id="pd-settings-path"
@@ -159,7 +162,10 @@ export function SettingsView(props: SettingsViewProps) {
                   placeholder={t('settings.pathPlaceholder')}
                   invalid={pathError !== null}
                   disabled={saving}
-                  onChange={(event) => setForm((previous) => ({ ...previous, path: event.target.value }))}
+                  onChange={(event) => {
+                    setPickError(null)
+                    setForm((previous) => ({ ...previous, path: event.target.value }))
+                  }}
                 />
                 <Button icon={<IconFolder />} loading={picking} disabled={saving} onClick={() => void pick()}>
                   {t('settings.choose')}

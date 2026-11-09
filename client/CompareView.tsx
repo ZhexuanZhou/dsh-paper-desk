@@ -1548,10 +1548,13 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
     const title = shortTitle(desired !== '' ? desired : t('compare.defaultTitle'), MAX_TITLE)
     setSaving(true)
     try {
-      await api.saveComparison({ title, paperIds: ids, markdown })
+      const saved = await api.saveComparison({ title, paperIds: ids, markdown })
+      const list = await api.comparisons()
+      setSaved(list.comparisons)
       setSaveOpen(false)
+      setTab('saved')
       setNotice({ kind: 'success', text: t('compare.saveSuccess') })
-      await loadSaved()
+      await openSaved(saved.id)
     } catch (error) {
       setNotice({ kind: 'error', text: errorMessage(error) || t('compare.saveFailed') })
     } finally {
@@ -2228,7 +2231,10 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
         value={tab}
         ariaLabel={t('compare.title')}
         onChange={(id) => {
-          if (id === 'saved' || id === 'suggestions') setTab(id)
+          if (id === 'saved') {
+            setTab('saved')
+            void loadSaved()
+          } else if (id === 'suggestions') setTab('suggestions')
           else setTab('report')
         }}
       />
