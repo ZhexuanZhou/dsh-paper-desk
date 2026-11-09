@@ -496,6 +496,7 @@ export function ReaderView(props: ReaderViewProps) {
       newAnswer: t('ai.newAnswer'),
       reasoning: t('ai.reasoning'),
       createCard: t('cards.createFromAnswer'),
+      composingHint: t('ai.composingHint'),
       taskLabels: {
         summary: t('assist.summary'),
         method: t('assist.method'),

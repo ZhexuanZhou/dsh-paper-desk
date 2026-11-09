@@ -30,6 +30,7 @@ export interface AiPanelLabels {
   newAnswer: string
   reasoning: string
   createCard: string
+  composingHint: string
   taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
 }
 
@@ -89,6 +90,8 @@ export function AiPanel(props: AiPanelProps) {
 
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [composing, setComposing] = useState(false)
+  const composingRef = useRef(false)
   const [follow, setFollow] = useState(true)
   const [hasNew, setHasNew] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -337,8 +340,21 @@ export function AiPanel(props: AiPanelProps) {
             aria-label={labels.placeholder}
             disabled={disabled}
             onChange={(event) => setDraft(event.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true
+              setComposing(true)
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false
+              setComposing(false)
+            }}
             onKeyDown={(event) => {
-              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+              if (event.key !== 'Enter' || event.shiftKey) return
+              // While an IME is composing, Enter belongs to candidate selection.
+              // Use the composition events (not just nativeEvent.isComposing,
+              // which can stay stale in some Chromium/IME combinations) so Enter
+              // sends as soon as the composition has really ended.
+              if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return
               event.preventDefault()
               void send()
             }}
@@ -352,6 +368,11 @@ export function AiPanel(props: AiPanelProps) {
             {labels.send}
           </Button>
         </div>
+        {composing ? (
+          <div className="pd-ai-ime-hint" role="status">
+            {labels.composingHint}
+          </div>
+        ) : null}
       </div>
     </div>
   )

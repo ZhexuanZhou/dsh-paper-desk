@@ -1243,6 +1243,13 @@ export const CSS = `
 .pd-ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
 .pd-ai-actions .pd-btn { min-height: 24px; padding: 2px 6px; color: ${FG_2}; font-size: 11.5px; }
 .pd-ai-actions .pd-btn:hover:not(:disabled) { color: ${FG}; }
+.pd-ai-ime-hint {
+  margin-top: 3px;
+  color: ${FG_2};
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .pd-ai-inputRow { display: flex; align-items: flex-end; gap: 6px; }
 .pd-ai-input { flex: 1 1 auto; min-height: 34px; max-height: 120px; resize: vertical; font-size: 12px; padding: 6px 8px; }
 
