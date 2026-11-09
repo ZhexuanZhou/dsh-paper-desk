@@ -155,7 +155,7 @@ dsh plugin --profile web add dsh-paper-desk
 
 ## 当前状态（2026-11-09）
 
-- npm 已发布：**`@zhe_xuan/dsh-paper-desk@0.3.3`**（scope 是 npm 名称相似规则要求的）。
+- npm 已发布：**`@zhe_xuan/dsh-paper-desk@0.3.4`**（scope 是 npm 名称相似规则要求的）。
 - 市场 PR：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/13433>，
   `Submission gate` ✅、`check` ✅、`MERGEABLE`，等维护者合并。
 - Release：<https://github.com/ZhexuanZhou/dsh-paper-desk/releases/tag/v0.3.0>，

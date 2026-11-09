@@ -17,6 +17,8 @@ import type {
   AssistPayload,
   AssistTask,
   CardsDocument,
+  ChatMessage,
+  ChatsDocument,
   ExtractedText,
   NewAnnotation,
   NewNoteCard,
@@ -26,6 +28,7 @@ import type {
   PaperDetail,
   PaperMeta,
   PaperStatus,
+  PaperChat,
   PaperSummary,
   RelationsDocument,
   StatusPayload,
@@ -33,7 +36,9 @@ import type {
 } from '../src/types.js'
 import type { SettingsPatch, SettingsPayload } from './api.js'
 import { api } from './api.js'
+import { cleanUserPrompt } from './chatText.js'
 import { createAiThread } from './aiSession.js'
+import type { AiRow } from './aiSession.js'
 import { defaultLibraryPath, openHostPath, openSessionInShell, pickLibraryDirectory } from './agent.js'
 import { errorText, I18nProvider, useT } from './i18n.js'
 import type { Lang } from './i18n.js'
@@ -57,6 +62,70 @@ type OverlayState =
   | { kind: 'none' }
   | { kind: 'compare' }
   | { kind: 'relations'; focusPaperId?: string }
+
+/** Thread key for one plugin-owned conversation. */
+function chatThreadKey(paperId: string, chatId: string): string {
+  return `chat:${paperId}:${chatId}`
+}
+
+const ACTIVE_CHAT_STORAGE_PREFIX = 'paperdesk:active-chat:'
+
+function readActiveChatId(paperId: string): string | null {
+  try {
+    const value = localStorage.getItem(ACTIVE_CHAT_STORAGE_PREFIX + paperId)
+    return value !== null && value !== '' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeActiveChatId(paperId: string, chatId: string | null): void {
+  try {
+    if (chatId === null) localStorage.removeItem(ACTIVE_CHAT_STORAGE_PREFIX + paperId)
+    else localStorage.setItem(ACTIVE_CHAT_STORAGE_PREFIX + paperId, chatId)
+  } catch {
+    // Storage failures only lose the remembered selection.
+  }
+}
+
+function transcriptFromRows(rows: readonly AiRow[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  const at = new Date().toISOString()
+  for (const row of rows) {
+    if (row.kind !== 'user' && row.kind !== 'assistant') continue
+    const text = (row.kind === 'user' ? cleanUserPrompt(row.text) : row.text.trim())
+    if (text === '') continue
+    out.push({ role: row.kind, text, at })
+  }
+  return out
+}
+
+/**
+ * Persist the current session rows without losing history from a previous
+ * session: when the rows replay the stored transcript, replace it; when they
+ * only contain the new exchange (fresh session), append what is new.
+ */
+function mergeChatMessages(stored: readonly ChatMessage[], fresh: readonly ChatMessage[]): ChatMessage[] {
+  if (stored.length === 0) return [...fresh].slice(-400)
+  if (fresh.length === 0) return [...stored]
+  if (fresh[0]?.text === stored[0]?.text) return [...fresh].slice(-400)
+  const merged = [...stored]
+  for (const message of fresh) {
+    const last = merged[merged.length - 1]
+    if (last !== undefined && last.role === message.role && last.text === message.text) continue
+    merged.push(message)
+  }
+  return merged.slice(-400)
+}
+
+function autoChatTitle(chat: PaperChat, messages: readonly ChatMessage[]): string | null {
+  if (chat.title.trim() !== '' && chat.title.trim() !== '新对话') return null
+  const firstUser = messages.find((message) => message.role === 'user')
+  if (firstUser === undefined) return null
+  const line = firstUser.text.split('\n').find((part) => part.trim() !== '')?.trim() ?? ''
+  if (line === '') return null
+  return line.length > 30 ? `${line.slice(0, 30)}…` : line
+}
 
 /** Max per-paper annotation undo entries kept in memory. */
 const UNDO_LIMIT = 50
@@ -209,6 +278,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const annotationsRef = useRef<AnnotationDocument | null>(null)
   /** Undo stack for the currently selected paper (cleared on paper switch). */
   const undoStackRef = useRef<AnnotationUndoEntry[]>([])
+
+  /* plugin-owned per-paper AI conversations */
+  const [chats, setChats] = useState<ChatsDocument | null>(null)
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
+  const chatsRef = useRef<ChatsDocument | null>(null)
+  const activeChatIdRef = useRef<string | null>(null)
 
   /* note cards for the selected paper */
   const [cards, setCards] = useState<CardsDocument | null>(null)
@@ -367,27 +442,32 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     [status?.settings.citationSync, pushToast],
   )
 
-  /* Attach the AI thread to the selected paper (re-runs only on paper/path/title change). */
-  const aiOpenRef = useRef<{ paperId: string; title: string } | null>(null)
-  /* `detail` still holds the previous paper for one render after a switch. */
+  /* Attach the AI thread for the active plugin-owned conversation. */
+  const aiOpenRef = useRef<string | null>(null)
   const detailForSelection = detail !== null && detail.meta.id === selectedId ? detail : null
   const aiPaperTitle = detailForSelection?.meta.title ?? ''
-  /* Wait for the paper detail (title) before the first attach so we do not
-   * attach twice per paper switch; a failed detail load still settles. */
   const aiDetailSettled = detailForSelection !== null || (!detailLoading && detailError !== null)
+  const activeChat = useMemo(
+    () => chats?.items.find((chat) => chat.id === activeChatId) ?? null,
+    [chats, activeChatId],
+  )
+  const activeChatRef = useRef<PaperChat | null>(null)
   useEffect(() => {
-    if (selectedId === null || activeLibraryPath === '' || !aiDetailSettled) return
-    const previous = aiOpenRef.current
-    if (previous !== null && previous.paperId === selectedId && previous.title === aiPaperTitle) return
-    aiOpenRef.current = { paperId: selectedId, title: aiPaperTitle }
+    activeChatRef.current = activeChat
+  }, [activeChat])
+  useEffect(() => {
+    if (selectedId === null || activeLibraryPath === '' || !aiDetailSettled || activeChat === null) return
+    const key = chatThreadKey(selectedId, activeChat.id)
+    if (aiOpenRef.current === key) return
+    aiOpenRef.current = key
     const paperTitle = aiPaperTitle !== '' ? aiPaperTitle : selectedId
+    const title = `AI · ${paperTitle} · ${activeChat.title}`
     void ai
-      .openPaper(selectedId, { workspacePath: activeLibraryPath, paperTitle })
+      .openThread(key, { workspacePath: activeLibraryPath, title })
       .catch((error: unknown) => {
-        /* The controller also publishes an error state; surface it in the panel. */
         reportError(error, 'ai.attachFailed')
       })
-  }, [ai, selectedId, activeLibraryPath, aiPaperTitle, aiDetailSettled, reportError])
+  }, [ai, selectedId, activeLibraryPath, aiPaperTitle, aiDetailSettled, activeChat, reportError])
 
   /* ── status / settings bootstrap ─────────────────────────────────────── */
 
@@ -476,6 +556,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       setAnnotationsLoading(false)
       setCardsDoc(null)
       setCardsLoading(false)
+      setChats(null)
+      chatsRef.current = null
+      setActiveChatId(null)
+      activeChatIdRef.current = null
       return
     }
     let cancelled = false
@@ -488,8 +572,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     setAnnotationsLoading(true)
     setCardsDoc(null)
     setCardsLoading(true)
-    Promise.allSettled([api.paper(selectedId), api.annotations(selectedId), api.cards(selectedId)])
-      .then(([paperResult, annotationsResult, cardsResult]) => {
+    Promise.allSettled([api.paper(selectedId), api.annotations(selectedId), api.cards(selectedId), api.chats(selectedId)])
+      .then(([paperResult, annotationsResult, cardsResult, chatsResult]) => {
         if (cancelled) return
         if (paperResult.status === 'fulfilled') {
           setDetail(paperResult.value)
@@ -508,6 +592,20 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         } else {
           setCardsDoc(null)
           pushToast('warn', errorText(cardsResult.reason) || tRef.current('cards.loadFailed'))
+        }
+        if (chatsResult.status === 'fulfilled') {
+          const doc = chatsResult.value
+          setChats(doc)
+          chatsRef.current = doc
+          const stored = readActiveChatId(selectedId)
+          const chosen = doc.items.find((chat: PaperChat) => chat.id === stored) ?? doc.items[0] ?? null
+          setActiveChatId(chosen?.id ?? null)
+          activeChatIdRef.current = chosen?.id ?? null
+          if (chosen !== null) writeActiveChatId(selectedId, chosen.id)
+        } else {
+          setChats(null)
+          chatsRef.current = null
+          pushToast('warn', errorText(chatsResult.reason) || tRef.current('chat.loadFailed'))
         }
       })
       .finally(() => {
@@ -1014,18 +1112,35 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   /* ── in-panel agent assist ───────────────────────────────────────────── */
 
   /** Make sure the AI thread controller is attached to this paper before running. */
-  const ensureAiPaper = useCallback(
+  const ensureAiChat = useCallback(
     async (paperId: string): Promise<boolean> => {
-      const snapshot = ai.getSnapshot()
-      if (snapshot.paperId === paperId && snapshot.status !== 'attaching') return true
       const workspacePath = status?.settings.libraryPath ?? ''
       if (workspacePath === '') {
         pushToast('error', tRef.current('ai.attachFailed'))
         return false
       }
+      let doc = chatsRef.current
+      let chat = doc?.items.find((item) => item.id === activeChatIdRef.current) ?? null
+      if (chat === null || doc === null) {
+        try {
+          doc = await api.addChat(paperId, {})
+          setChats(doc)
+          chatsRef.current = doc
+          chat = doc.items[0] ?? null
+          setActiveChatId(chat?.id ?? null)
+          activeChatIdRef.current = chat?.id ?? null
+          if (chat !== null) writeActiveChatId(paperId, chat.id)
+        } catch (error) {
+          reportError(error, 'chat.createFailed')
+          return false
+        }
+      }
+      if (chat === null) return false
+      const key = chatThreadKey(paperId, chat.id)
+      if (ai.getSnapshot().threadKey === key) return true
+      const title = detail !== null && detail.meta.id === paperId ? detail.meta.title : paperId
       try {
-        const title = detail !== null && detail.meta.id === paperId ? detail.meta.title : ''
-        await ai.openPaper(paperId, { workspacePath, paperTitle: title !== '' ? title : paperId })
+        await ai.openThread(key, { workspacePath, title: `AI · ${title} · ${chat.title}` })
         return true
       } catch (error) {
         reportError(error, 'ai.attachFailed')
@@ -1051,7 +1166,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       try {
         const payload: AssistPayload = await api.assist(paperId, request.task, request.extra, request.context)
         if (selectedIdRef.current !== paperId) return
-        if (!(await ensureAiPaper(paperId))) return
+        if (!(await ensureAiChat(paperId))) return
         const result = await ai.run(payload.prompt)
         if (!result.ok) {
           pushToast('error', result.error !== undefined && result.error !== '' ? result.error : tRef.current('ai.error'))
@@ -1062,7 +1177,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         setAssistBusy(null)
       }
     },
-    [selectedId, ai, ensureAiPaper, pushToast, reportError],
+    [selectedId, ai, ensureAiChat, pushToast, reportError],
   )
 
   const handleAssist = useCallback(
@@ -1070,6 +1185,130 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       await launchAssist({ task, extra })
     },
     [launchAssist],
+  )
+
+  /** Save the current thread rows into the active host chat document. */
+  const saveActiveChat = useCallback(
+    (paperId: string, chatId: string): void => {
+      const key = chatThreadKey(paperId, chatId)
+      const snapshot = ai.getSnapshot()
+      if (snapshot.threadKey !== key) return
+      const fresh = transcriptFromRows(snapshot.rows)
+      if (fresh.length === 0) return
+      const doc = chatsRef.current
+      const chat = doc?.items.find((item) => item.id === chatId)
+      if (chat === undefined) return
+      const merged = mergeChatMessages(chat.messages, fresh)
+      const title = autoChatTitle(chat, merged)
+      const unchanged =
+        merged.length === chat.messages.length &&
+        merged.every((message, index) => {
+          const previous = chat.messages[index]
+          return previous !== undefined && previous.role === message.role && previous.text === message.text
+        })
+      if (unchanged && title === null) return
+      void api
+        .updateChat(paperId, chatId, { messages: merged, ...(title !== null ? { title } : {}) })
+        .then((next) => {
+          setChats(next)
+          chatsRef.current = next
+        })
+        .catch(() => {
+          /* Transcript persistence is best-effort; the session still works. */
+        })
+    },
+    [ai],
+  )
+
+  /* Persist the current conversation whenever its transcript changes. */
+  useEffect(() => {
+    if (selectedId === null || activeChatId === null) return
+    const paperId = selectedId
+    const chatId = activeChatId
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const schedule = (): void => {
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        saveActiveChat(paperId, chatId)
+      }, 900)
+    }
+    const unsubscribe = ai.subscribe(schedule)
+    schedule()
+    return () => {
+      unsubscribe()
+      if (timer !== null) clearTimeout(timer)
+      saveActiveChat(paperId, chatId)
+    }
+  }, [ai, selectedId, activeChatId, saveActiveChat])
+
+  const selectChat = useCallback(
+    (chatId: string): void => {
+      if (selectedId === null || activeChatId === null || chatId === activeChatId) return
+      saveActiveChat(selectedId, activeChatId)
+      setActiveChatId(chatId)
+      activeChatIdRef.current = chatId
+      writeActiveChatId(selectedId, chatId)
+      aiOpenRef.current = null
+    },
+    [selectedId, activeChatId, saveActiveChat],
+  )
+
+  const createChat = useCallback(async (): Promise<void> => {
+    if (selectedId === null) return
+    if (activeChatId !== null) saveActiveChat(selectedId, activeChatId)
+    try {
+      const doc = await api.addChat(selectedId, {})
+      setChats(doc)
+      chatsRef.current = doc
+      const chat = doc.items[0] ?? null
+      setActiveChatId(chat?.id ?? null)
+      activeChatIdRef.current = chat?.id ?? null
+      if (chat !== null) writeActiveChatId(selectedId, chat.id)
+      aiOpenRef.current = null
+    } catch (error) {
+      reportError(error, 'chat.createFailed')
+    }
+  }, [selectedId, activeChatId, saveActiveChat, reportError])
+
+  const renameChat = useCallback(
+    async (chatId: string, title: string): Promise<void> => {
+      if (selectedId === null) return
+      const nextTitle = title.trim()
+      if (nextTitle === '') return
+      try {
+        const doc = await api.updateChat(selectedId, chatId, { title: nextTitle })
+        setChats(doc)
+        chatsRef.current = doc
+      } catch (error) {
+        reportError(error, 'chat.updateFailed')
+      }
+    },
+    [selectedId, reportError],
+  )
+
+  const removeChat = useCallback(
+    async (chatId: string): Promise<void> => {
+      if (selectedId === null) return
+      if (activeChatId !== null) saveActiveChat(selectedId, activeChatId)
+      const key = chatThreadKey(selectedId, chatId)
+      try {
+        const doc = await api.deleteChat(selectedId, chatId)
+        setChats(doc)
+        chatsRef.current = doc
+        if (activeChatId === chatId) {
+          const next = doc.items[0] ?? null
+          setActiveChatId(next?.id ?? null)
+          activeChatIdRef.current = next?.id ?? null
+          writeActiveChatId(selectedId, next?.id ?? null)
+          aiOpenRef.current = null
+        }
+        ai.resetThread(key)
+      } catch (error) {
+        reportError(error, 'chat.deleteFailed')
+      }
+    },
+    [selectedId, activeChatId, saveActiveChat, ai, reportError],
   )
 
   /** Viewer/rail "ask about this passage" (annotation-aware assist). */
@@ -1101,11 +1340,22 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       if (paperId === null) return false
       const text = question.trim()
       if (text === '') return false
-      if (!(await ensureAiPaper(paperId))) return false
+      if (!(await ensureAiChat(paperId))) return false
       try {
         const emptyThread = ai.getSnapshot().rows.length === 0
         const title = detail?.meta.title ?? paperId
-        const prompt = emptyThread ? `当前论文：《${title}》（id: ${paperId}）。\n\n${text}` : text
+        const history = activeChatRef.current?.messages ?? []
+        const parts: string[] = []
+        if (emptyThread) parts.push(`当前论文：《${title}》（id: ${paperId}）。`)
+        if (emptyThread && history.length > 0) {
+          const transcript = history
+            .map((message) => `${message.role === 'user' ? '用户' : '助手'}：${message.text}`)
+            .join('\n\n')
+          parts.push(`以下是我们之前关于这篇论文的对话记录：\n\n${transcript}`)
+        }
+        if (parts.length > 0) parts.push('---')
+        parts.push(text)
+        const prompt = parts.join('\n\n')
         const result = await ai.run(prompt)
         if (!result.ok) {
           pushToast('error', result.error !== undefined && result.error !== '' ? result.error : tRef.current('ai.error'))
@@ -1116,18 +1366,19 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         return false
       }
     },
-    [selectedId, ai, ensureAiPaper, pushToast, reportError],
+    [selectedId, ai, ensureAiChat, pushToast, reportError],
   )
 
   /** Start a clean AI thread for the selected paper (drops a stale/archived one). */
   const handleAiReset = useCallback(async (): Promise<void> => {
     const paperId = selectedId
-    ai.resetThread(paperId ?? undefined)
     if (paperId === null) return
-    if (await ensureAiPaper(paperId)) {
+    ai.resetThread(activeChatId !== null ? chatThreadKey(paperId, activeChatId) : undefined)
+    aiOpenRef.current = null
+    if (await ensureAiChat(paperId)) {
       pushToast('info', tRef.current('ai.newThreadDone'))
     }
-  }, [ai, selectedId, ensureAiPaper, pushToast])
+  }, [ai, selectedId, activeChatId, ensureAiChat, pushToast])
 
   const handleAiStop = useCallback(async (): Promise<void> => {
     try {
@@ -1806,6 +2057,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               ai={ai}
               onAiAsk={handleAiAsk}
               onAiReset={handleAiReset}
+              chats={chats}
+              activeChatId={activeChatId}
+              onSelectChat={selectChat}
+              onCreateChat={() => void createChat()}
+              onRenameChat={(chatId, title) => void renameChat(chatId, title)}
+              onRemoveChat={(chatId) => void removeChat(chatId)}
               onAiStop={handleAiStop}
               onAiSaveToNotes={handleAiSaveToNotes}
               onAiCopy={handleAiCopy}

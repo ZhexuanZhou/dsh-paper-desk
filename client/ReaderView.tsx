@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AnnotationDocument,
+  ChatsDocument,
   AnnotationItem,
   AnnotationKind,
   AnnotationPatch,
@@ -34,6 +35,8 @@ import {
   IconTrash,
 } from './icons.js'
 import { AiPanel, collectCitedPages } from './AiPanel.js'
+import { ChatBar } from './ChatBar.js'
+import type { ChatBarLabels } from './ChatBar.js'
 import type { AiPanelLabels } from './AiPanel.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
 import { annotationKindLabel, formatNumber, statusLabel, useLang, useT } from './i18n.js'
@@ -121,6 +124,12 @@ export interface ReaderViewProps {
   ai: AiThreadController
   onAiAsk: (question: string) => Promise<boolean>
   onAiReset: () => Promise<void>
+  chats: ChatsDocument | null
+  activeChatId: string | null
+  onSelectChat: (chatId: string) => void
+  onCreateChat: () => void
+  onRenameChat: (chatId: string, title: string) => void
+  onRemoveChat: (chatId: string) => void
   onAiStop: () => Promise<void>
   onAiSaveToNotes: (text: string) => Promise<void>
   onAiCopy: (text: string) => Promise<void>
@@ -349,6 +358,12 @@ export function ReaderView(props: ReaderViewProps) {
     ai,
     onAiAsk,
     onAiReset,
+    chats,
+    activeChatId,
+    onSelectChat,
+    onCreateChat,
+    onRenameChat,
+    onRemoveChat,
     onAiStop,
     onAiSaveToNotes,
     onAiCopy,
@@ -502,6 +517,7 @@ export function ReaderView(props: ReaderViewProps) {
       newThread: t('ai.newThread'),
       newThreadHint: t('ai.newThreadHint'),
       noResponse: t('ai.noResponse'),
+      historyTitle: t('ai.historyTitle'),
       taskLabels: {
         summary: t('assist.summary'),
         method: t('assist.method'),
@@ -512,6 +528,22 @@ export function ReaderView(props: ReaderViewProps) {
     }),
     [t],
   )
+
+  const chatBarLabels = useMemo<ChatBarLabels>(
+    () => ({
+      title: t('chat.title'),
+      create: t('chat.create'),
+      rename: t('chat.rename'),
+      renamePlaceholder: t('chat.renamePlaceholder'),
+      remove: t('chat.remove'),
+      removeConfirm: t('chat.removeConfirm'),
+      removeCancel: t('chat.removeCancel'),
+      empty: t('chat.empty'),
+    }),
+    [t],
+  )
+
+  const activeChat = chats?.items.find((chat) => chat.id === activeChatId) ?? null
 
   if (paperId === null) {
     return (
@@ -1041,8 +1073,19 @@ export function ReaderView(props: ReaderViewProps) {
                     }}
                   />
                 ) : (
+                  <>
+                  <ChatBar
+                    chats={chats?.items ?? []}
+                    activeId={activeChatId}
+                    labels={chatBarLabels}
+                    onSelect={onSelectChat}
+                    onCreate={onCreateChat}
+                    onRename={onRenameChat}
+                    onRemove={onRemoveChat}
+                  />
                   <AiPanel
                     ai={ai}
+                    history={activeChat?.messages ?? []}
                     busyTask={assistBusy}
                     labels={aiLabels}
                     onRunTask={(task) => runTask(task)}
@@ -1055,6 +1098,7 @@ export function ReaderView(props: ReaderViewProps) {
                     onJumpPage={jumpToPage}
                     onCreateCard={openCardFromAnswer}
                   />
+                  </>
                 )}
               </div>
             </aside>

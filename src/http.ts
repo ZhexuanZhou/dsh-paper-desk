@@ -20,6 +20,7 @@ import {
 } from './annotations.js'
 import { readPdfjsAsset } from './assets.js'
 import { addCard, readCards, removeCard, updateCard } from './cards.js'
+import { addChat, deleteChat, readChats, updateChat } from './chats.js'
 import {
   deleteComparison,
   listComparisons,
@@ -600,6 +601,37 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
         const annotationId = (q['annotationId'] ?? '').trim()
         if (annotationId.length === 0) throw new HttpError(400, 'annotationId is required')
         json(res, 200, await removeAnnotation(root, id, annotationId))
+        return
+      }
+      return methodNotAllowed(res)
+    }
+
+    if (route === 'chats') {
+      const id = requirePdfId(q['id'] ?? null)
+      if (method === 'GET') {
+        json(res, 200, await readChats(root, id))
+        return
+      }
+      if (method === 'POST') {
+        const body = await readJsonBody(req)
+        json(res, 200, await addChat(root, id, body as unknown as { title?: string }))
+        return
+      }
+      if (method === 'PATCH') {
+        const chatId = (q['chatId'] ?? '').trim()
+        if (chatId.length === 0) throw new HttpError(400, 'chatId is required')
+        const body = await readJsonBody(req)
+        json(
+          res,
+          200,
+          await updateChat(root, id, chatId, body as unknown as { title?: string; messages?: import('./types.js').ChatMessage[] }),
+        )
+        return
+      }
+      if (method === 'DELETE') {
+        const chatId = (q['chatId'] ?? '').trim()
+        if (chatId.length === 0) throw new HttpError(400, 'chatId is required')
+        json(res, 200, await deleteChat(root, id, chatId))
         return
       }
       return methodNotAllowed(res)

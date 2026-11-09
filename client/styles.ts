@@ -1127,6 +1127,40 @@ export const CSS = `
 .pd-list-launchers .pd-btn { flex: 1 1 0; min-height: 24px; padding: 2px 6px; font-size: 11.5px; }
 
 /* ── in-panel AI drawer ────────────────────────────────────────────────── */
+
+/* ── per-paper conversation bar (AI drawer) ───────────────────────────── */
+.pd-chat-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid ${B1};
+  background: ${L1};
+}
+.pd-chat-bar-label { flex: 0 0 auto; color: ${FG_2}; font-size: 11px; }
+.pd-chat-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid ${B2};
+  border-radius: 6px;
+  background: ${BG};
+  color: ${FG};
+  font-size: 12px;
+}
+.pd-chat-rename { flex: 1 1 auto; min-width: 0; height: 24px; }
+.pd-chat-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: ${ERR};
+  font-size: 11px;
+}
+
 .pd-ai { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .pd-ai-tasks {
   display: flex;

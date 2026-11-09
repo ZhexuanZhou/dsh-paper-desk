@@ -478,3 +478,31 @@ export interface CitationSyncResult {
   skippedNoText: string[]
   errors: string[]
 }
+
+
+/* ── Per-paper AI conversations (plugin-owned transcripts) ─────────────── */
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+  at: string
+}
+
+export interface PaperChat {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  messages: ChatMessage[]
+}
+
+export interface ChatsDocument {
+  schemaVersion: 1
+  paperId: string
+  updatedAt: string
+  items: PaperChat[]
+}
+
+export interface NewPaperChat {
+  title?: string
+}

@@ -9,6 +9,9 @@ import type {
   AssistRequest,
   AssistTask,
   CardsDocument,
+  ChatMessage,
+  ChatsDocument,
+  NewPaperChat,
   ComparisonSummary,
   NewNoteCard,
   NewRelation,
@@ -322,6 +325,31 @@ export const api = {
     return requestJson<AnnotationDocument>(`/annotations${query({ id, annotationId })}`, {
       method: 'DELETE',
     })
+  },
+
+  /* ── per-paper AI conversations ────────────────────────────────────── */
+
+  chats(id: string): Promise<ChatsDocument> {
+    return requestJson<ChatsDocument>(`/chats${query({ id })}`)
+  },
+
+  addChat(id: string, input: NewPaperChat): Promise<ChatsDocument> {
+    return requestJson<ChatsDocument>(`/chats${query({ id })}`, { method: 'POST', body: JSON.stringify(input) })
+  },
+
+  updateChat(
+    id: string,
+    chatId: string,
+    patch: { title?: string; messages?: ChatMessage[] },
+  ): Promise<ChatsDocument> {
+    return requestJson<ChatsDocument>(`/chats${query({ id, chatId })}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  deleteChat(id: string, chatId: string): Promise<ChatsDocument> {
+    return requestJson<ChatsDocument>(`/chats${query({ id, chatId })}`, { method: 'DELETE' })
   },
 
   /* ── note cards ────────────────────────────────────────────────────── */

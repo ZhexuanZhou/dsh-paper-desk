@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { ReactElement } from 'react'
 import type { AssistTask } from '../src/types.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
+import { cleanUserPrompt } from './chatText.js'
 import { Markdown } from './markdown.js'
 import { Button, Spinner } from './ui.js'
 
@@ -34,11 +35,14 @@ export interface AiPanelLabels {
   newThread: string
   newThreadHint: string
   noResponse: string
+  historyTitle: string
   taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
 }
 
 export interface AiPanelProps {
   ai: AiThreadController
+  /** Persisted transcript shown while the DSH session is empty (e.g. deleted). */
+  history: readonly { role: 'user' | 'assistant'; text: string }[]
   busyTask: AssistTask | null
   labels: AiPanelLabels
   onRunTask: (task: AssistTask, extra?: string) => void | Promise<void>
@@ -86,7 +90,7 @@ function firstLine(text: string): string {
 }
 
 export function AiPanel(props: AiPanelProps) {
-  const { ai, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
+  const { ai, history, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
 
   const subscribe = useCallback((listener: () => void) => ai.subscribe(listener), [ai])
   const getSnapshot = useCallback(() => ai.getSnapshot(), [ai])
@@ -196,7 +200,7 @@ export function AiPanel(props: AiPanelProps) {
       case 'user':
         return (
           <div key={row.id} className="pd-ai-user">
-            {row.text}
+            {cleanUserPrompt(row.text)}
           </div>
         )
       case 'assistant':
@@ -271,7 +275,26 @@ export function AiPanel(props: AiPanelProps) {
             </div>
           ) : null}
 
-          {rows.length === 0 && !attaching && snapshot.status !== 'error' ? (
+          {rows.length === 0 && history.length > 0 ? (
+            <div className="pd-ai-history">
+              <div className="pd-ai-history-title">{labels.historyTitle}</div>
+              {history.map((message, index) =>
+                message.role === 'user' ? (
+                  <div key={`history-${index}`} className="pd-ai-user">
+                    {message.text}
+                  </div>
+                ) : (
+                  <div key={`history-${index}`} className="pd-ai-row">
+                    <div className="pd-ai-assistant">
+                      <Markdown markdown={message.text} />
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          ) : null}
+
+          {rows.length === 0 && history.length === 0 && !attaching && snapshot.status !== 'error' ? (
             <div className="pd-ai-empty">{labels.emptyHint}</div>
           ) : null}
 
