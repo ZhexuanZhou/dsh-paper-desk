@@ -88,6 +88,8 @@ description:
   en: Mendeley-style paper library for DeepSeek Harness — import PDFs, read them in-app with highlights, notes and questions, generate note cards from AI answers, compare 2–6 papers, build a typed relation graph, and sync the library folder through any cloud drive.
   zh: 给 DeepSeek Harness 的 Mendeley 式论文库——导入 PDF、在面板内阅读并做高亮/划线/笔记/提问、把 AI 回答生成笔记卡片、对比 2–6 篇论文、建立带类型的论文关联图谱，并把库目录交给云盘同步。
 icon: https://raw.githubusercontent.com/ZhexuanZhou/dsh-paper-desk/main/assets/icon-180.png
+# 可选：npm 发布前的预构建安装包（Release 里的 tgz，tag 钉死不随发版 404）
+tarball: https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.3.0/dsh-paper-desk-0.3.0.tgz
 ```
 
 > 分类 `tools` 是按「论文管理与阅读工具」选的；维护者可能根据实际内容调整分类，这不影响收录。
@@ -136,3 +138,16 @@ dsh plugin --profile web add dsh-paper-desk
 - 插件只读写用户选择的论文库目录（默认 `~/Documents/PaperDesk`），不做网络回传。
 - Crossref 只在 `enrich` 开启时请求公开元数据；AI 能力走 DSH 自己的会话，不额外拿密钥。
 - 云盘同步由用户自己的网盘客户端完成，插件只写普通文件（原子写 + 冲突副本）。
+
+
+## 当前状态（2026-11-09）
+
+- 市场 PR 已提交：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/13433>
+  （条目标题 `Add ZhexuanZhou/dsh-paper-desk`，CI 通过后等维护者审阅）。
+- npm 登录已确认（账号 `zhe_xuan`），但 npm 账号启用了 2FA：命令行发布返回
+  `403 ... Two-factor authentication or granular access token with bypass 2fa enabled is required`。
+  解决方式二选一：
+  1. 在本机终端执行 `npm publish`，按提示输入 6 位 OTP（推荐）；
+  2. 在 npmjs.com → Access Tokens 建一个勾选 “Bypass two-factor authentication” 的
+     Automation token，配到本机后再执行 `npm publish`。
+- npm 发布成功后市场条目会自动关联下载量（`repository` 已指回本仓库），无需再改条目。
