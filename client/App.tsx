@@ -1743,8 +1743,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     const root = document.querySelector<HTMLElement>('.pd-root')
     if (root === null) return
     const update = (): void => {
+      // The desktop app may load the HTTP web UI (not dsh-app://), so also
+      // detect Electron; the host rail itself is the reliable width signal.
       const desktop =
         window.location.protocol === 'dsh-app:' ||
+        /Electron/i.test(navigator.userAgent) ||
         document.documentElement.dataset['platform'] === 'darwin'
       const gap = window.innerWidth - root.getBoundingClientRect().width
       root.dataset['hostRail'] = desktop && gap > 0 && gap < 100 ? 'collapsed' : 'expanded'
