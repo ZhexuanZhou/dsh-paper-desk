@@ -172,7 +172,11 @@ export function LibraryView(props: LibraryViewProps) {
                   onClick={() => onSelect(paper.id)}
                 >
                   <span className="pd-row-top">
-                    <span className="pd-dot" data-status={paper.status} aria-hidden="true" />
+                    <span
+                      className="pd-dot"
+                      data-status={paper.status}
+                      title={t(`status.${paper.status}`)}
+                    />
                     <span className="pd-row-main">
                       <span className="pd-row-title">{paper.title}</span>
                       {paper.authors.length > 0 ? (
@@ -195,6 +199,11 @@ export function LibraryView(props: LibraryViewProps) {
                             ) : null}
                             <span>{t('list.pages', { n: paper.pageCount })}</span>
                           </>
+                        ) : null}
+                        {paper.rating > 0 ? (
+                          <span className="pd-row-rating" title={t('reader.rating')}>
+                            ★ {paper.rating}
+                          </span>
                         ) : null}
                       </span>
                       {paper.notePreview !== '' ? <span className="pd-row-note">{paper.notePreview}</span> : null}

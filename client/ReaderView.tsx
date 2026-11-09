@@ -39,6 +39,7 @@ import { ChatBar } from './ChatBar.js'
 import type { ChatBarLabels } from './ChatBar.js'
 import type { AiPanelLabels } from './AiPanel.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
+import type { PaperStatus } from '../src/types.js'
 import { annotationKindLabel, formatNumber, statusLabel, useLang, useT } from './i18n.js'
 import { CardEditor, CardsPanel, suggestCardTitle } from './CardsPanel.js'
 import type { CardDraft } from './CardsPanel.js'
@@ -54,6 +55,8 @@ type ToastPush = (kind: ToastKind, message: string) => void
 export type ReaderBusy = 'enrich' | 'bibtex' | 'reveal' | 'delete' | 'download'
 
 type ReaderTab = 'read' | 'text' | 'notes' | 'info'
+
+const READER_STATUSES: readonly PaperStatus[] = ['unread', 'reading', 'read', 'archived']
 
 type DrawerTab = 'annotations' | 'ai'
 
@@ -1028,10 +1031,26 @@ export function ReaderView(props: ReaderViewProps) {
                 <span className="pd-reader-meta-item">{t('meta.value.pages', { n: meta.pageCount })}</span>
               </>
             ) : null}
-            <span className="pd-status-chip" data-status={meta.status}>
+            <label className="pd-status-chip pd-status-chip-edit" data-status={meta.status} title={t('meta.status')}>
               <span className="pd-dot" data-status={meta.status} aria-hidden="true" />
-              {statusLabel(t, meta.status)}
-            </span>
+              <select
+                className="pd-status-select"
+                value={meta.status}
+                aria-label={t('meta.status')}
+                disabled={busy !== null}
+                onChange={(event) => {
+                  const value = event.target.value as PaperStatus
+                  if (value !== meta.status) void onPatchMeta({ status: value }, { silent: true })
+                }}
+              >
+                {READER_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabel(t, status)}
+                  </option>
+                ))}
+              </select>
+              <span className="pd-status-caret" aria-hidden="true">▾</span>
+            </label>
             {meta.tags.slice(0, 3).map((tag) => (
               <span key={`${meta.id}-tag-${tag}`} className="pd-tag" title={tag}>
                 {tag}

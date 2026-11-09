@@ -67,6 +67,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
   const [form, setForm] = useState<MetaForm>(baseline)
   const [yearError, setYearError] = useState<string | null>(null)
   const metaIdRef = useRef(meta.id)
+  const previousMetaRef = useRef(meta)
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(baseline), [form, baseline])
   const dirtyRef = useRef(dirty)
@@ -74,6 +75,8 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
 
   /* Adopt external changes only when the user has nothing unsaved. */
   useEffect(() => {
+    const previous = previousMetaRef.current
+    previousMetaRef.current = meta
     const next = toForm(meta)
     if (metaIdRef.current !== meta.id) {
       metaIdRef.current = meta.id
@@ -84,8 +87,20 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
     if (!dirtyRef.current) {
       setForm(next)
       setYearError(null)
+      return
     }
-    // `dirty` is intentionally read through a ref: adopting on every keystroke would clobber the form.
+    // Header quick edits (status / rating) must reach the form even while other
+    // fields are dirty; only adopt when the form still holds the previous value.
+    setForm((current) => {
+      let patched = current
+      if (previous.status !== meta.status && current.status === previous.status) {
+        patched = { ...patched, status: next.status }
+      }
+      if (previous.rating !== meta.rating && current.rating === previous.rating) {
+        patched = { ...patched, rating: next.rating }
+      }
+      return patched
+    })
   }, [meta])
 
   function update<K extends keyof MetaForm>(key: K, value: MetaForm[K]): void {

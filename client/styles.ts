@@ -330,6 +330,7 @@ export const CSS = `
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.pd-row-rating { color: ${WARN}; font-weight: 600; }
 .pd-row-meta-sep { opacity: 0.5; }
 .pd-row-note {
   overflow: hidden;
@@ -634,6 +635,24 @@ export const CSS = `
 }
 .pd-reader-meta-item { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pd-reader-info-sep { flex: 0 0 auto; opacity: 0.45; }
+.pd-status-chip-edit { padding-right: 4px; gap: 3px; cursor: pointer; }
+.pd-status-select {
+  appearance: none;
+  border: 0;
+  padding: 0 12px 0 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.pd-status-caret {
+  margin-left: -10px;
+  font-size: 8px;
+  color: ${FG_2};
+  pointer-events: none;
+}
 .pd-status-chip {
   display: inline-flex;
   align-items: center;
