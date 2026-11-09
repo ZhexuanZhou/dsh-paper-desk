@@ -110,7 +110,7 @@ const zhRelations: Record<string, string> = {
   'relations.edge.note': '备注',
   'relations.edge.source': '来源',
   'relations.edge.source.user': '手动创建',
-  'relations.edge.source.agent': '来自对比建议',
+  'relations.edge.source.agent': 'AI / 自动生成',
   'relations.edge.delete': '删除关联',
   'relations.edge.deleteConfirm': '确定删除这条关联？',
   'relations.edge.deleteYes': '确认删除',
@@ -183,6 +183,7 @@ const zhRelations: Record<string, string> = {
   'relations.discover.failed': 'AI 发现关联失败',
   'relations.discover.candidates': '候选关联 · {n}',
   'relations.discover.selectAll': '全选',
+  'relations.discover.selectClear': '全不选',
   'relations.discover.selectNone': '反选',
   'relations.discover.selectedCount': '已选 {n} 条',
   'relations.discover.addSelected': '加入选中',
@@ -259,7 +260,7 @@ const enRelations: Record<string, string> = {
   'relations.edge.note': 'Note',
   'relations.edge.source': 'Source',
   'relations.edge.source.user': 'Created manually',
-  'relations.edge.source.agent': 'From a comparison suggestion',
+  'relations.edge.source.agent': 'AI / auto-generated',
   'relations.edge.delete': 'Delete relation',
   'relations.edge.deleteConfirm': 'Delete this relation?',
   'relations.edge.deleteYes': 'Delete',
@@ -333,6 +334,7 @@ const enRelations: Record<string, string> = {
   'relations.discover.failed': 'AI relation discovery failed',
   'relations.discover.candidates': 'Candidates · {n}',
   'relations.discover.selectAll': 'Select all',
+  'relations.discover.selectClear': 'Select none',
   'relations.discover.selectNone': 'Invert',
   'relations.discover.selectedCount': '{n} selected',
   'relations.discover.addSelected': 'Add selected',
@@ -691,7 +693,7 @@ export const relationsCss = `
 .pd-rel-edge[data-kind="same-topic"] { stroke: color-mix(in srgb, ${BRAND} 52%, ${OK} 48%); }
 .pd-rel-edge[data-kind="custom"] { stroke: ${FG_2}; }
 .pd-rel-edge[data-active="true"] { opacity: 1; stroke-width: 2.6; }
-.pd-rel-edge[data-dim="true"] { opacity: 0.1; }
+.pd-rel-edge[data-dim="true"] { opacity: 0.28; }
 .pd-rel-edge-hit {
   fill: none;
   stroke: transparent;
@@ -730,7 +732,7 @@ export const relationsCss = `
   stroke-width: 2.4;
 }
 .pd-rel-node[data-hover="true"] .pd-rel-node-circle { stroke: ${BRAND}; stroke-width: 2.2; }
-.pd-rel-node[data-dim="true"] { opacity: 0.2; }
+.pd-rel-node[data-dim="true"] { opacity: 0.42; }
 .pd-rel-node-halo { fill: color-mix(in srgb, ${BRAND} 16%, transparent); stroke: none; pointer-events: none; }
 .pd-rel-node-hit { fill: transparent; stroke: none; }
 .pd-rel-node-dot { fill: ${FG_2}; stroke: none; pointer-events: none; }
@@ -2623,6 +2625,39 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     alphaRef.current = Math.max(alphaRef.current, 0.25)
   }, [open, graphVisible, focusPaperId, showAll, size.w, size.h, dataKey])
 
+  /** Scale/translate the view so every node (and its label margin) fits. */
+  const fitViewToNodes = useCallback((): void => {
+    const stage = sizeRef.current
+    const nodes = nodesRef.current
+    if (stage.w < 80 || stage.h < 80 || nodes.length === 0) return
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    let maxX = Number.NEGATIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    for (const node of nodes) {
+      const margin = node.radius + 46
+      minX = Math.min(minX, node.x - margin)
+      minY = Math.min(minY, node.y - margin)
+      maxX = Math.max(maxX, node.x + margin)
+      maxY = Math.max(maxY, node.y + margin)
+    }
+    const width = Math.max(1, maxX - minX)
+    const height = Math.max(1, maxY - minY)
+    const pad = 42
+    const k = clamp(Math.min((stage.w - pad * 2) / width, (stage.h - pad * 2) / height), 0.3, 1.5)
+    const centerX = (minX + maxX) / 2
+    const centerY = (minY + maxY) / 2
+    setView({ x: stage.w / 2 - centerX * k, y: stage.h / 2 - centerY * k, k })
+  }, [])
+
+  /* fit the whole graph into the stage when no focus mode is active */
+  useEffect(() => {
+    if (!open || !graphVisible) return
+    if (focusPaperId !== null && !showAll) return
+    centerRequestRef.current = { kind: 'fit' }
+    alphaRef.current = Math.max(alphaRef.current, 0.2)
+  }, [open, graphVisible, focusPaperId, showAll, size.w, size.h, dataKey])
+
   /* ── animation loop (one rAF, cheap when the layout is still) ─────────── */
 
   useEffect(() => {
@@ -2649,7 +2684,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
       const request = centerRequestRef.current
       if (request !== null && alphaRef.current < 0.2 && stage.w > 80 && stage.h > 80) {
         if (request.kind === 'fit') {
-          setView({ x: 0, y: 0, k: 1 })
+          fitViewToNodes()
           centerRequestRef.current = null
         } else {
           const node = nodes.find((item) => item.id === request.id)
@@ -2667,7 +2702,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
       alive = false
       cancelAnimationFrame(raf)
     }
-  }, [open])
+  }, [open, fitViewToNodes])
 
   /* ── wheel zoom (native listener so preventDefault works) ─────────────── */
 
@@ -3173,6 +3208,10 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setDiscoverChecked(next)
   }
 
+  const clearCandidateSelection = (): void => {
+    setDiscoverChecked({})
+  }
+
   const invertCandidates = (): void => {
     setDiscoverChecked((current) => {
       const next: Record<string, boolean> = {}
@@ -3569,7 +3608,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
             <div className="pd-rel-pop-pair">
               <span>{titleOf(selectedEdge.from)}</span>
               <span className="pd-rel-pop-arrow" aria-hidden="true">
-                ↔
+                {selectedEdge.kind === 'cites' ? '→' : '↔'}
               </span>
               <span>{titleOf(selectedEdge.to)}</span>
             </div>
@@ -4330,6 +4369,14 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
                         onClick={selectAllCandidates}
                       >
                         {t('relations.discover.selectAll')}
+                      </button>
+                      <button
+                        type="button"
+                        className="pd-rel-btn pd-rel-btn-sm"
+                        disabled={discoverAdding}
+                        onClick={clearCandidateSelection}
+                      >
+                        {t('relations.discover.selectClear')}
                       </button>
                       <button
                         type="button"

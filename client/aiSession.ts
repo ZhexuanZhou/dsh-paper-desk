@@ -63,6 +63,8 @@ export interface AiThreadController {
   stop(): Promise<void>
   /** Drop the cached session for a thread and start from an empty thread. */
   resetThread(threadKey?: string): void
+  /** Force-rename the attached DSH session (used when a chat is renamed). */
+  renameThread(title: string): Promise<void>
   /** Full text of the last assistant answer (for 保存到笔记). */
   lastAnswer(): string | null
   getSnapshot(): AiThreadState
@@ -1263,6 +1265,18 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     }
   }
 
+  const renameThread = async (title: string): Promise<void> => {
+    const current = attachment
+    const rename = current?.session.rename
+    const desired = title.trim()
+    if (current === null || desired === '' || typeof rename !== 'function') return
+    try {
+      await rename.call(current.session, desired)
+    } catch {
+      // Renaming is best-effort; the transcript title in the plugin still wins.
+    }
+  }
+
   const resetThread = (threadKey?: string): void => {
     const key = threadKey !== undefined ? threadKey : currentThreadKey
     openToken += 1
@@ -1356,6 +1370,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     run,
     stop,
     resetThread,
+    renameThread,
     lastAnswer,
     getSnapshot: () => state,
     subscribe,

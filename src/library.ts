@@ -17,6 +17,7 @@ import path from 'node:path'
 import type { Language } from './config.js'
 import {
   crossrefByDoi,
+  crossrefRecordMatches,
   crossrefSearch,
   guessFromFileName,
   guessFromPdf,
@@ -461,8 +462,11 @@ async function buildGuess(
       .join(' ')
     const record = guess.doi
       ? await crossrefByDoi(guess.doi).catch(() => null)
-      : await crossrefSearch(query).catch(() => null)
-    if (record !== null) {
+      : await crossrefSearch(query, undefined, searchTitle, guess.year ?? null).catch(() => null)
+    // Never merge a record whose title/year do not match the PDF: Crossref
+    // always returns a best match, and a wrong DOI/abstract is worse than an
+    // empty field.
+    if (record !== null && crossrefRecordMatches(record, searchTitle, guess.year ?? null)) {
       guess = mergeGuess(guess, record)
       crossrefUrl = record.url?.trim() ?? ''
     }

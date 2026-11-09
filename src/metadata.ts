@@ -895,25 +895,82 @@ export async function crossrefByDoi(
 export async function crossrefSearch(
   query: string,
   signal?: AbortSignal,
+  expectedTitle?: string,
+  expectedYear?: number | null,
 ): Promise<CrossrefRecord | null> {
   const cleaned = cleanInline(query)
   if (!cleaned) return null
   try {
     const url = new URL(`${CROSSREF_API}/works`)
     url.searchParams.set('query.bibliographic', cleaned.slice(0, 400))
-    url.searchParams.set('rows', '5')
+    url.searchParams.set('rows', '8')
     url.searchParams.set('mailto', CROSSREF_MAILTO)
     const payload = await fetchCrossrefJson(url.toString(), signal)
     const items = asRecord(asRecord(payload)?.message)?.items
     if (!Array.isArray(items)) return null
-    for (const item of items) {
-      const record = recordFromMessage(item)
-      if (record?.title) return record
+    const records = items
+      .map((item) => recordFromMessage(item))
+      .filter((record): record is CrossrefRecord => record !== null && (record.title?.trim() ?? '') !== '')
+    if (records.length === 0) return null
+    const expected = expectedTitle?.trim() ?? ''
+    if (expected === '') return records[0] ?? null
+    const expectedTokens = titleTokens(expected)
+    if (expectedTokens.length < 3) return records[0] ?? null
+    let best: CrossrefRecord | null = null
+    let bestScore = 0
+    for (const record of records) {
+      if (expectedYear !== undefined && expectedYear !== null && record.year !== undefined && record.year !== null) {
+        if (Math.abs(expectedYear - record.year) > 1) continue
+      }
+      const candidateTokens = titleTokens(record.title ?? '')
+      const candidate = new Set(candidateTokens)
+      let hits = 0
+      for (const token of expectedTokens) if (candidate.has(token)) hits += 1
+      const recall = hits / expectedTokens.length
+      const precision = candidateTokens.length === 0 ? 0 : hits / candidateTokens.length
+      const score = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall)
+      if (score > bestScore) {
+        best = record
+        bestScore = score
+      }
     }
-    return null
+    return best !== null && crossrefRecordMatches(best, expected, expectedYear ?? null) ? best : null
   } catch {
     return null
   }
+}
+
+function titleTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((token) => token.length > 1)
+}
+
+/**
+ * Crossref answers a bibliographic query with a best guess even when the
+ * article does not exist; without an identity check a wrong DOI/abstract/URL
+ * silently overwrites empty fields (the "cryoEM paper" contamination).
+ * Require substantial title overlap (and a compatible year) before trusting a
+ * Crossref record.
+ */
+export function crossrefRecordMatches(
+  record: CrossrefRecord,
+  expectedTitle: string,
+  expectedYear: number | null,
+): boolean {
+  const expected = titleTokens(expectedTitle)
+  if (expected.length < 3) return false
+  const candidate = new Set(titleTokens(record.title ?? ''))
+  if (candidate.size === 0) return false
+  let hits = 0
+  for (const token of expected) if (candidate.has(token)) hits += 1
+  if (hits / expected.length < 0.6) return false
+  if (expectedYear !== null && record.year !== undefined && record.year !== null && Math.abs(expectedYear - record.year) > 1) {
+    return false
+  }
+  return true
 }
 
 /**

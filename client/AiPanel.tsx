@@ -41,6 +41,8 @@ export interface AiPanelLabels {
 
 export interface AiPanelProps {
   ai: AiThreadController
+  /** Thread key belonging to the visible paper/chat; mismatched state renders empty. */
+  expectedThreadKey: string | null
   /** Persisted transcript shown while the DSH session is empty (e.g. deleted). */
   history: readonly { role: 'user' | 'assistant'; text: string }[]
   busyTask: AssistTask | null
@@ -94,13 +96,29 @@ export function AiPanel(props: AiPanelProps) {
 
   const subscribe = useCallback((listener: () => void) => ai.subscribe(listener), [ai])
   const getSnapshot = useCallback(() => ai.getSnapshot(), [ai])
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot)
+  const rawSnapshot = useSyncExternalStore(subscribe, getSnapshot)
+  const threadMatches =
+    props.expectedThreadKey === null
+      ? rawSnapshot.threadKey === null
+      : rawSnapshot.threadKey === props.expectedThreadKey
+  const snapshot = threadMatches
+    ? rawSnapshot
+    : { status: 'idle' as const, threadKey: null, paperId: null, sessionId: null, rows: [], error: null }
 
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [composing, setComposing] = useState(false)
   const composingRef = useRef(false)
   const [noResponse, setNoResponse] = useState(false)
+  const [zoom, setZoom] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('paperdesk:ai-zoom')
+      const value = raw === null ? Number.NaN : Number.parseFloat(raw)
+      return Number.isFinite(value) ? Math.min(1.4, Math.max(0.85, value)) : 1
+    } catch {
+      return 1
+    }
+  })
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [follow, setFollow] = useState(true)
   const [hasNew, setHasNew] = useState(false)
@@ -110,7 +128,7 @@ export function AiPanel(props: AiPanelProps) {
   const running = snapshot.status === 'running'
   const attaching = snapshot.status === 'attaching'
   const disabled = running || attaching || sending
-  const answer = ai.lastAnswer()
+  const answer = threadMatches ? ai.lastAnswer() : null
   const pages = useMemo(() => collectCitedPages(rows), [rows])
 
   const lastPrompt = useMemo(() => {
@@ -259,7 +277,7 @@ export function AiPanel(props: AiPanelProps) {
   }
 
   return (
-    <div className="pd-ai" role="region" aria-label={labels.title}>
+    <div className="pd-ai" role="region" aria-label={labels.title} style={{ zoom }}>
       <div className="pd-ai-body">
         <div className="pd-ai-scroll" ref={scrollRef} onScroll={onScroll}>
           {attaching ? (
@@ -350,6 +368,36 @@ export function AiPanel(props: AiPanelProps) {
 
       <div className="pd-ai-foot">
         <div className="pd-ai-actions">
+          <button
+            type="button"
+            className="pd-btn pd-btn-sm pd-btn-ghost"
+            aria-label="Smaller text"
+            title="Smaller text"
+            onClick={() => {
+              setZoom((current) => {
+                const next = Math.max(0.85, Math.round((current - 0.05) * 100) / 100)
+                try { localStorage.setItem('paperdesk:ai-zoom', String(next)) } catch {}
+                return next
+              })
+            }}
+          >
+            A−
+          </button>
+          <button
+            type="button"
+            className="pd-btn pd-btn-sm pd-btn-ghost"
+            aria-label="Larger text"
+            title="Larger text"
+            onClick={() => {
+              setZoom((current) => {
+                const next = Math.min(1.4, Math.round((current + 0.05) * 100) / 100)
+                try { localStorage.setItem('paperdesk:ai-zoom', String(next)) } catch {}
+                return next
+              })
+            }}
+          >
+            A+
+          </button>
           <Button size="sm" variant="ghost" onClick={() => void onReset()} title={labels.newThreadHint}>
             {labels.newThread}
           </Button>

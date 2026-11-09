@@ -448,8 +448,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const aiPaperTitle = detailForSelection?.meta.title ?? ''
   const aiDetailSettled = detailForSelection !== null || (!detailLoading && detailError !== null)
   const activeChat = useMemo(
-    () => chats?.items.find((chat) => chat.id === activeChatId) ?? null,
-    [chats, activeChatId],
+    () =>
+      chats !== null && chats.paperId === selectedId
+        ? chats.items.find((chat) => chat.id === activeChatId) ?? null
+        : null,
+    [chats, activeChatId, selectedId],
   )
   const activeChatRef = useRef<PaperChat | null>(null)
   useEffect(() => {
@@ -1212,12 +1215,16 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         .then((next) => {
           setChats(next)
           chatsRef.current = next
+          if (title !== null && chatId === activeChatIdRef.current) {
+            const paperTitle = detail !== null && detail.meta.id === paperId ? detail.meta.title : paperId
+            void ai.renameThread(`AI · ${paperTitle} · ${title}`)
+          }
         })
         .catch(() => {
           /* Transcript persistence is best-effort; the session still works. */
         })
     },
-    [ai],
+    [ai, detail],
   )
 
   /* Persist the current conversation whenever its transcript changes. */
@@ -1280,11 +1287,15 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         const doc = await api.updateChat(selectedId, chatId, { title: nextTitle })
         setChats(doc)
         chatsRef.current = doc
+        if (chatId === activeChatIdRef.current) {
+          const paperTitle = detail !== null && detail.meta.id === selectedId ? detail.meta.title : selectedId
+          void ai.renameThread(`AI · ${paperTitle} · ${nextTitle}`)
+        }
       } catch (error) {
         reportError(error, 'chat.updateFailed')
       }
     },
-    [selectedId, reportError],
+    [selectedId, detail, ai, reportError],
   )
 
   const removeChat = useCallback(
@@ -2057,8 +2068,13 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               ai={ai}
               onAiAsk={handleAiAsk}
               onAiReset={handleAiReset}
-              chats={chats}
+              chats={chats !== null && chats.paperId === selectedId ? chats : null}
               activeChatId={activeChatId}
+              aiThreadKey={
+                selectedId !== null && activeChat !== null
+                  ? chatThreadKey(selectedId, activeChat.id)
+                  : null
+              }
               onSelectChat={selectChat}
               onCreateChat={() => void createChat()}
               onRenameChat={(chatId, title) => void renameChat(chatId, title)}

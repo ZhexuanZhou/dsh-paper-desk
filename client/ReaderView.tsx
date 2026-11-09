@@ -66,6 +66,40 @@ function drawerButtonPressed(drawer: DrawerState, tab: DrawerTab): boolean {
   return drawer.open && drawer.tab === tab
 }
 
+const DRAWER_WIDTH_KEY = 'paperdesk:drawer-width'
+const DEFAULT_DRAWER_WIDTH = 360
+
+function readDrawerWidth(): number {
+  try {
+    const raw = localStorage.getItem(DRAWER_WIDTH_KEY)
+    const value = raw === null ? Number.NaN : Number.parseInt(raw, 10)
+    return Number.isFinite(value) ? Math.min(680, Math.max(280, value)) : DEFAULT_DRAWER_WIDTH
+  } catch {
+    return DEFAULT_DRAWER_WIDTH
+  }
+}
+
+const READER_PAGE_PREFIX = 'paperdesk:reader-page:'
+
+function readReaderPage(paperId: string): number | null {
+  try {
+    const raw = localStorage.getItem(READER_PAGE_PREFIX + paperId)
+    const page = raw === null ? Number.NaN : Number.parseInt(raw, 10)
+    return Number.isFinite(page) && page > 0 ? page : null
+  } catch {
+    return null
+  }
+}
+
+function writeReaderPage(paperId: string, page: number | null): void {
+  try {
+    if (page === null || page <= 0) localStorage.removeItem(READER_PAGE_PREFIX + paperId)
+    else localStorage.setItem(READER_PAGE_PREFIX + paperId, String(page))
+  } catch {
+    // Reading-position restore is a convenience only.
+  }
+}
+
 interface CardEditorState {
   mode: 'create' | 'edit'
   cardId: string | null
@@ -126,6 +160,8 @@ export interface ReaderViewProps {
   onAiReset: () => Promise<void>
   chats: ChatsDocument | null
   activeChatId: string | null
+  /** Thread key the AI panel may render; anything else is treated as empty. */
+  aiThreadKey: string | null
   onSelectChat: (chatId: string) => void
   onCreateChat: () => void
   onRenameChat: (chatId: string, title: string) => void
@@ -360,6 +396,7 @@ export function ReaderView(props: ReaderViewProps) {
     onAiReset,
     chats,
     activeChatId,
+    aiThreadKey,
     onSelectChat,
     onCreateChat,
     onRenameChat,
@@ -387,7 +424,9 @@ export function ReaderView(props: ReaderViewProps) {
   const [askOpen, setAskOpen] = useState(false)
   const [question, setQuestion] = useState('')
   const [drawer, setDrawer] = useState<DrawerState>({ open: false, tab: 'annotations' })
+  const [drawerWidth, setDrawerWidth] = useState<number>(() => readDrawerWidth())
   const [currentPage, setCurrentPage] = useState<number | null>(null)
+  const pageRef = useRef<{ paperId: string; page: number | null } | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [focusTarget, setFocusTarget] = useState<{ page?: number; annotationId?: string | null } | null>(null)
   const [editRequestId, setEditRequestId] = useState<string | null>(null)
@@ -407,9 +446,25 @@ export function ReaderView(props: ReaderViewProps) {
     setAskOpen(false)
     setQuestion('')
     setDrawer({ open: false, tab: 'annotations' })
-    setCurrentPage(null)
+    if (paperId === null) {
+      setCurrentPage(null)
+      setFocusTarget(null)
+      pageRef.current = null
+      setActiveAnnotationId(null)
+      setEditRequestId(null)
+      setPendingDelete(null)
+      setAskAnnotation(null)
+      setAskQuestion('')
+      setCardEditor(null)
+      setPendingCardDelete(null)
+      setDeletingCard(false)
+      return
+    }
+    const savedPage = readReaderPage(paperId)
+    setCurrentPage(savedPage)
+    setFocusTarget(savedPage !== null ? { page: savedPage } : null)
+    pageRef.current = { paperId, page: savedPage }
     setActiveAnnotationId(null)
-    setFocusTarget(null)
     setEditRequestId(null)
     setPendingDelete(null)
     setAskAnnotation(null)
@@ -417,6 +472,17 @@ export function ReaderView(props: ReaderViewProps) {
     setCardEditor(null)
     setPendingCardDelete(null)
     setDeletingCard(false)
+  }, [paperId])
+
+  /* Remember the reading page when leaving a paper; restore it on return. */
+  useEffect(() => {
+    if (paperId === null) return
+    return () => {
+      const current = pageRef.current
+      if (current !== null && current.paperId === paperId) {
+        writeReaderPage(current.paperId, current.page)
+      }
+    }
   }, [paperId])
 
   /* Lazy text extraction: only when the 文本 tab is visible. */
@@ -593,6 +659,30 @@ export function ReaderView(props: ReaderViewProps) {
 
   const openDrawer = (drawerTab: DrawerTab): void => {
     setDrawer({ open: true, tab: drawerTab })
+  }
+
+  const beginDrawerResize = (event: React.PointerEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = drawerWidth
+    const onMove = (moveEvent: PointerEvent): void => {
+      const next = Math.min(680, Math.max(280, startWidth - (moveEvent.clientX - startX)))
+      setDrawerWidth(next)
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      setDrawerWidth((current) => {
+        try {
+          localStorage.setItem(DRAWER_WIDTH_KEY, String(current))
+        } catch {
+          // Width persistence is a convenience only.
+        }
+        return current
+      })
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
   }
 
   const toggleDrawer = (drawerTab: DrawerTab): void => {
@@ -996,7 +1086,12 @@ export function ReaderView(props: ReaderViewProps) {
                     setFocusTarget({ annotationId: id })
                     openDrawer('annotations')
                   }}
-                  onPageChange={(page) => setCurrentPage(page)}
+                  onPageChange={(page) => {
+                    setCurrentPage(page)
+                    if (pageRef.current !== null && pageRef.current.paperId === paperId) {
+                      pageRef.current = { paperId, page }
+                    }
+                  }}
                   focusPage={focusTarget?.page}
                   focusAnnotationId={focusTarget?.annotationId ?? null}
                   lowTextHint={detail.text?.lowText === true ? t('viewer.lowText') : undefined}
@@ -1014,8 +1109,15 @@ export function ReaderView(props: ReaderViewProps) {
               className="pd-annot-rail"
               data-open={drawer.open ? 'true' : 'false'}
               data-tab={drawer.tab}
+              style={{ width: drawerWidth }}
               aria-label={drawer.tab === 'ai' ? t('ai.title') : t('annotations.title')}
             >
+              <div
+                className="pd-drawer-resizer"
+                role="separator"
+                aria-orientation="vertical"
+                onPointerDown={beginDrawerResize}
+              />
               <div className="pd-drawer-tabs" role="tablist" aria-label={t('ai.title')}>
                 <button
                   type="button"
@@ -1085,6 +1187,7 @@ export function ReaderView(props: ReaderViewProps) {
                   />
                   <AiPanel
                     ai={ai}
+                    expectedThreadKey={aiThreadKey}
                     history={activeChat?.messages ?? []}
                     busyTask={assistBusy}
                     labels={aiLabels}

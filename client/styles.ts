@@ -755,6 +755,18 @@ export const CSS = `
   background: ${L1};
 }
 .pd-annot-rail[data-open="false"] { display: none; }
+.pd-annot-rail { position: relative; }
+.pd-drawer-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 2;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.pd-drawer-resizer:hover { background: color-mix(in srgb, ${FG} 12%, transparent); }
 .pd-annot-rail[data-tab="ai"] { width: 360px; }
 .pd-drawer-tabs {
   display: flex;

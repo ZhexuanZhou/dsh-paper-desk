@@ -55,7 +55,7 @@ const PAPERS_DIR = 'papers'
 
 /** Heading line of a reference list; leading "12." / "12)" numbering allowed. */
 const REFERENCE_HEADING_RE =
-  /^\s*(?:\d+[.)、]?\s*)?(?:references|bibliography|works cited|参考文献|引用文献)\s*[:：]?\s*$/i
+  /^\s*(?:\d+[.)、]?\s*)?(references|bibliography|works cited|参考文献|引用文献)\s*[:：]?\s*(.*)$/i
 
 /** Reference-block hard cap (characters). */
 const BLOCK_CAP = 60_000
@@ -317,18 +317,21 @@ async function referencesForPaper(root: string, paperId: string): Promise<Extrac
     .sort((a, b) => a.page - b.page)
   if (pages.length === 0) return { hits: [], pages: [], fallback: false }
 
-  // Only the last 45% of the paper may contain the reference heading.
-  const lastPage = Math.max(text.pageCount, pages[pages.length - 1]!.page)
-  const firstCandidate = Math.max(1, Math.floor(lastPage * 0.55) + 1)
-  const candidates = pages.filter((page) => page.page >= firstCandidate)
+  // Reference sections are usually near the end but not always inside the
+  // last 45% (ELF, for example, starts references around 1/3 of the PDF).
+  // Scan every page for the heading instead of assuming a position.
+  const candidates = pages
 
   for (let index = 0; index < candidates.length; index += 1) {
     const page = candidates[index]!
     const lines = page.text.replace(/\r\n?/g, '\n').split('\n')
     const headingLine = lines.findIndex((line) => REFERENCE_HEADING_RE.test(line))
     if (headingLine < 0) continue
+    const headingMatch = REFERENCE_HEADING_RE.exec(lines[headingLine] ?? '')
+    const inlineFirst = (headingMatch?.[2] ?? '').trim()
 
     const slices: PageSlice[] = [{ page: page.page, text: lines.slice(headingLine + 1).join('\n') }]
+    if (inlineFirst !== '') slices[0] = { page: page.page, text: `${inlineFirst}\n${slices[0]?.text ?? ''}`.trim() }
     for (const following of pages) {
       if (following.page > page.page) slices.push({ page: following.page, text: following.text })
     }
