@@ -61,6 +61,8 @@ export interface AiThreadController {
   openPaper(paperId: string, options: AiThreadOptions): Promise<void>
   run(prompt: string): Promise<{ ok: boolean; error?: string }>
   stop(): Promise<void>
+  /** Drop the cached session for a thread and start from an empty thread. */
+  resetThread(threadKey?: string): void
   /** Full text of the last assistant answer (for 保存到笔记). */
   lastAnswer(): string | null
   getSnapshot(): AiThreadState
@@ -1261,6 +1263,33 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     }
   }
 
+  const resetThread = (threadKey?: string): void => {
+    const key = threadKey !== undefined ? threadKey : currentThreadKey
+    openToken += 1
+    detach()
+    pendingOpen = null
+    fatalError = null
+    localErrorRows = []
+    localErrorSeq = 0
+    pendingSubmit = false
+    hasRunStarted = false
+    submitStartSeq = -1
+    currentThreadKey = null
+    currentWorkspacePath = ''
+    if (key !== null) {
+      const store = storage()
+      if (store !== null) {
+        try {
+          store.removeItem(CACHE_PREFIX + key)
+          store.removeItem(LEGACY_CACHE_PREFIX + key)
+        } catch {
+          // Storage failures must not block starting a new thread.
+        }
+      }
+    }
+    commit(createIdleState())
+  }
+
   const stop = async (): Promise<void> => {
     const current = attachment
     const cancel = current?.session.cancel
@@ -1326,6 +1355,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     openPaper,
     run,
     stop,
+    resetThread,
     lastAnswer,
     getSnapshot: () => state,
     subscribe,

@@ -1119,6 +1119,16 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     [selectedId, ai, ensureAiPaper, pushToast, reportError],
   )
 
+  /** Start a clean AI thread for the selected paper (drops a stale/archived one). */
+  const handleAiReset = useCallback(async (): Promise<void> => {
+    const paperId = selectedId
+    ai.resetThread(paperId ?? undefined)
+    if (paperId === null) return
+    if (await ensureAiPaper(paperId)) {
+      pushToast('info', tRef.current('ai.newThreadDone'))
+    }
+  }, [ai, selectedId, ensureAiPaper, pushToast])
+
   const handleAiStop = useCallback(async (): Promise<void> => {
     try {
       await ai.stop()
@@ -1795,6 +1805,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onAskAboutSelection={handleAskAboutSelection}
               ai={ai}
               onAiAsk={handleAiAsk}
+              onAiReset={handleAiReset}
               onAiStop={handleAiStop}
               onAiSaveToNotes={handleAiSaveToNotes}
               onAiCopy={handleAiCopy}

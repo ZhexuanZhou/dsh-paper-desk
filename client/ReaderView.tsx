@@ -120,6 +120,7 @@ export interface ReaderViewProps {
   onAskAboutSelection: (payload: { quote: string; page: number; question: string; rects: AnnotationRect[] }) => Promise<void>
   ai: AiThreadController
   onAiAsk: (question: string) => Promise<boolean>
+  onAiReset: () => Promise<void>
   onAiStop: () => Promise<void>
   onAiSaveToNotes: (text: string) => Promise<void>
   onAiCopy: (text: string) => Promise<void>
@@ -347,6 +348,7 @@ export function ReaderView(props: ReaderViewProps) {
     onAskAboutSelection,
     ai,
     onAiAsk,
+    onAiReset,
     onAiStop,
     onAiSaveToNotes,
     onAiCopy,
@@ -497,6 +499,9 @@ export function ReaderView(props: ReaderViewProps) {
       reasoning: t('ai.reasoning'),
       createCard: t('cards.createFromAnswer'),
       composingHint: t('ai.composingHint'),
+      newThread: t('ai.newThread'),
+      newThreadHint: t('ai.newThreadHint'),
+      noResponse: t('ai.noResponse'),
       taskLabels: {
         summary: t('assist.summary'),
         method: t('assist.method'),
@@ -1042,6 +1047,7 @@ export function ReaderView(props: ReaderViewProps) {
                     labels={aiLabels}
                     onRunTask={(task) => runTask(task)}
                     onAsk={(text) => onAiAsk(text)}
+                    onReset={() => void onAiReset()}
                     onStop={() => void onAiStop()}
                     onSaveToNotes={(text) => void onAiSaveToNotes(text)}
                     onCopy={(text) => void onAiCopy(text)}

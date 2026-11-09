@@ -31,6 +31,9 @@ export interface AiPanelLabels {
   reasoning: string
   createCard: string
   composingHint: string
+  newThread: string
+  newThreadHint: string
+  noResponse: string
   taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
 }
 
@@ -42,6 +45,7 @@ export interface AiPanelProps {
   /** Resolves true when the prompt was accepted by the session. */
   onAsk: (question: string) => boolean | Promise<boolean>
   onStop: () => void | Promise<void>
+  onReset: () => void | Promise<void>
   onSaveToNotes: (text: string) => void | Promise<void>
   onCopy: (text: string) => void | Promise<void>
   onOpenInSession: () => void | Promise<void>
@@ -82,7 +86,7 @@ function firstLine(text: string): string {
 }
 
 export function AiPanel(props: AiPanelProps) {
-  const { ai, labels, onAsk, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
+  const { ai, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
 
   const subscribe = useCallback((listener: () => void) => ai.subscribe(listener), [ai])
   const getSnapshot = useCallback(() => ai.getSnapshot(), [ai])
@@ -92,6 +96,8 @@ export function AiPanel(props: AiPanelProps) {
   const [sending, setSending] = useState(false)
   const [composing, setComposing] = useState(false)
   const composingRef = useRef(false)
+  const [noResponse, setNoResponse] = useState(false)
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [follow, setFollow] = useState(true)
   const [hasNew, setHasNew] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -118,6 +124,12 @@ export function AiPanel(props: AiPanelProps) {
     }
     return -1
   }, [rows])
+
+  useEffect(() => {
+    return () => {
+      if (watchdogRef.current !== null) clearTimeout(watchdogRef.current)
+    }
+  }, [])
 
   /* Auto-follow the stream unless the user scrolled away from the bottom. */
   useEffect(() => {
@@ -154,11 +166,20 @@ export function AiPanel(props: AiPanelProps) {
     if (text === '' || disabled) return
     setFollow(true)
     setSending(true)
+    setNoResponse(false)
+    if (watchdogRef.current !== null) clearTimeout(watchdogRef.current)
     try {
       const accepted = await onAsk(text)
       // Keep the question in the box when the session refused it, so the
       // failure is visible and the user can retry instead of losing the text.
-      if (accepted) setDraft('')
+      if (accepted) {
+        setDraft('')
+        const baseline = ai.getSnapshot().rows.length
+        watchdogRef.current = setTimeout(() => {
+          const snapshot = ai.getSnapshot()
+          if (snapshot.rows.length <= baseline && snapshot.status !== 'running') setNoResponse(true)
+        }, 12000)
+      }
     } finally {
       setSending(false)
     }
@@ -275,6 +296,15 @@ export function AiPanel(props: AiPanelProps) {
             </div>
           ))}
 
+          {noResponse ? (
+            <div className="pd-ai-error" role="alert">
+              <span>{labels.noResponse}</span>
+              <Button size="sm" variant="ghost" onClick={() => void onReset()}>
+                {labels.newThread}
+              </Button>
+            </div>
+          ) : null}
+
           {running || sending ? (
             <div className="pd-ai-thinking">
               <Spinner size={11} label={labels.thinking} />
@@ -297,6 +327,9 @@ export function AiPanel(props: AiPanelProps) {
 
       <div className="pd-ai-foot">
         <div className="pd-ai-actions">
+          <Button size="sm" variant="ghost" onClick={() => void onReset()} title={labels.newThreadHint}>
+            {labels.newThread}
+          </Button>
           {running ? (
             <Button size="sm" variant="ghost" onClick={() => void onStop()}>
               {labels.stop}
