@@ -42,6 +42,7 @@ import {
 } from './library.js'
 import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
+import { importPaperFromUrl } from './urlImport.js'
 import { ensureText } from './pdf.js'
 import { assistPayload, comparePrompt, discoverRelationsPrompt } from './prompt.js'
 import { listTags, queryPapers, searchLibrary } from './search.js'
@@ -518,6 +519,23 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
         return
       }
       return methodNotAllowed(res)
+    }
+
+    if (route === 'papers/url') {
+      if (method !== 'POST') return methodNotAllowed(res)
+      const body = await readJsonBody(req)
+      const rawUrl = typeof body['url'] === 'string' ? body['url'] : ''
+      try {
+        const created = await importPaperFromUrl(root, rawUrl, {
+          language: settings.language,
+          device: deviceShort(),
+          enrich: settings.enrich,
+        })
+        json(res, 200, created)
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : '链接导入失败')
+      }
+      return
     }
 
     if (route === 'paper') {

@@ -189,6 +189,14 @@ export const api = {
     return requestJson<PaperDetail>(`/paper${query({ id })}`)
   },
 
+  /** Download and import a paper from an arXiv/PDF URL. */
+  importUrl(url: string): Promise<{ id: string; meta: PaperMeta; duplicated: boolean }> {
+    return requestJson<{ id: string; meta: PaperMeta; duplicated: boolean }>('/papers/url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    })
+  },
+
   patchPaper(id: string, patch: Partial<PaperMeta>): Promise<{ meta: PaperMeta }> {
     return requestJson<{ meta: PaperMeta }>(`/paper${query({ id })}`, {
       method: 'PATCH',

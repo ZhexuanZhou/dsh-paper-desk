@@ -74,6 +74,15 @@ export function IconImport(props: IconProps) {
   )
 }
 
+export function IconLink(props: IconProps) {
+  return (
+    <svg {...base(props, 16)}>
+      <path d="M6.7 9.3a2.6 2.6 0 0 0 3.7 0l2.1-2.1a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1" />
+      <path d="M9.3 6.7a2.6 2.6 0 0 0-3.7 0L3.5 8.8a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1" />
+    </svg>
+  )
+}
+
 export function IconSync(props: IconProps) {
   return (
     <svg {...base(props, 16)}>

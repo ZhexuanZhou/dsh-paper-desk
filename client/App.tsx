@@ -42,7 +42,7 @@ import type { AiRow } from './aiSession.js'
 import { defaultLibraryPath, openHostPath, openSessionInShell, pickLibraryDirectory } from './agent.js'
 import { errorText, I18nProvider, useT } from './i18n.js'
 import type { Lang } from './i18n.js'
-import { IconBook, IconClose, IconGear, IconImport, IconLang, IconSearch, IconSync } from './icons.js'
+import { IconBook, IconClose, IconGear, IconImport, IconLang, IconLink, IconSearch, IconSync } from './icons.js'
 import { cardToNotesMarkdown } from './CardsPanel.js'
 import { CompareView } from './CompareView.js'
 import { LibraryView } from './LibraryView.js'
@@ -53,7 +53,7 @@ import type { ReaderBusy } from './ReaderView.js'
 import { SettingsView } from './SettingsView.js'
 import { CSS, STYLE_ATTR } from './styles.js'
 import { SyncView } from './SyncView.js'
-import { Button, Modal, Spinner, Toast } from './ui.js'
+import { Button, Modal, Spinner, TextInput, Toast } from './ui.js'
 import type { ToastItem, ToastKind } from './ui.js'
 
 type Nav = 'library' | 'sync' | 'settings'
@@ -317,6 +317,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   /* imports */
   const [importing, setImporting] = useState(false)
+  const [urlOpen, setUrlOpen] = useState(false)
+  const [urlValue, setUrlValue] = useState('')
+  const [urlBusy, setUrlBusy] = useState(false)
+  const [urlError, setUrlError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -1540,6 +1544,35 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     [status, loadPapers, pushToast, reportError, loadStatus, requestAction, maybeSyncCitations],
   )
 
+  const importFromUrl = useCallback(async (): Promise<void> => {
+    const value = urlValue.trim()
+    if (value === '' || urlBusy) {
+      if (value === '') setUrlError(tRef.current('import.urlRequired'))
+      return
+    }
+    setUrlBusy(true)
+    setUrlError(null)
+    try {
+      const result = await api.importUrl(value)
+      setUrlOpen(false)
+      setUrlValue('')
+      setNav('library')
+      await loadPapers()
+      requestAction(() => setSelectedId(result.id))
+      pushToast(
+        'success',
+        result.duplicated
+          ? tRef.current('import.duplicated')
+          : tRef.current('import.done', { title: result.meta.title }),
+      )
+      void loadStatus(true)
+    } catch (error) {
+      setUrlError(errorText(error) || tRef.current('import.urlFailed'))
+    } finally {
+      setUrlBusy(false)
+    }
+  }, [urlValue, urlBusy, loadPapers, requestAction, pushToast, loadStatus])
+
   const onDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault()
@@ -2051,6 +2084,17 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
             {importing ? t('import.importing') : t('import.button')}
           </Button>
           <Button
+            variant="ghost"
+            icon={<IconLink />}
+            onClick={() => {
+              setUrlError(null)
+              setUrlOpen(true)
+            }}
+            title={t('import.urlHint')}
+          >
+            {t('import.urlButton')}
+          </Button>
+          <Button
             variant={nav === 'library' ? 'default' : 'ghost'}
             icon={<IconBook />}
             onClick={() => changeNav('library')}
@@ -2224,6 +2268,44 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           <span>{t('drop.hint')}</span>
         </div>
       ) : null}
+
+      <Modal
+        open={urlOpen}
+        title={t('import.urlTitle')}
+        description={t('import.urlHint')}
+        onClose={() => {
+          if (!urlBusy) setUrlOpen(false)
+        }}
+        footer={
+          <>
+            <Button disabled={urlBusy} onClick={() => setUrlOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="primary" loading={urlBusy} onClick={() => void importFromUrl()}>
+              {urlBusy ? t('import.urlImporting') : t('import.urlSubmit')}
+            </Button>
+          </>
+        }
+      >
+        <label className="pd-field-label" htmlFor="pd-import-url">
+          {t('import.urlLabel')}
+        </label>
+        <TextInput
+          id="pd-import-url"
+          value={urlValue}
+          placeholder={t('import.urlPlaceholder')}
+          disabled={urlBusy}
+          onChange={(event) => {
+            setUrlValue(event.target.value)
+            setUrlError(null)
+          }}
+        />
+        {urlError !== null ? (
+          <div className="pd-detail-error" role="alert">
+            <span>{urlError}</span>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={unsavedPrompt !== null}

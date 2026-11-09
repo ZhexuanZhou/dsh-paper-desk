@@ -96,6 +96,15 @@ const zh = {
   'import.failed': '导入失败',
   'import.aria': '选择要导入的 PDF 文件',
   'import.hint': '支持多选；也可以直接拖拽 PDF',
+  'import.urlButton': '链接导入',
+  'import.urlTitle': '通过链接加入论文',
+  'import.urlHint': '支持 arXiv 摘要/PDF 链接，或 PDF 直链；需要登录的 DOI 页面无法直接导入。',
+  'import.urlLabel': '论文链接',
+  'import.urlPlaceholder': 'https://arxiv.org/abs/2511.13720 或 PDF URL',
+  'import.urlSubmit': '加入论文',
+  'import.urlImporting': '下载中…',
+  'import.urlFailed': '链接导入失败',
+  'import.urlRequired': '请先输入链接',
 
   // ── reader ─────────────────────────────────────────────────────────────
   'reader.empty.title': '选择一篇论文',
@@ -628,6 +637,15 @@ const en: Record<DictKey, string> = {
   'import.failed': 'Import failed',
   'import.aria': 'Choose PDF files to import',
   'import.hint': 'Multi-select supported; drag & drop also works',
+  'import.urlButton': 'Import link',
+  'import.urlTitle': 'Add paper from link',
+  'import.urlHint': 'Supports arXiv abstract/PDF links or direct PDF URLs; login-gated DOI pages cannot be imported directly.',
+  'import.urlLabel': 'Paper URL',
+  'import.urlPlaceholder': 'https://arxiv.org/abs/2511.13720 or a PDF URL',
+  'import.urlSubmit': 'Add paper',
+  'import.urlImporting': 'Downloading…',
+  'import.urlFailed': 'Link import failed',
+  'import.urlRequired': 'Enter a link first',
 
   // ── reader ─────────────────────────────────────────────────────────────
   'reader.empty.title': 'Select a paper',
