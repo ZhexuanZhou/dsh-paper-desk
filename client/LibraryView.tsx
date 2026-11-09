@@ -3,6 +3,8 @@
  * tag filter, sort control, import entry point and drag & drop affordances.
  * Purely presentational — all data and callbacks come from `App`.
  */
+import { useRef } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { PaperStatus, PaperSummary } from '../src/types.js'
 import { IconBook, IconImport } from './icons.js'
 import { useT } from './i18n.js'
@@ -28,6 +30,10 @@ export interface LibraryViewProps {
   sort: SortKey
   hasFilters: boolean
   importing: boolean
+  width: number
+  collapsed: boolean
+  onToggleCollapsed: () => void
+  onWidthChange: (width: number) => void
   onStatusFilter: (status: PaperStatus | 'all') => void
   onTagFilter: (tag: string) => void
   onSort: (sort: SortKey) => void
@@ -52,6 +58,10 @@ export function LibraryView(props: LibraryViewProps) {
     sort,
     hasFilters,
     importing,
+    width,
+    collapsed,
+    onToggleCollapsed,
+    onWidthChange,
     onStatusFilter,
     onTagFilter,
     onSort,
@@ -73,8 +83,37 @@ export function LibraryView(props: LibraryViewProps) {
     { value: 'year', label: t('sort.year') },
   ]
 
+  const resizeFrameRef = useRef<number | null>(null)
+
+  const beginResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = width
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (resizeFrameRef.current !== null) return
+      resizeFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFrameRef.current = null
+        onWidthChange(Math.min(560, Math.max(240, startWidth + moveEvent.clientX - startX)))
+      })
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current)
+        resizeFrameRef.current = null
+      }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   return (
-    <section className="pd-pane pd-pane-list" aria-label={t('list.title')}>
+    <section
+      className="pd-pane pd-pane-list"
+      style={collapsed ? { display: 'none' } : { width, flexBasis: width }}
+      aria-label={t('list.title')}
+    >
       <div className="pd-list-head">
         <div className="pd-list-title-row">
           <IconBook />
@@ -82,6 +121,15 @@ export function LibraryView(props: LibraryViewProps) {
           <span className="pd-list-count">{t('list.count', { n: count })}</span>
           <div className="pd-list-tools">
             {loading ? <Spinner size={12} label={t('list.loading')} /> : null}
+            <button
+              type="button"
+              className="pd-list-collapse"
+              title={t('list.collapse')}
+              aria-label={t('list.collapse')}
+              onClick={onToggleCollapsed}
+            >
+              ‹
+            </button>
             <Select
               small
               value={sort}
@@ -236,6 +284,13 @@ export function LibraryView(props: LibraryViewProps) {
           {t('list.importHint')}
         </span>
       </div>
+      <div
+        className="pd-list-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('list.resize')}
+        onPointerDown={beginResize}
+      />
     </section>
   )
 }

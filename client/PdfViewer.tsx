@@ -737,6 +737,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const visibleRef = useRef<Set<number>>(new Set())
   /** Invalidation counter for all in-flight async render work. */
   const epochRef = useRef(0)
+  /** Debounce fit-width during host/sidebar animations. */
+  const resizeTimerRef = useRef<number | null>(null)
   const zoomRef = useRef(1)
   const pageSizesRef = useRef<readonly PageSize[]>([])
   const fitModeRef = useRef(true)
@@ -1195,10 +1197,20 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (status !== 'ready' || scroller === null) return
     const observer = new ResizeObserver(() => {
       if (!fitModeRef.current) return
-      applyZoom(computeFitZoom(pageSizesRef.current), true)
+      if (resizeTimerRef.current !== null) window.clearTimeout(resizeTimerRef.current)
+      resizeTimerRef.current = window.setTimeout(() => {
+        resizeTimerRef.current = null
+        applyZoom(computeFitZoom(pageSizesRef.current), true)
+      }, 140)
     })
     observer.observe(scroller)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      if (resizeTimerRef.current !== null) {
+        window.clearTimeout(resizeTimerRef.current)
+        resizeTimerRef.current = null
+      }
+    }
   }, [status, applyZoom, computeFitZoom])
 
   /* ── preserve the reading position across zoom changes ────────────────── */

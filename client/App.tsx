@@ -251,6 +251,21 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const [statusFilter, setStatusFilter] = useState<PaperStatus | 'all'>('all')
   const [tagFilter, setTagFilter] = useState('')
   const [sort, setSort] = useState<SortKey>('added')
+  const [listWidth, setListWidth] = useState<number>(() => {
+    try {
+      const value = Number.parseInt(localStorage.getItem('paperdesk:list-width') ?? '', 10)
+      return Number.isFinite(value) ? Math.min(560, Math.max(240, value)) : 320
+    } catch {
+      return 320
+    }
+  })
+  const [listCollapsed, setListCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('paperdesk:list-collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
 
   /* library list */
   const [papers, setPapers] = useState<PaperSummary[]>([])
@@ -649,6 +664,19 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           : paper,
       ),
     )
+  }, [])
+
+  const updateListWidth = useCallback((next: number) => {
+    setListWidth(next)
+    try { localStorage.setItem('paperdesk:list-width', String(next)) } catch {}
+  }, [])
+
+  const toggleListCollapsed = useCallback(() => {
+    setListCollapsed((current) => {
+      const next = !current
+      try { localStorage.setItem('paperdesk:list-collapsed', next ? '1' : '0') } catch {}
+      return next
+    })
   }, [])
 
   /* ── unsaved-notes guard ─────────────────────────────────────────────── */
@@ -2053,6 +2081,17 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       </header>
 
       <div className="pd-body">
+        {nav === 'library' && listCollapsed ? (
+          <button
+            type="button"
+            className="pd-list-restore"
+            title={t('list.restore')}
+            aria-label={t('list.restore')}
+            onClick={toggleListCollapsed}
+          >
+            ›
+          </button>
+        ) : null}
         {nav === 'library' ? (
           <>
             <LibraryView
@@ -2067,6 +2106,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               sort={sort}
               hasFilters={hasFilters}
               importing={importing}
+              width={listWidth}
+              collapsed={listCollapsed}
+              onToggleCollapsed={toggleListCollapsed}
+              onWidthChange={updateListWidth}
               onStatusFilter={setStatusFilter}
               onTagFilter={setTagFilter}
               onSort={setSort}
