@@ -56,7 +56,7 @@ export const CSS = `
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
-.pd-root[data-host-rail='collapsed'] { padding-top: 30px; }
+.pd-root[data-host-desktop='true'] { padding-top: var(--pd-titlebar-inset, 38px); }
 .pd-root *, .pd-root *::before, .pd-root *::after { box-sizing: border-box; }
 .pd-root :focus-visible { outline: 2px solid ${BRAND}; outline-offset: 1px; border-radius: 4px; }
 .pd-root ::selection { background: color-mix(in srgb, ${BRAND} 28%, transparent); }

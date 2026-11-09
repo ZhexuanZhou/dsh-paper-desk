@@ -978,13 +978,25 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     async (patch: Partial<PaperMeta>, options?: { silent?: boolean }): Promise<void> => {
       const paperId = selectedId
       if (paperId === null) return
+      // Apply status/rating immediately; waiting for the round trip plus a
+      // full list reload made the header controls feel unresponsive.
+      setDetail((previous) =>
+        previous !== null && previous.meta.id === paperId
+          ? { ...previous, meta: { ...previous.meta, ...patch } }
+          : previous,
+      )
+      setPapers((previous) =>
+        previous.map((paper) => (paper.id === paperId ? { ...paper, ...patch } : paper)),
+      )
       try {
         const result = await api.patchPaper(paperId, patch)
         applyMeta(result.meta)
         if (options?.silent !== true) pushToast('success', tRef.current('meta.saved'))
-        void loadPapers()
+        // Tags affect the filter list; other metadata is already applied.
+        if (patch.tags !== undefined) void loadPapers()
       } catch (error) {
         reportError(error, 'error.patch')
+        void loadPapers()
       }
     },
     [selectedId, applyMeta, pushToast, reportError, loadPapers],
@@ -1736,30 +1748,31 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     }
   }, [ctx, reportError])
 
-  /* Desktop shell: when the host sidebar collapses to its icon rail, the
-     native titlebar overlaps the plugin topbar. Add the titlebar inset only in
-     that desktop state; the web build and expanded sidebar are untouched. */
+  /* Desktop shell: the global plugin panel begins under the native titlebar,
+     so the window controls would overlap the panel topbar (unlike host pages
+     such as Context Insights). Reserve the measured titlebar inset in the
+     desktop renderer only; the web build is untouched. */
   useEffect(() => {
     const root = document.querySelector<HTMLElement>('.pd-root')
     if (root === null) return
     const update = (): void => {
-      // The desktop app may load the HTTP web UI (not dsh-app://), so also
-      // detect Electron; the host rail itself is the reliable width signal.
       const desktop =
         window.location.protocol === 'dsh-app:' ||
-        /Electron/i.test(navigator.userAgent) ||
+        /Electron|DeepSeekHarness/i.test(navigator.userAgent) ||
         document.documentElement.dataset['platform'] === 'darwin'
-      const gap = window.innerWidth - root.getBoundingClientRect().width
-      root.dataset['hostRail'] = desktop && gap > 0 && gap < 100 ? 'collapsed' : 'expanded'
+      if (!desktop) {
+        root.dataset['hostDesktop'] = 'false'
+        root.style.removeProperty('--pd-titlebar-inset')
+        return
+      }
+      const measured = window.outerHeight - window.innerHeight
+      const inset = measured >= 20 && measured <= 80 ? measured : 38
+      root.dataset['hostDesktop'] = 'true'
+      root.style.setProperty('--pd-titlebar-inset', `${inset}px`)
     }
     update()
     window.addEventListener('resize', update)
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
-    observer?.observe(root)
-    return () => {
-      window.removeEventListener('resize', update)
-      observer?.disconnect()
-    }
+    return () => window.removeEventListener('resize', update)
   }, [])
 
   /* ── first-run setup ─────────────────────────────────────────────────── */
