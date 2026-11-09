@@ -6,3 +6,6 @@ lib
 
 # release assets
 paperdesk-demo-library.zip
+
+# npm publish staging
+.publish/

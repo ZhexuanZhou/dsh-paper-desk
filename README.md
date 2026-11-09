@@ -148,7 +148,8 @@ AI 侧栏里每条回答右下角有 **「生成卡片」**：打开编辑器，
 本插件是标准 DSH 插件包（`dsh.bundle` + `cordis.patch.yml` + `lib/` 预构建产物），可以：
 
 - 从本地目录安装：`dsh plugin --profile <profile> add /path/to/dsh-paper-desk`
-- 从 npm 安装（发布后）：`dsh plugin --profile <profile> add dsh-paper-desk`
+- 从 npm 安装：`dsh plugin --profile <profile> add @zhe_xuan/dsh-paper-desk`
+  （npm 上因与已有包 `dsh-paperdesk` 名称相近，包发布在 `@zhe_xuan` scope 下）
 - 发布到社区市场：需要在 npm 发布，并向 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提交一个条目（市场 dshmarket 从该列表同步）。
 
 完整步骤、市场条目模板和自检清单见 **[docs/PUBLISHING.md](docs/PUBLISHING.md)**。

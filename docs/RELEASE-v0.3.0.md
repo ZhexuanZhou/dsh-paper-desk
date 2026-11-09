@@ -25,14 +25,14 @@
 要求 DeepSeek Harness 0.2.1-rc.2 及以上（0.2.x），Node.js 20+。
 
 ```sh
-# 从 npm（发布后）
-dsh plugin --profile web add dsh-paper-desk
+# 从 npm（包名带 scope：npm 与已有包 dsh-paperdesk 名称相近）
+dsh plugin --profile web add @zhe_xuan/dsh-paper-desk
 
-# 或直接用本 Release 的预构建包
+# 或直接用本 Release 的预构建包（内容与 npm 包一致）
 dsh plugin --profile web add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.3.0/dsh-paper-desk-0.3.0.tgz
 ```
 
-桌面版：设置 → 插件 → 搜索 `dsh-paper-desk` 安装；刷新页面后左侧栏出现 **PaperDesk Library**。
+桌面版：设置 → 插件 → 搜索 `@zhe_xuan/dsh-paper-desk` 安装；刷新页面后左侧栏出现 **PaperDesk Library**。
 首次打开在面板里选择论文库目录（默认 `~/Documents/PaperDesk`）。
 
 ## 示例数据

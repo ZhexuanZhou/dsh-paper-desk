@@ -56,21 +56,34 @@ Release 里的 tgz 可作为 `tarball:` 安装源：
 dsh plugin --profile web add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.3.0/dsh-paper-desk-0.3.0.tgz
 ```
 
-## 2. npm：发布包
+## 2. npm：发布包（scope: `@zhe_xuan`）
 
-需要 npm 账号（当前机器 `npm whoami` 未登录，先登录一次；**不要把 token 发到对话里**）：
+npm 会拒绝无 scope 的 `dsh-paper-desk`，因为它与已存在的包 `dsh-paperdesk` **名称过于相似**
+（`403 Package name too similar ... try renaming your package to '@zhe_xuan/dsh-paper-desk'`）。
+所以公开包名是 **`@zhe_xuan/dsh-paper-desk`**，但仓库内 `package.json` 仍保留无 scope 的
+`dsh-paper-desk`，这样本地 profile 的 `link:` 安装不受影响。
+
+发布用 `scripts/publish-package.mjs` 做一次“换身份”打包：复制构建产物到 `.publish/npm/`
+（已在 `.gitignore`），把 `package.json.name`、`cordis.patch.yml` 的 insert `name` 和
+`lib/client.js` 的 module-loader `id` 统一改成 scoped 名，然后从该目录发布：
 
 ```sh
-npm login
-npm publish        # prepack = npm run build，自动产出 lib/
-npm view dsh-paper-desk version
+./node_modules/.bin/tsc -p tsconfig.json && node scripts/build-client.mjs
+node scripts/publish-package.mjs --publish      # 等价于 stage + npm publish --access public
+npm view @zhe_xuan/dsh-paper-desk version
 ```
 
-- 包名 `dsh-paper-desk` 目前未被占用（已查 404）。
-- `publishConfig.access = public` 已设置；无 scope 的包默认就是 public。
-- `@deepseek-ai/*` 已按市场规范放到 `peerDependencies`（官方运行时由 DSH 提供），
-  `marked`/`pdfjs-dist` 仍在 `dependencies`。
-- 以后升级：改 `version` → `npm publish` → `git tag`/Release。市场会按 registry 版本显示更新。
+- 发布前需要 token：npm 网页登录 token 不能发布（会报 2FA 403），要到
+  <https://www.npmjs.com/settings/zhe_xuan/tokens> 建 **Granular token → Permissions 选
+  `Read and write (publish and stage)` → Packages `All packages` → 勾 Bypass 2FA**，
+  或 **Classic Token → Automation**，然后：
+  ```sh
+  npm config set //registry.npmjs.org/:_authToken=npm_xxx
+  ```
+- 以后升级：改 `version` → 构建 → `node scripts/publish-package.mjs --publish` →
+  `git tag` / Release。市场按 registry 版本显示更新。
+- 预构建 tarball 也必须是 scoped 身份（`node scripts/publish-package.mjs --pack`），再上传到
+  Release 同名资产 `dsh-paper-desk-<version>.tgz`。
 
 ## 3. 市场条目：awesome-dsh-plugin PR
 
@@ -142,12 +155,9 @@ dsh plugin --profile web add dsh-paper-desk
 
 ## 当前状态（2026-11-09）
 
-- 市场 PR 已提交：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/13433>
-  （条目标题 `Add ZhexuanZhou/dsh-paper-desk`，CI 通过后等维护者审阅）。
-- npm 登录已确认（账号 `zhe_xuan`），但 npm 账号启用了 2FA：命令行发布返回
-  `403 ... Two-factor authentication or granular access token with bypass 2fa enabled is required`。
-  解决方式二选一：
-  1. 在本机终端执行 `npm publish`，按提示输入 6 位 OTP（推荐）；
-  2. 在 npmjs.com → Access Tokens 建一个勾选 “Bypass two-factor authentication” 的
-     Automation token，配到本机后再执行 `npm publish`。
-- npm 发布成功后市场条目会自动关联下载量（`repository` 已指回本仓库），无需再改条目。
+- npm 已发布：**`@zhe_xuan/dsh-paper-desk@0.3.0`**（scope 是 npm 名称相似规则要求的）。
+- 市场 PR：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/13433>，
+  `Submission gate` ✅、`check` ✅、`MERGEABLE`，等维护者合并。
+- Release：<https://github.com/ZhexuanZhou/dsh-paper-desk/releases/tag/v0.3.0>，
+  预构建 tarball 已替换为 scoped 版本，条目里的 `tarball:` 仍指向同一 URL。
+- 市场条目不需要 npm 字段：registry 会按已发布包的 `repository` 自动把 npm 下载量和条目关联。
