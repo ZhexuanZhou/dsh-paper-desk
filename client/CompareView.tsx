@@ -1291,7 +1291,9 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
   const threadRunning = snapshot.status === 'running'
   const attaching = starting || snapshot.status === 'attaching'
   const busy = attaching || threadRunning
-  const canSave = threadAnswer !== null && threadAnswer.trim() !== ''
+  // Saving is only allowed once the current run has finished: a running
+  // thread may still expose an earlier answer or a tool/status row.
+  const canSave = !threadRunning && !starting && threadAnswer !== null && threadAnswer.trim() !== ''
   const canStart = selectedIds.length >= MIN_PAPERS && selectedIds.length <= MAX_PAPERS
 
   const selectionChanged =
@@ -1515,6 +1517,7 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
   }
 
   const openSave = (): void => {
+    if (threadRunning || starting) return
     const markdown = thread.lastAnswer()
     if (markdown === null || markdown.trim() === '') {
       setNotice({ kind: 'error', text: t('compare.noAnswer') })
@@ -1529,7 +1532,7 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
   }
 
   const submitSave = async (): Promise<void> => {
-    if (saving) return
+    if (saving || threadRunning || starting) return
     const markdown = thread.lastAnswer()
     if (markdown === null || markdown.trim() === '') {
       setSaveOpen(false)

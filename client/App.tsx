@@ -1731,7 +1731,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       return await pickLibraryDirectory(ctx)
     } catch (error) {
       reportError(error, 'error.openFolder')
-      return null
+      // Let Settings show the failure inline as well as the toast.
+      throw error
     }
   }, [ctx, reportError])
 
