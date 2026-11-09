@@ -1736,6 +1736,29 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     }
   }, [ctx, reportError])
 
+  /* Desktop shell: when the host sidebar collapses to its icon rail, the
+     native titlebar overlaps the plugin topbar. Add the titlebar inset only in
+     that desktop state; the web build and expanded sidebar are untouched. */
+  useEffect(() => {
+    const root = document.querySelector<HTMLElement>('.pd-root')
+    if (root === null) return
+    const update = (): void => {
+      const desktop =
+        window.location.protocol === 'dsh-app:' ||
+        document.documentElement.dataset['platform'] === 'darwin'
+      const gap = window.innerWidth - root.getBoundingClientRect().width
+      root.dataset['hostRail'] = desktop && gap > 0 && gap < 100 ? 'collapsed' : 'expanded'
+    }
+    update()
+    window.addEventListener('resize', update)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    observer?.observe(root)
+    return () => {
+      window.removeEventListener('resize', update)
+      observer?.disconnect()
+    }
+  }, [])
+
   /* ── first-run setup ─────────────────────────────────────────────────── */
 
   const handleSetupChoose = useCallback(async (): Promise<void> => {
@@ -1941,7 +1964,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
             <IconBook size={18} />
           </span>
           <div className="pd-brand-text">
-            <h1 className="pd-brand-title">{t('app.title')}</h1>
+            <div className="pd-brand-title-row">
+              <h1 className="pd-brand-title">{t('app.title')}</h1>
+              {status?.version ? <span className="pd-brand-version">v{status.version}</span> : null}
+            </div>
             <span className="pd-brand-sub">{t('app.subtitle')}</span>
           </div>
         </div>

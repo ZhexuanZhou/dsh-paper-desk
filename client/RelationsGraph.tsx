@@ -42,6 +42,7 @@ import type {
 import { createAiThread } from './aiSession.js'
 import type { AiThreadState } from './aiSession.js'
 import { api } from './api.js'
+import type { DiscoveryScope } from './api.js'
 
 export type Lang = 'zh' | 'en'
 
@@ -174,12 +175,15 @@ const zhRelations: Record<string, string> = {
   'relations.discover.title': 'AI 发现关联',
   'relations.discover.threadTitle': '关系发现 · {n} 篇论文',
   'relations.discover.intro':
-    'Agent 会阅读论文元数据、笔记和卡片，提出候选关联；候选默认勾选，但只有点击「加入选中」后才会写入。',
+    'Agent 会阅读论文元数据、笔记和卡片，提出候选关联；候选默认未选，勾选并点击「加入选中」后才会写入。',
   'relations.discover.starting': '正在连接 AI 会话…',
   'relations.discover.running': 'Agent 正在分析 {n} 篇论文…',
   'relations.discover.stop': '停止',
   'relations.discover.analyse': '开始分析',
   'relations.discover.reanalyse': '重新分析',
+  'relations.discover.incrementalScope': '增量：{new} 篇新论文 + {neighbor} 篇邻域',
+  'relations.discover.noNew': '没有新论文；可用「全库重分析」显式重跑',
+  'relations.discover.full': '全库重分析',
   'relations.discover.report': '完整报告',
   'relations.discover.reasoning': '思考过程',
   'relations.discover.noReport': '还没有候选结果。点击「开始分析」让 Agent 提出关联。',
@@ -328,7 +332,7 @@ const enRelations: Record<string, string> = {
   'relations.discover.title': 'AI relation discovery',
   'relations.discover.threadTitle': 'Relation discovery · {n} papers',
   'relations.discover.intro':
-    'The agent reads metadata, notes and cards to propose candidate relations. Candidates are selected by default, but nothing is written until you click “Add selected”.',
+    'The agent reads metadata, notes and cards to propose candidate relations. Candidates start unselected; nothing is written until you check some and click “Add selected”.',
   'relations.discover.starting': 'Connecting the AI session…',
   'relations.discover.running': 'The agent is analysing {n} papers…',
   'relations.discover.stop': 'Stop',
@@ -1138,6 +1142,12 @@ export const relationsCss = `
 }
 .pd-rel-discover-reasoning { border: 1px solid ${B1}; border-radius: 8px; background: ${L1}; padding: 6px 9px; }
 .pd-rel-discover-reasoning > summary { color: ${FG_2}; font-size: 11px; cursor: pointer; }
+.pd-rel-discover-scope {
+  margin: -2px 0 4px;
+  color: ${FG_2};
+  font-size: 10.5px;
+  line-height: 1.45;
+}
 .pd-rel-discover-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pd-rel-discover-head-title { color: ${FG}; font-size: 12px; font-weight: 600; }
 .pd-rel-discover-count { margin-left: auto; color: ${FG_2}; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -1227,7 +1237,13 @@ export const relationsCss = `
   .pd-rel-zoom { right: 8px; bottom: 8px; }
   .pd-rel-pop { width: calc(100% - 16px); }
   .pd-rel-discover-modal { width: 100%; }
-  .pd-rel-discover-head { gap: 4px; }
+  .pd-rel-discover-scope {
+  margin: -2px 0 4px;
+  color: ${FG_2};
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.pd-rel-discover-head { gap: 4px; }
   .pd-rel-cand { padding: 8px; }
   .pd-rel-cand-pair { font-size: 11.5px; }
 }
@@ -2291,6 +2307,8 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
   const [discoverResults, setDiscoverResults] = useState<Record<string, DiscoveryAddResult>>({})
   const [discoverAdding, setDiscoverAdding] = useState(false)
   const [discoverSummary, setDiscoverSummary] = useState<{ added: number; skipped: number; failed: number } | null>(null)
+  const [discoverScope, setDiscoverScope] = useState<DiscoveryScope | null>(null)
+  const [discoverScopeLoading, setDiscoverScopeLoading] = useState(false)
 
   /* citation sync */
   const [citationConfirm, setCitationConfirm] = useState(false)
@@ -2351,6 +2369,25 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
       .join('|')
     return `${paperPart}#${relationPart}`
   }, [papers, relations])
+
+  const loadDiscoveryScope = useCallback(async (): Promise<DiscoveryScope | null> => {
+    setDiscoverScopeLoading(true)
+    try {
+      const scope = await api.discoveryScope()
+      setDiscoverScope(scope)
+      return scope
+    } catch {
+      setDiscoverScope(null)
+      return null
+    } finally {
+      setDiscoverScopeLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!open || !discoverOpen) return
+    void loadDiscoveryScope()
+  }, [open, discoverOpen, dataKey, loadDiscoveryScope])
 
   const focusPaper = focusPaperId === null ? undefined : paperById.get(focusPaperId)
   const selectedPaper = selectedId === null ? undefined : paperById.get(selectedId)
@@ -2545,7 +2582,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [open, discoverOpen, citationConfirm, citationBusy, addOpen, editDraft !== null, edgeSel, onClose])
 
-  /* Parse discovery candidates once per settled report (stable keys, checked by default). */
+  /* Parse discovery candidates once per settled report (stable keys, unchecked by default). */
   useEffect(() => {
     if (!discoverOpen || thread === null) return
     if (discoverStarting) return
@@ -3163,7 +3200,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setActionError(null)
   }
 
-  const runDiscovery = (): void => {
+  const runDiscovery = (full = false): void => {
     if (thread === null || discoverRunLockRef.current || papers.length < 2) return
     discoverRunLockRef.current = true
     setDiscoverStarting(true)
@@ -3179,16 +3216,30 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
         const status = await api.status()
         const workspacePath = status.settings.libraryPath
         if (workspacePath.trim() === '') throw new Error(t('relations.discover.noWorkspace'))
+        const scope = full ? null : await loadDiscoveryScope()
+        if (scope !== null && (scope.mode === 'none' || scope.scopeIds.length < 2)) {
+          setDiscoverError(t('relations.discover.noNew'))
+          return
+        }
+        const ids = scope === null ? undefined : scope.scopeIds
+        thread.resetThread('relations:discover')
         await thread.openThread('relations:discover', {
           workspacePath,
-          title: t('relations.discover.threadTitle', { n: papers.length }),
+          title: t('relations.discover.threadTitle', { n: ids === undefined ? papers.length : ids.length }),
         })
-        const payload = await api.discoverAssist()
+        const payload = await api.discoverAssist(ids)
         setDiscoverOrder(parsePromptPaperOrder(payload.prompt))
         const result = await thread.run(payload.prompt)
         if (!result.ok && typeof result.error === 'string' && result.error !== '') {
           setDiscoverError(result.error)
+          return
         }
+        // A successful generation means these papers have been considered for
+        // incremental discovery; do not re-send them next time.
+        await api
+          .markDiscoveryAnalysed(full ? papers.map((paper) => paper.id) : scope?.newIds ?? [])
+          .then((next) => setDiscoverScope(next))
+          .catch(() => {})
       } catch (error) {
         setDiscoverError(errorText(error) || t('relations.discover.failed'))
       } finally {
@@ -4367,15 +4418,39 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
                   <button
                     type="button"
                     className="pd-rel-btn pd-rel-btn-primary"
-                    disabled={!canDiscover || discoverBusy}
-                    onClick={runDiscovery}
+                    disabled={
+                      !canDiscover ||
+                      discoverBusy ||
+                      (discoverScope !== null && discoverScope.mode === 'none')
+                    }
+                    onClick={() => runDiscovery(false)}
                   >
                     {discoverAttaching ? <span className="pd-rel-spinner" aria-hidden="true" /> : null}
                     {hasDiscoveryResult
                       ? t('relations.discover.reanalyse')
                       : t('relations.discover.analyse')}
                   </button>
+                  <button
+                    type="button"
+                    className="pd-rel-btn pd-rel-btn-sm"
+                    disabled={!canDiscover || discoverBusy}
+                    onClick={() => runDiscovery(true)}
+                  >
+                    {t('relations.discover.full')}
+                  </button>
                 </div>
+                {discoverScope !== null ? (
+                  <div className="pd-rel-discover-scope">
+                    {discoverScopeLoading
+                      ? t('relations.loading')
+                      : discoverScope.mode === 'none'
+                        ? t('relations.discover.noNew')
+                        : t('relations.discover.incrementalScope', {
+                            new: discoverScope.newIds.length,
+                            neighbor: discoverScope.neighborIds.length,
+                          })}
+                  </div>
+                ) : null}
 
                 {discoverCandidates.length > 0 ? (
                   <>

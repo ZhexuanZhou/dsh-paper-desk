@@ -38,6 +38,15 @@ import type {
   SyncStatus,
 } from '../src/types.js'
 
+export interface DiscoveryScope {
+  mode: 'incremental' | 'none'
+  newIds: string[]
+  neighborIds: string[]
+  scopeIds: string[]
+  totalPapers: number
+  analyzedPapers: number
+}
+
 const BASE = '/api/paper-desk'
 
 /** Every non-2xx response becomes this error with the server payload attached. */
@@ -428,9 +437,25 @@ export const api = {
   },
 
   /** Prompt for AI relation discovery (then run it in an AI thread). */
-  discoverAssist(): Promise<AssistPayload> {
-    const body: AssistRequest = { paperId: '', task: 'discover' }
+  discoverAssist(paperIds?: readonly string[]): Promise<AssistPayload> {
+    const body: AssistRequest =
+      paperIds === undefined
+        ? { paperId: '', task: 'discover' }
+        : { paperId: '', task: 'discover', paperIds: [...paperIds] }
     return requestJson<AssistPayload>('/assist', { method: 'POST', body: JSON.stringify(body) })
+  },
+
+  /** New/changed papers plus their neighbours, for an incremental discovery run. */
+  discoveryScope(): Promise<DiscoveryScope> {
+    return requestJson<DiscoveryScope>('/relations/discovery-scope')
+  },
+
+  /** Remember that these papers were included in a completed discovery run. */
+  markDiscoveryAnalysed(ids: readonly string[]): Promise<DiscoveryScope> {
+    return requestJson<DiscoveryScope>('/relations/discovery-mark', {
+      method: 'POST',
+      body: JSON.stringify({ ids: [...ids] }),
+    })
   },
 
   /** Parse PDF reference lists and create cites edges for library papers. */

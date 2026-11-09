@@ -253,7 +253,7 @@ export function comparePrompt(papers: PaperMeta[], settings: EffectiveSettings):
           '5. **我实际读过的页**：列出每篇读了哪些页。',
           '',
           '约束：只根据 PDF 内容与元数据作答，不编造数字；不确定的地方明确写“推断”。',
-          '本次任务只读：不要调用任何写工具（包括但不限于 paper_note_append、paper_update、paper_add、paper_sync 或关系写入）；不要修改论文笔记、卡片或图谱。报告生成后由用户在界面上决定是否保存。',
+          '本次任务只读：不要调用任何写工具（包括但不限于 paper_note_append、paper_update、paper_add、paper_sync 或关系写入）；不要修改论文笔记、卡片或图谱。报告生成后由用户在界面上决定是否保存；不要在报告或工具说明里声称“已写入笔记/卡片/关系”。',
         ].join('\n')
       : [
           'Reading: for each paper use `paper_info` for metadata, then `paper_text` for abstract/intro and 3-6 key method/experiment pages; `paper_annotations` if useful. Do not read whole papers.',
@@ -266,7 +266,7 @@ export function comparePrompt(papers: PaperMeta[], settings: EffectiveSettings):
           '5. **Pages actually read.**',
           '',
           'Constraints: answer only from the PDFs/metadata; never invent numbers; mark uncertain claims as inference.',
-          'This task is read-only: do not call any write tool (including paper_note_append, paper_update, paper_add, paper_sync or relation writes); leave notes, cards and the graph untouched. The user decides whether to save the report in the UI.',
+          'This task is read-only: do not call any write tool (including paper_note_append, paper_update, paper_add, paper_sync or relation writes); leave notes, cards and the graph untouched. The user decides whether to save the report in the UI; never claim in the report or tool text that notes/cards/relations were written.',
         ].join('\n'),
   )
   const title = papers.map((paper) => shortenTitle(paper.title)).join(' vs ')
@@ -291,19 +291,34 @@ export function discoverRelationsPrompt(
   papers: PaperMeta[],
   relations: RelationsDocument,
   settings: EffectiveSettings,
+  scopeIds?: readonly string[],
 ): AssistPayload {
   const zh = isZh(settings)
   const root = settings.libraryPath
+  const scope = scopeIds === undefined ? null : new Set(scopeIds)
+  const listed = scope === null ? papers : papers.filter((paper) => scope.has(paper.id))
+  const listedIds = new Set(listed.map((paper) => paper.id))
+  const visibleRelations = scope === null
+    ? relations.items
+    : relations.items.filter((relation) => listedIds.has(relation.from) && listedIds.has(relation.to))
   const lines: string[] = []
   if (zh) {
-    lines.push(`请分析论文库里的 ${papers.length} 篇论文，提出彼此之间值得建立的关联（候选）。`)
+    lines.push(
+      scope === null
+        ? `请分析论文库里的 ${listed.length} 篇论文，提出彼此之间值得建立的关联（候选）。`
+        : `请分析本轮增量范围内的 ${listed.length} 篇论文（新论文 + 邻域），提出彼此之间值得建立的关联（候选）。`,
+    )
   } else {
-    lines.push(`Analyse the ${papers.length} papers in the library and propose candidate relations between them.`)
+    lines.push(
+      scope === null
+        ? `Analyse the ${listed.length} papers in the library and propose candidate relations between them.`
+        : `Analyse the ${listed.length} papers in this incremental scope (new papers + neighbours) and propose candidate relations between them.`,
+    )
   }
   lines.push('')
   if (zh) lines.push('论文清单：')
   else lines.push('Papers:')
-  for (const paper of papers.slice(0, 80)) {
+  for (const paper of listed.slice(0, 80)) {
     const authors = paper.authors.slice(0, 3).join(', ')
     const venue = paper.venue.length > 0 ? paper.venue : '—'
     lines.push(`- id: ${paper.id} · 《${paper.title}》 · ${authors}${paper.year === null ? '' : ` · ${paper.year}`} · ${venue}`)
@@ -314,14 +329,22 @@ export function discoverRelationsPrompt(
   }
   lines.push('')
   lines.push(zh ? '已有关系（不要重复提出）：' : 'Existing relations (do not propose again):')
-  if (relations.items.length === 0) {
+  if (visibleRelations.length === 0) {
     lines.push(zh ? '（暂无）' : '(none)')
   } else {
-    for (const relation of relations.items.slice(0, 120)) {
+    for (const relation of visibleRelations.slice(0, 120)) {
       lines.push(`- [${relation.kind}] ${relation.from} ↔ ${relation.to}${relation.label ? ` (${relation.label})` : ''}`)
     }
   }
   lines.push('')
+  if (scope !== null) {
+    lines.push(
+      zh
+        ? '增量范围：只分析上面列出的论文及其已有关系，不要提出清单之外论文的候选；这样新论文加入时无需重复发送整张图谱。'
+        : 'Incremental scope: only analyse the papers listed above and their existing relations; do not propose candidates for papers outside this scope, so a new paper never requires re-sending the whole graph.',
+    )
+    lines.push('')
+  }
   lines.push(
     zh
       ? [

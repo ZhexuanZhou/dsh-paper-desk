@@ -56,8 +56,12 @@ const marked = new Marked({ gfm: true, breaks: true, renderer })
 function looksLikeMath(source: string): boolean {
   const trimmed = source.trim()
   if (trimmed === '' || trimmed.length > 500) return false
+  // Bare identifiers such as $x$ / $v$ are common in ELF-style answers and
+  // must be typeset too; require a letter so "$5" stays currency.
+  if (!/[a-zA-Z\u0370-\u03ff]/.test(trimmed)) return false
   if (/[\\^_{}=]/.test(trimmed)) return true
-  return /\\[a-zA-Z]+/.test(trimmed)
+  if (/\\[a-zA-Z]+/.test(trimmed)) return true
+  return /^[a-zA-Z\u0370-\u03ff][a-zA-Z0-9\u0370-\u03ff\s*+\-/().,'’]*$/.test(trimmed)
 }
 
 /**

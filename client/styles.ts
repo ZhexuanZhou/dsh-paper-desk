@@ -56,6 +56,7 @@ export const CSS = `
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
+.pd-root[data-host-rail='collapsed'] { padding-top: 30px; }
 .pd-root *, .pd-root *::before, .pd-root *::after { box-sizing: border-box; }
 .pd-root :focus-visible { outline: 2px solid ${BRAND}; outline-offset: 1px; border-radius: 4px; }
 .pd-root ::selection { background: color-mix(in srgb, ${BRAND} 28%, transparent); }
@@ -108,6 +109,17 @@ export const CSS = `
   flex: 0 0 auto;
 }
 .pd-brand-text { display: flex; flex-direction: column; min-width: 0; }
+.pd-brand-title-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.pd-brand-version {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid ${B1};
+  border-radius: 999px;
+  color: ${FG_2};
+  font-family: ${MONO_STACK};
+  font-size: 10px;
+  line-height: 16px;
+}
 .pd-brand-title {
   margin: 0;
   font-size: 20px;

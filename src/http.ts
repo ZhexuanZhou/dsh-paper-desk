@@ -27,6 +27,7 @@ import {
   readComparison,
   saveComparison,
 } from './comparisons.js'
+import { discoveryScope, markDiscoveryAnalyzed } from './discovery.js'
 import { addRelation, readRelations, removeRelation, updateRelation } from './relations.js'
 import { syncCitationEdges } from './references.js'
 import {
@@ -716,6 +717,39 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
       json(res, 200, await syncCitationEdges(root, ids))
       return
     }
+    if (route === 'relations/discovery-scope') {
+      if (method !== 'GET') return methodNotAllowed(res)
+      const { listPaperIds } = await import('./library.js')
+      const papers = []
+      for (const paperId of await listPaperIds(root)) {
+        const meta = await readMeta(root, paperId)
+        if (meta !== null) papers.push(meta)
+      }
+      json(res, 200, await discoveryScope(root, papers, await readRelations(root)))
+      return
+    }
+
+    if (route === 'relations/discovery-mark') {
+      if (method !== 'POST') return methodNotAllowed(res)
+      const body = await readJsonBody(req)
+      const rawIds = Array.isArray(body['ids']) ? body['ids'] : []
+      if (rawIds.length === 0) throw new HttpError(400, 'ids must not be empty')
+      const want = new Set<string>()
+      for (const value of rawIds) {
+        if (typeof value !== 'string') throw new HttpError(400, 'ids must be strings')
+        want.add(requirePdfId(value))
+      }
+      const { listPaperIds } = await import('./library.js')
+      const papers = []
+      for (const paperId of await listPaperIds(root)) {
+        const meta = await readMeta(root, paperId)
+        if (meta !== null) papers.push(meta)
+      }
+      const ids = papers.map((paper) => paper.id).filter((id) => want.has(id))
+      json(res, 200, await markDiscoveryAnalyzed(root, papers, ids))
+      return
+    }
+
 
     if (route === 'graph') {
       if (method !== 'GET') return methodNotAllowed(res)
@@ -864,14 +898,34 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
       if (!isAssistTask(task)) throw new HttpError(400, 'invalid assist task')
       if (task === 'discover') {
         const { listPaperIds } = await import('./library.js')
-        const ids = (await listPaperIds(root)).slice(0, 80)
+        const rawRequested = Array.isArray(body['paperIds']) ? body['paperIds'] : []
+        let ids: string[] = []
+        if (rawRequested.length > 0) {
+          for (const value of rawRequested) {
+            if (typeof value !== 'string') throw new HttpError(400, 'paperIds must be strings')
+            const id = requirePdfId(value)
+            if (!ids.includes(id)) ids.push(id)
+          }
+          if (ids.length > 40) throw new HttpError(400, 'discovery scope supports at most 40 papers')
+        } else {
+          ids = (await listPaperIds(root)).slice(0, 80)
+        }
         const papers = []
         for (const discoverId of ids) {
           const meta = await readMeta(root, discoverId)
-          if (meta !== null) papers.push(meta)
+          if (meta === null) {
+            if (rawRequested.length > 0) throw new HttpError(404, `paper not found: ${discoverId}`)
+            continue
+          }
+          papers.push(meta)
         }
+        if (papers.length < 2) throw new HttpError(400, 'discovery needs at least 2 papers')
         const graph = await readRelations(root)
-        json(res, 200, discoverRelationsPrompt(papers, graph, settings))
+        json(
+          res,
+          200,
+          discoverRelationsPrompt(papers, graph, settings, rawRequested.length > 0 ? ids : undefined),
+        )
         return
       }
       if (task === 'compare') {

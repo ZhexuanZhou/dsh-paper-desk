@@ -429,6 +429,10 @@ export function ReaderView(props: ReaderViewProps) {
   const [drawerWidth, setDrawerWidth] = useState<number>(() => readDrawerWidth())
   const [currentPage, setCurrentPage] = useState<number | null>(null)
   const pageRef = useRef<{ paperId: string; page: number | null } | null>(null)
+  const pendingPageRef = useRef<{ paperId: string; page: number } | null>(null)
+  const pageCommitTimerRef = useRef<number | null>(null)
+  const resumePageRef = useRef<{ paperId: string; page: number } | null>(null)
+  const pageRestoreGuardRef = useRef<{ paperId: string; page: number; until: number } | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [focusTarget, setFocusTarget] = useState<{ page?: number; annotationId?: string | null } | null>(null)
   const [focusNonce, setFocusNonce] = useState(0)
@@ -453,6 +457,13 @@ export function ReaderView(props: ReaderViewProps) {
       setCurrentPage(null)
       setFocusTarget(null)
       pageRef.current = null
+      pendingPageRef.current = null
+      resumePageRef.current = null
+      pageRestoreGuardRef.current = null
+      if (pageCommitTimerRef.current !== null) {
+        window.clearTimeout(pageCommitTimerRef.current)
+        pageCommitTimerRef.current = null
+      }
       setActiveAnnotationId(null)
       setEditRequestId(null)
       setPendingDelete(null)
@@ -467,6 +478,13 @@ export function ReaderView(props: ReaderViewProps) {
     setCurrentPage(savedPage)
     setFocusTarget(savedPage !== null ? { page: savedPage } : null)
     pageRef.current = { paperId, page: savedPage }
+    pendingPageRef.current = null
+    resumePageRef.current = null
+    pageRestoreGuardRef.current = null
+    if (pageCommitTimerRef.current !== null) {
+      window.clearTimeout(pageCommitTimerRef.current)
+      pageCommitTimerRef.current = null
+    }
     setActiveAnnotationId(null)
     setEditRequestId(null)
     setPendingDelete(null)
@@ -482,10 +500,30 @@ export function ReaderView(props: ReaderViewProps) {
   useEffect(() => {
     const previous = previousTabRef.current
     previousTabRef.current = tab
-    if (tab !== 'read' || previous === 'read' || paperId === null) return
-    const page = pageRef.current?.page ?? currentPage
-    if (page === null || page <= 0) return
-    setFocusTarget({ page })
+    if (paperId === null) return
+    if (tab !== 'read') {
+      if (previous !== 'read') return
+      // Freeze the last stable page before the hidden viewer starts relaying
+      // transient layout pages (7 -> 10 symptom).
+      const stable = pageRef.current?.paperId === paperId ? pageRef.current.page : currentPage
+      if (stable !== null && stable > 0) resumePageRef.current = { paperId, page: stable }
+      if (pageCommitTimerRef.current !== null) {
+        window.clearTimeout(pageCommitTimerRef.current)
+        pageCommitTimerRef.current = null
+      }
+      pendingPageRef.current = null
+      pageRestoreGuardRef.current = null
+      return
+    }
+    if (previous === 'read') return
+    const target = resumePageRef.current?.paperId === paperId
+      ? resumePageRef.current.page
+      : pageRef.current?.page ?? currentPage
+    if (target === null || target <= 0) return
+    pageRestoreGuardRef.current = { paperId, page: target, until: Date.now() + 2500 }
+    pageRef.current = { paperId, page: target }
+    setCurrentPage(target)
+    setFocusTarget({ page: target })
     setFocusNonce((value) => value + 1)
   }, [tab, paperId, currentPage])
 
@@ -1104,11 +1142,26 @@ export function ReaderView(props: ReaderViewProps) {
                     openDrawer('annotations')
                   }}
                   onPageChange={(page) => {
-                    if (tab !== 'read') return
-                    setCurrentPage(page)
-                    if (pageRef.current !== null && pageRef.current.paperId === paperId) {
-                      pageRef.current = { paperId, page }
+                    if (tab !== 'read' || paperId === null) return
+                    const guard = pageRestoreGuardRef.current
+                    if (guard !== null && guard.paperId === paperId && Date.now() < guard.until) {
+                      if (page !== guard.page) return
+                      pageRestoreGuardRef.current = null
                     }
+                    setCurrentPage(page)
+                    // Commit a page only after it stays stable; transient
+                    // layout pages must not become the page we return to.
+                    pendingPageRef.current = { paperId, page }
+                    if (pageCommitTimerRef.current !== null) {
+                      window.clearTimeout(pageCommitTimerRef.current)
+                    }
+                    pageCommitTimerRef.current = window.setTimeout(() => {
+                      const pending = pendingPageRef.current
+                      if (pending !== null && pending.paperId === paperId) {
+                        pageRef.current = { paperId, page: pending.page }
+                      }
+                      pageCommitTimerRef.current = null
+                    }, 700)
                   }}
                   focusNonce={focusNonce}
                   focusPage={focusTarget?.page}

@@ -1488,6 +1488,9 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
         if (workspacePath.trim() === '') throw new Error(t('compare.noWorkspace'))
         const sortedIds = [...ordered].sort()
         const threadKey = `compare:${sortedIds.join(',')}`
+        // A fresh run must not inherit old tool rows/claims from the previous
+        // report for the same paper pair.
+        thread.resetThread(threadKey)
         await thread.openThread(threadKey, {
           workspacePath,
           title: sessionTitleFor(ordered),
