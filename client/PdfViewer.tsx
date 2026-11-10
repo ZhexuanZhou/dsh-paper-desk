@@ -1090,6 +1090,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (existing !== undefined) return
     const timer = window.setTimeout(() => {
       releaseTimersRef.current.delete(pageNumber)
+      // Keep the neighbouring pages warm for sequential reading.
+      if (Math.abs(pageNumber - currentPageRef.current) <= 3) return
       if (!visibleRef.current.has(pageNumber)) releasePage(pageNumber)
     }, RELEASE_DELAY_MS)
     releaseTimersRef.current.set(pageNumber, timer)
@@ -1156,14 +1158,15 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           // Preview is optional; fall through to the full render.
         }
       }
-      // Back the canvas with device pixels; draw at CSS size viewport.width/height.
-      canvas.width = Math.max(1, Math.round(viewport.width * dpr))
-      canvas.height = Math.max(1, Math.round(viewport.height * dpr))
-      canvas.style.width = `${viewport.width}px`
-      canvas.style.height = `${viewport.height}px`
-
+      // Render the full page off-screen first. Resizing the visible canvas
+      // clears it, which is exactly the white flash users see while a preview
+      // is being upgraded. Copying only after the full raster is ready keeps
+      // the preview (or the previous frame) visible the whole time.
+      const fullCanvas = document.createElement('canvas')
+      fullCanvas.width = Math.max(1, Math.round(viewport.width * dpr))
+      fullCanvas.height = Math.max(1, Math.round(viewport.height * dpr))
       const task = page.render({
-        canvas,
+        canvas: fullCanvas,
         viewport,
         transform: [dpr, 0, 0, dpr, 0, 0],
         intent: 'display',
@@ -1171,6 +1174,11 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       view.renderTask = task
       await task.promise
       if (epoch !== epochRef.current || token !== view.token) return
+      canvas.width = fullCanvas.width
+      canvas.height = fullCanvas.height
+      canvas.style.width = `${viewport.width}px`
+      canvas.style.height = `${viewport.height}px`
+      canvas.getContext('2d')?.drawImage(fullCanvas, 0, 0)
       view.renderedKey = key
       view.previewKey = key
       view.renderTask = undefined
@@ -1318,6 +1326,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     if (status !== 'ready' || currentPage < 1) return
     let cancelled = false
+    // Start the next page as soon as the current one becomes current. Waiting
+    // for requestIdleCallback often loses the race with fast page-by-page
+    // reading, leaving the next page on its loading placeholder.
     const warm = (): void => {
       if (cancelled) return
       const key = renderKey(zoomRef.current)
@@ -1328,17 +1339,19 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         void renderPage(page)
       }
     }
-    if (typeof window.requestIdleCallback === 'function') {
-      const id = window.requestIdleCallback(warm, { timeout: PREFETCH_IDLE_TIMEOUT_MS })
-      return () => {
-        cancelled = true
-        window.cancelIdleCallback(id)
-      }
-    }
-    const timer = window.setTimeout(warm, 120)
+    const immediate = window.setTimeout(warm, 20)
+    const second = window.setTimeout(() => {
+      if (cancelled) return
+      const page = currentPage + 2
+      if (page > numPages) return
+      const view = pagesRef.current.get(page)
+      const key = renderKey(zoomRef.current)
+      if (view !== undefined && view.renderedKey !== key && view.pendingKey !== key) void renderPage(page)
+    }, 180)
     return () => {
       cancelled = true
-      window.clearTimeout(timer)
+      window.clearTimeout(immediate)
+      window.clearTimeout(second)
     }
   }, [status, currentPage, numPages, renderPage])
 
