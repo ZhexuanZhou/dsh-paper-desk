@@ -18,6 +18,7 @@ export type KeyAction =
   | 'zoomOut'
   | 'zoomReset'
   | 'visualMode'
+  | 'swapSelection'
   | 'selectLeft'
   | 'selectRight'
   | 'selectLineDown'
@@ -45,6 +46,7 @@ export const DEFAULT_KEYMAP: KeyMap = {
   zoomOut: '-',
   zoomReset: '0',
   visualMode: 'v',
+  swapSelection: 'o',
   selectLeft: 'h',
   selectRight: 'l',
   selectLineDown: 'j',
@@ -69,6 +71,7 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   'zoomOut',
   'zoomReset',
   'visualMode',
+  'swapSelection',
   'selectLeft',
   'selectRight',
   'selectLineDown',
@@ -156,6 +159,7 @@ export const KEY_ACTION_LABELS: Record<KeyAction, { zh: string; en: string }> = 
   zoomOut: { zh: '缩小', en: 'Zoom out' },
   zoomReset: { zh: '实际大小', en: 'Actual size' },
   visualMode: { zh: '进入/退出可视选择', en: 'Visual mode' },
+  swapSelection: { zh: '交换选区两端', en: 'Swap selection ends' },
   selectLeft: { zh: '选择：向左一个字符', en: 'Select: char left' },
   selectRight: { zh: '选择：向右一个字符', en: 'Select: char right' },
   selectLineDown: { zh: '选择：向下一行', en: 'Select: line down' },

@@ -854,6 +854,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const pageInputFocusedRef = useRef(false)
   const copyTimerRef = useRef<number | null>(null)
   const lastFocusedAnnotationRef = useRef<string | null>(null)
+  const lastTextPointRef = useRef<{ x: number; y: number } | null>(null)
 
   const [status, setStatus] = useState<Status>('loading')
   const [errorText, setErrorText] = useState('')
@@ -1722,6 +1723,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
 
   const handleRootPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const target = event.target
+    if (target instanceof Element && target.closest('.textLayer') !== null) {
+      lastTextPointRef.current = { x: event.clientX, y: event.clientY }
+    }
     if (target instanceof Element && target.closest('.pdv-selbar, .pdv-ask') !== null) return
     if (selection !== null || askOpen) dismissSelection(false)
   }
@@ -1863,13 +1867,44 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const root = rootRef.current
     if (root === null) return
     const dom = window.getSelection()
-    if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) {
-      const view = pagesRef.current.get(currentPageRef.current)
-      const span = view?.textHost.querySelector<HTMLElement>('.textLayer span')
-      if (span !== null && span !== undefined) {
-        const range = document.createRange()
-        range.selectNodeContents(span)
-        range.collapse(true)
+    const existing = dom !== null && dom.rangeCount > 0 ? dom.getRangeAt(0) : null
+    if (existing === null || existing.collapsed || !root.contains(existing.startContainer)) {
+      let range: Range | null = null
+      const point = lastTextPointRef.current
+      const rootRect = root.getBoundingClientRect()
+      // Prefer the reader's last click; otherwise start near the middle of the
+      // visible page, not at the very first character on the page.
+      const docWithCaret = document as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+      }
+      if (point !== null && rootRect.left <= point.x && point.x <= rootRect.right && rootRect.top <= point.y && point.y <= rootRect.bottom) {
+        if (typeof docWithCaret.caretRangeFromPoint === 'function') {
+          range = docWithCaret.caretRangeFromPoint(point.x, point.y)
+        } else if (typeof docWithCaret.caretPositionFromPoint === 'function') {
+          const position = docWithCaret.caretPositionFromPoint(point.x, point.y)
+          if (position !== null) {
+            range = document.createRange()
+            range.setStart(position.offsetNode, position.offset)
+            range.collapse(true)
+          }
+        }
+      }
+      if (range === null) {
+        const centerX = rootRect.left + rootRect.width / 2
+        const centerY = rootRect.top + rootRect.height / 2
+        const target = document.elementFromPoint(centerX, centerY)
+        const span =
+          (target instanceof Element ? target.closest<HTMLElement>('.textLayer span') : null) ??
+          pagesRef.current.get(currentPageRef.current)?.textHost.querySelector<HTMLElement>('.textLayer span') ??
+          null
+        if (span !== null) {
+          range = document.createRange()
+          range.selectNodeContents(span)
+          range.collapse(true)
+        }
+      }
+      if (range !== null) {
         dom?.removeAllRanges()
         dom?.addRange(range)
       }
@@ -1898,6 +1933,19 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (clearNative) {
       const dom = window.getSelection()
       if (dom !== null && dom.rangeCount > 0) dom.removeAllRanges()
+    }
+  }, [])
+
+  const swapVisualSelection = useCallback((): void => {
+    const dom = window.getSelection()
+    if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) return
+    const anchorNode = dom.anchorNode
+    const focusNode = dom.focusNode
+    if (anchorNode === null || focusNode === null) return
+    try {
+      dom.setBaseAndExtent(focusNode, dom.focusOffset, anchorNode, dom.anchorOffset)
+    } catch {
+      // Ignore browsers that reject the swap.
     }
   }, [])
 
@@ -1972,6 +2020,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         else if (hit('selectLineDown')) extendVisualSelection('line', 'forward')
         else if (hit('selectWordBackward')) extendVisualSelection('word', 'backward')
         else if (hit('selectWordForward')) extendVisualSelection('word', 'forward')
+        else if (hit('swapSelection')) swapVisualSelection()
         else if (hit('highlightSelection')) highlightVisualSelection()
         else if (hit('copySelection')) void copyVisualSelection()
         else if (hit('visualMode')) stopVisualMode(true)
@@ -2014,6 +2063,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     scrollViewer,
     beginVisualSelection,
     stopVisualMode,
+    swapVisualSelection,
   ])
 
   /* ── grouped annotation overlays ──────────────────────────────────────── */
