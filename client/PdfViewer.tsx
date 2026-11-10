@@ -1097,7 +1097,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     releaseTimersRef.current.set(pageNumber, timer)
   }, [releasePage])
 
-  const renderPage = useCallback(async (pageNumber: number): Promise<void> => {
+  const renderPage = useCallback(async (pageNumber: number, previewOnly = false): Promise<void> => {
     const view = pagesRef.current.get(pageNumber)
     const doc = docRef.current
     const pdfjs = pdfjsRef.current
@@ -1105,6 +1105,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
 
     const key = renderKey(zoomRef.current)
     if (view.renderedKey === key || view.pendingKey === key) return
+    if (previewOnly && view.previewKey === key) return
 
     const epoch = epochRef.current
     const token = view.token + 1
@@ -1148,6 +1149,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           view.previewKey = key
           view.pendingKey = undefined
           view.wrap.dataset.rendered = 'true'
+          if (previewOnly) return
           const timer = window.setTimeout(() => {
             previewUpgradeTimersRef.current.delete(pageNumber)
             void renderPage(pageNumber)
@@ -1336,7 +1338,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         if (page < 1 || page > numPages) continue
         const view = pagesRef.current.get(page)
         if (view === undefined || view.renderedKey === key || view.pendingKey === key) continue
-        void renderPage(page)
+        // Neighbour pages only need the cheap preview; full quality is rendered
+        // when they actually become visible/current.
+        void renderPage(page, true)
       }
     }
     const immediate = window.setTimeout(warm, 20)
@@ -1346,7 +1350,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       if (page > numPages) return
       const view = pagesRef.current.get(page)
       const key = renderKey(zoomRef.current)
-      if (view !== undefined && view.renderedKey !== key && view.pendingKey !== key) void renderPage(page)
+      if (view !== undefined && view.renderedKey !== key && view.pendingKey !== key) void renderPage(page, true)
     }, 180)
     return () => {
       cancelled = true
