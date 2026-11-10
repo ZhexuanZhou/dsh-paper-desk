@@ -339,7 +339,7 @@ export function AiPanel(props: AiPanelProps) {
               {history.map((message, index) =>
                 message.role === 'user' ? (
                   <div key={`history-${index}`} className="pd-ai-user">
-                    {message.text}
+                    {cleanUserPrompt(message.text)}
                   </div>
                 ) : (
                   <div key={`history-${index}`} className="pd-ai-row">
