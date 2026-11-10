@@ -574,8 +574,8 @@ function currentDpr(): number {
   return Math.max(1, Math.min(MAX_DPR, Number.isFinite(raw) && raw > 0 ? raw : 1))
 }
 
-function renderKey(zoom: number): string {
-  return `${(zoom * CSS_UNITS).toFixed(4)}|${currentDpr()}`
+function renderKey(zoom: number, dpr = currentDpr()): string {
+  return `${(zoom * CSS_UNITS).toFixed(4)}|${dpr}`
 }
 
 function normaliseQuote(text: string): string {
@@ -778,6 +778,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const pageOffsetsRef = useRef<number[]>([])
   const pendingScrollPageRef = useRef<number | null>(null)
   const jumpGuardRef = useRef<{ page: number; until: number } | null>(null)
+  const scrollingRef = useRef(false)
+  const scrollIdleTimerRef = useRef<number | null>(null)
   const zoomRef = useRef(1)
   const pageSizesRef = useRef<readonly PageSize[]>([])
   const fitModeRef = useRef(true)
@@ -798,6 +800,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const [pageText, setPageText] = useState('1')
   const [lowTextPages, setLowTextPages] = useState<ReadonlySet<number>>(() => new Set<number>())
   const [pageWindow, setPageWindow] = useState<{ start: number; end: number }>({ start: 1, end: 1 })
+  const [qualityVersion, setQualityVersion] = useState(0)
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [askOpen, setAskOpen] = useState(false)
   const [question, setQuestion] = useState('')
@@ -1097,13 +1100,16 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     releaseTimersRef.current.set(pageNumber, timer)
   }, [releasePage])
 
+  const renderDpr = useCallback((): number => (scrollingRef.current ? 1 : currentDpr()), [])
+
   const renderPage = useCallback(async (pageNumber: number, previewOnly = false): Promise<void> => {
     const view = pagesRef.current.get(pageNumber)
     const doc = docRef.current
     const pdfjs = pdfjsRef.current
     if (view === undefined || doc === null || pdfjs === null) return
 
-    const key = renderKey(zoomRef.current)
+    const dpr = renderDpr()
+    const key = renderKey(zoomRef.current, dpr)
     if (view.renderedKey === key || view.pendingKey === key) return
     if (previewOnly && view.previewKey === key) return
 
@@ -1124,7 +1130,6 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       if (epoch !== epochRef.current || token !== view.token) return
 
       const scale = zoomRef.current * CSS_UNITS
-      const dpr = currentDpr()
       const viewport = page.getViewport({ scale })
       const canvas = view.canvas
 
@@ -1309,6 +1314,14 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (status !== 'ready' || scroller === null) return
     let frame = 0
     const onScroll = () => {
+      scrollingRef.current = true
+      if (scrollIdleTimerRef.current !== null) window.clearTimeout(scrollIdleTimerRef.current)
+      scrollIdleTimerRef.current = window.setTimeout(() => {
+        scrollIdleTimerRef.current = null
+        scrollingRef.current = false
+        // Warm pages rendered during scrolling at the readable resolution.
+        setQualityVersion((value) => value + 1)
+      }, 220)
       if (frame !== 0) return
       frame = requestAnimationFrame(() => {
         frame = 0
@@ -1320,8 +1333,32 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     return () => {
       scroller.removeEventListener('scroll', onScroll)
       if (frame !== 0) cancelAnimationFrame(frame)
+      if (scrollIdleTimerRef.current !== null) {
+        window.clearTimeout(scrollIdleTimerRef.current)
+        scrollIdleTimerRef.current = null
+      }
+      scrollingRef.current = false
     }
   }, [status, updateCurrentPage])
+
+  /* After scrolling stops, re-rasterise visible pages at full DPR while the
+     low-resolution versions stay visible until each replacement is ready. */
+  useEffect(() => {
+    if (status !== 'ready' || scrollingRef.current) return
+    const key = renderKey(zoomRef.current, currentDpr())
+    for (const page of visibleRef.current) {
+      const view = pagesRef.current.get(page)
+      if (view === undefined || view.renderedKey === key || view.pendingKey === key) continue
+      view.token += 1
+      try { view.renderTask?.cancel() } catch {}
+      view.renderTask = undefined
+      view.pendingKey = undefined
+      view.renderedKey = undefined
+      // Keep the current canvas visible; renderPage will upgrade off-screen.
+      view.previewKey = key
+      void renderPage(page)
+    }
+  }, [qualityVersion, status, renderPage])
 
   /* Warm the next/previous page while the reader is idle, so fast sequential
      flips usually find a ready canvas instead of a blank page. */
@@ -1333,7 +1370,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     // reading, leaving the next page on its loading placeholder.
     const warm = (): void => {
       if (cancelled) return
-      const key = renderKey(zoomRef.current)
+      const key = renderKey(zoomRef.current, renderDpr())
       for (const page of [currentPage + 1, currentPage - 1]) {
         if (page < 1 || page > numPages) continue
         const view = pagesRef.current.get(page)
@@ -1349,7 +1386,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       const page = currentPage + 2
       if (page > numPages) return
       const view = pagesRef.current.get(page)
-      const key = renderKey(zoomRef.current)
+      const key = renderKey(zoomRef.current, renderDpr())
       if (view !== undefined && view.renderedKey !== key && view.pendingKey !== key) void renderPage(page, true)
     }, 180)
     return () => {
@@ -1357,12 +1394,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       window.clearTimeout(immediate)
       window.clearTimeout(second)
     }
-  }, [status, currentPage, numPages, renderPage])
+  }, [status, currentPage, numPages, renderPage, renderDpr])
 
   /* ── re-render visible pages when zoom changes; free far pages ────────── */
   useEffect(() => {
     if (status !== 'ready') return
-    const key = renderKey(zoom)
+    const key = renderKey(zoom, renderDpr())
     for (const [page, view] of pagesRef.current) {
       if (view.renderedKey === key || view.pendingKey === key) continue
       if (visibleRef.current.has(page)) {
@@ -1382,7 +1419,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       }
     }
     for (const page of visibleRef.current) void renderPage(page)
-  }, [zoom, status, renderPage, releasePage])
+  }, [zoom, status, renderPage, releasePage, renderDpr])
 
   /* ── fit-width (initial + on resize) ──────────────────────────────────── */
   useEffect(() => {
