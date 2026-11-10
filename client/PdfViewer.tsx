@@ -1921,7 +1921,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const scrollViewer = useCallback((fraction: number): void => {
     const scroller = scrollerRef.current
     if (scroller === null) return
-    const amount = fraction >= 0.49 ? scroller.clientHeight * 0.5 : Math.max(60, scroller.clientHeight * 0.12)
+    // j/k are one text line (roughly 1em of the PDF); Ctrl+d/u are half a
+    // viewport. Keep the two separate — using >= 0.49 for the half-page test
+    // made j scroll half a screen as well.
+    const halfPage = Math.abs(fraction) === 0.5
+    const lineHeight = Math.max(24, Math.min(40, scroller.clientHeight * 0.045))
+    const amount = halfPage ? scroller.clientHeight * 0.5 : lineHeight
     scroller.scrollBy({ top: fraction >= 0 ? amount : -amount, behavior: 'auto' })
   }, [])
 
