@@ -82,7 +82,10 @@ const MAX_DPR = 2
 const MAX_QUOTE = 4000
 const MAX_RECTS = 60
 /** Render pages comfortably before they enter the viewport. */
-const RENDER_MARGIN = '600px 0px'
+const RENDER_MARGIN = '700px 0px'
+/** Keep recently rendered pages warm for fast back/forward flips. */
+const RELEASE_DELAY_MS = 1200
+const PREFETCH_IDLE_TIMEOUT_MS = 900
 const STYLE_ATTR = 'paper-desk-viewer'
 
 /* ── scoped styles (injected once, removed on unmount) ───────────────────── */
@@ -223,6 +226,28 @@ const VIEWER_CSS = `
     0 8px 24px color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent);
 }
 .pdv-canvas { position: absolute; top: 0; left: 0; display: block; }
+.pdv-pageLoading {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  font-size: 12px;
+  background: #fff;
+}
+.pdv-pageWrap[data-rendered='true'] .pdv-pageLoading { display: none; }
+.pdv-pageLoadingSpin {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: pdvSpin .8s linear infinite;
+}
+@keyframes pdvSpin { to { transform: rotate(360deg); } }
 
 /* Selectable text layer: pdf.js builds spans in here. The scoped rules below
    are only a fallback for the moment before web/pdf_viewer.css has loaded —
@@ -739,6 +764,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const epochRef = useRef(0)
   /** Debounce fit-width during host/sidebar animations. */
   const resizeTimerRef = useRef<number | null>(null)
+  const releaseTimersRef = useRef<Map<number, number>>(new Map())
   const zoomRef = useRef(1)
   const pageSizesRef = useRef<readonly PageSize[]>([])
   const fitModeRef = useRef(true)
@@ -830,6 +856,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           cMapPacked: true,
           standardFontDataUrl: pdfjsAsset('standard_fonts/', assetBase),
           wasmUrl: pdfjsAsset('wasm/', assetBase),
+          rangeChunkSize: 1024 * 1024,
+          disableAutoFetch: false,
+          disableStream: false,
         }) as LoadingTaskLike
         loadingTaskRef.current = documentTask
         const doc = await documentTask.promise
@@ -865,8 +894,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
 
         // Placeholder boxes for pages with a different aspect ratio: fetch scale-1
         // viewports in small batches so scrollbar/extent stay stable. Cheap: reading
-        // a viewport does not rasterise the page.
-        for (let start = 2; start <= doc.numPages; start += 12) {
+        // a viewport does not rasterise the page. For very large PDFs skip the
+        // upfront sweep entirely; first-page geometry keeps the initial load fast.
+        for (let start = 2; start <= (doc.numPages <= 80 ? doc.numPages : 1); start += 12) {
           if (cancelled || epoch !== epochRef.current) return
           const end = Math.min(doc.numPages, start + 11)
           const batch: Promise<void>[] = []
@@ -976,6 +1006,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const releasePage = useCallback((pageNumber: number) => {
     const view = pagesRef.current.get(pageNumber)
     if (view === undefined) return
+    const timer = releaseTimersRef.current.get(pageNumber)
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      releaseTimersRef.current.delete(pageNumber)
+    }
+    view.wrap.dataset.rendered = 'false'
     view.token += 1
     try {
       view.renderTask?.cancel()
@@ -991,6 +1027,16 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     view.canvas.style.width = ''
     view.canvas.style.height = ''
   }, [])
+
+  const scheduleRelease = useCallback((pageNumber: number) => {
+    const existing = releaseTimersRef.current.get(pageNumber)
+    if (existing !== undefined) return
+    const timer = window.setTimeout(() => {
+      releaseTimersRef.current.delete(pageNumber)
+      if (!visibleRef.current.has(pageNumber)) releasePage(pageNumber)
+    }, RELEASE_DELAY_MS)
+    releaseTimersRef.current.set(pageNumber, timer)
+  }, [releasePage])
 
   const renderPage = useCallback(async (pageNumber: number): Promise<void> => {
     const view = pagesRef.current.get(pageNumber)
@@ -1038,6 +1084,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       if (epoch !== epochRef.current || token !== view.token) return
       view.renderedKey = key
       view.renderTask = undefined
+      view.wrap.dataset.rendered = 'true'
 
       // Selectable text is useful but not on the raster critical path. Build it
       // on idle so scrolling starts as soon as the canvas is painted.
@@ -1137,10 +1184,15 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           if (!Number.isFinite(page) || page < 1) continue
           if (entry.isIntersecting) {
             visibleRef.current.add(page)
+            const timer = releaseTimersRef.current.get(page)
+            if (timer !== undefined) {
+              window.clearTimeout(timer)
+              releaseTimersRef.current.delete(page)
+            }
             void renderPage(page)
           } else {
             visibleRef.current.delete(page)
-            releasePage(page)
+            scheduleRelease(page)
           }
         }
         updateCurrentPage()
@@ -1149,7 +1201,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     )
     for (const view of pagesRef.current.values()) observer.observe(view.wrap)
     return () => observer.disconnect()
-  }, [status, numPages, attempt, renderPage, releasePage, updateCurrentPage])
+  }, [status, numPages, attempt, renderPage, scheduleRelease, updateCurrentPage])
 
   /* ── continuous scroll: current page + dismiss floating tools ─────────── */
   useEffect(() => {
@@ -1171,6 +1223,35 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     }
   }, [status, updateCurrentPage])
 
+  /* Warm the next/previous page while the reader is idle, so fast sequential
+     flips usually find a ready canvas instead of a blank page. */
+  useEffect(() => {
+    if (status !== 'ready' || currentPage < 1) return
+    let cancelled = false
+    const warm = (): void => {
+      if (cancelled) return
+      const key = renderKey(zoomRef.current)
+      for (const page of [currentPage + 1, currentPage - 1]) {
+        if (page < 1 || page > numPages) continue
+        const view = pagesRef.current.get(page)
+        if (view === undefined || view.renderedKey === key || view.pendingKey === key) continue
+        void renderPage(page)
+      }
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(warm, { timeout: PREFETCH_IDLE_TIMEOUT_MS })
+      return () => {
+        cancelled = true
+        window.cancelIdleCallback(id)
+      }
+    }
+    const timer = window.setTimeout(warm, 120)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [status, currentPage, numPages, renderPage])
+
   /* ── re-render visible pages when zoom changes; free far pages ────────── */
   useEffect(() => {
     if (status !== 'ready') return
@@ -1187,6 +1268,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         view.renderTask = undefined
         view.pendingKey = undefined
         view.renderedKey = undefined
+        view.wrap.dataset.rendered = 'false'
         view.textHost.replaceChildren()
       } else {
         releasePage(page)
@@ -1243,6 +1325,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const scroller = scrollerRef.current
     const view = pagesRef.current.get(page)
     if (scroller === null || view === undefined) return
+    void renderPage(page)
     scrollPageIntoView(scroller, view.pageEl, 'start')
     currentPageRef.current = page
     setCurrentPage(page)
@@ -1381,6 +1464,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     return () => {
       if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+      for (const timer of releaseTimersRef.current.values()) window.clearTimeout(timer)
+      releaseTimersRef.current.clear()
     }
   }, [])
 
@@ -1395,6 +1480,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const target = clamp(Math.round(value), 1, Math.max(1, numPages))
     const scroller = scrollerRef.current
     const view = pagesRef.current.get(target)
+    // Start the target raster before the smooth scroll arrives; the loading
+    // placeholder covers the remaining gap instead of showing a blank sheet.
+    void renderPage(target)
     if (scroller !== null && view !== undefined) scrollPageIntoView(scroller, view.pageEl, 'start')
     currentPageRef.current = target
     setCurrentPage(target)
@@ -1655,6 +1743,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
             return (
               <div className="pdv-pageWrap" key={page} data-pdv-page={page} ref={registerPage}>
                 <div className="pdv-page" style={pageStyle}>
+                  <div className="pdv-pageLoading" aria-hidden="true">
+                    <span className="pdv-pageLoadingSpin" />
+                    <span>{page}</span>
+                  </div>
                   <canvas className="pdv-canvas" width={0} height={0} />
                   <div className="pdv-textHost" />
                   <div className="pdv-annotLayer">
