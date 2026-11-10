@@ -41,6 +41,8 @@ import type { AiPanelLabels } from './AiPanel.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
 import type { PaperStatus } from '../src/types.js'
 import { annotationKindLabel, formatNumber, statusLabel, useLang, useT } from './i18n.js'
+import { KEY_ACTION_LABELS, KEY_ACTIONS } from './keymap.js'
+import type { KeyAction } from './keymap.js'
 import { CardEditor, CardsPanel, suggestCardTitle } from './CardsPanel.js'
 import type { CardDraft } from './CardsPanel.js'
 import { MetaEditor } from './MetaEditor.js'
@@ -612,8 +614,16 @@ export function ReaderView(props: ReaderViewProps) {
       askPlaceholder: t('viewer.askPlaceholder'),
       askSubmit: t('viewer.askSubmit'),
       textLayerUnavailable: t('viewer.textLayerUnavailable'),
+      visualMode: t('viewer.visualMode'),
+      visualHint: t('viewer.visualHint'),
+      shortcuts: t('viewer.shortcuts'),
+      shortcutsHint: t('viewer.shortcutsHint'),
+      close: t('viewer.close'),
+      keymapLabels: Object.fromEntries(
+        KEY_ACTIONS.map((action) => [action, KEY_ACTION_LABELS[action][lang]]),
+      ) as Record<KeyAction, string>,
     }),
-    [t],
+    [t, lang],
   )
 
   const aiLabels = useMemo<AiPanelLabels>(

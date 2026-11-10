@@ -10,6 +10,15 @@
  * Contract: DESIGN-VIEWER.md §3.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DEFAULT_KEYMAP,
+  KEY_ACTION_LABELS,
+  KEY_ACTIONS,
+  formatKeyBinding,
+  loadKeyMap,
+  matchesBinding,
+} from './keymap.js'
+import type { KeyAction, KeyMap } from './keymap.js'
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -45,6 +54,12 @@ export interface PdfViewerLabels {
   askPlaceholder: string
   askSubmit: string
   textLayerUnavailable: string
+  visualMode: string
+  visualHint: string
+  shortcuts: string
+  shortcutsHint: string
+  close: string
+  keymapLabels: Record<KeyAction, string>
 }
 
 export interface PdfSelectionPayload {
@@ -211,6 +226,57 @@ const VIEWER_CSS = `
   padding: 14px 0 56px;
 }
 .pdv-spacer { width: 100%; flex: 0 0 auto; }
+.pdv-vim-hud {
+  position: absolute;
+  left: 50%;
+  top: 52px;
+  transform: translateX(-50%);
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2));
+  box-shadow: var(--dsw-shadow-lv1, 0 4px 16px rgba(0,0,0,.16));
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+}
+.pdv-vim-hud strong { color: var(--dsw-alias-brand-primary); letter-spacing: .06em; }
+.pdv-vim-hud span { color: var(--dsw-alias-label-secondary); }
+.pdv-vim-help {
+  position: absolute;
+  right: 16px;
+  top: 52px;
+  z-index: 9;
+  width: 260px;
+  max-height: 60%;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2));
+  box-shadow: var(--dsw-shadow-lv1, 0 8px 28px rgba(0,0,0,.18));
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+}
+.pdv-vim-help-head { display: flex; align-items: center; justify-content: space-between; }
+.pdv-vim-help-head button { border: 0; background: transparent; color: inherit; font-size: 16px; cursor: pointer; }
+.pdv-vim-help-hint { margin: 3px 0 7px; color: var(--dsw-alias-label-secondary); }
+.pdv-vim-help dl { margin: 0; }
+.pdv-vim-help-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.pdv-vim-help-row dt { color: var(--dsw-alias-label-secondary); }
+.pdv-vim-help-row dd { margin: 0; }
+.pdv-vim-help kbd {
+  min-width: 24px;
+  padding: 1px 5px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: center;
+}
 .pdv-pageWrap {
   display: flex;
   justify-content: center;
@@ -807,6 +873,13 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [flashId, setFlashId] = useState<string | null>(null)
+  const [visualMode, setVisualMode] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+  const [keymap, setKeymap] = useState<KeyMap>(() => loadKeyMap())
+  const visualModeRef = useRef(false)
+  visualModeRef.current = visualMode
+  const keymapRef = useRef<KeyMap>(keymap)
+  keymapRef.current = keymap
 
   const onPageChangeRef = useRef<PdfViewerProps['onPageChange']>(props.onPageChange)
   onPageChangeRef.current = props.onPageChange
@@ -820,6 +893,16 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     pageSizesRef.current = pageSizes
   }, [pageSizes])
+
+  useEffect(() => {
+    const refresh = (): void => setKeymap(loadKeyMap())
+    window.addEventListener('focus', refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
 
   useEffect(() => {
     fitModeRef.current = fitMode
@@ -1522,22 +1605,22 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   }, [currentPage])
 
   /* ── selection capture ────────────────────────────────────────────────── */
-  const captureSelection = useCallback(() => {
+  const captureSelection = useCallback((): SelectionState | null => {
     const root = rootRef.current
-    if (root === null) return
+    if (root === null) return null
     const domSelection = window.getSelection()
-    if (domSelection === null || domSelection.rangeCount === 0 || domSelection.isCollapsed) return
+    if (domSelection === null || domSelection.rangeCount === 0 || domSelection.isCollapsed) return null
     const range = domSelection.getRangeAt(0)
     const startNode = range.startContainer
     const startElement = startNode.nodeType === Node.ELEMENT_NODE ? (startNode as Element) : startNode.parentElement
     const textLayer = startElement?.closest?.('.textLayer') ?? null
-    if (!(textLayer instanceof HTMLElement) || !root.contains(textLayer)) return
+    if (!(textLayer instanceof HTMLElement) || !root.contains(textLayer)) return null
     const page = Number(textLayer.dataset.pdvPage)
-    if (!Number.isFinite(page)) return
+    if (!Number.isFinite(page)) return null
     const view = pagesRef.current.get(page)
-    if (view === undefined) return
+    if (view === undefined) return null
     const pageRect = view.pageEl.getBoundingClientRect()
-    if (pageRect.width <= 0 || pageRect.height <= 0) return
+    if (pageRect.width <= 0 || pageRect.height <= 0) return null
     const rootRect = root.getBoundingClientRect()
 
     const rects: AnnotationRect[] = []
@@ -1559,9 +1642,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       })
       if (anchorRect === null) anchorRect = raw
     }
-    if (rects.length === 0 || anchorRect === null) return
+    if (rects.length === 0 || anchorRect === null) return null
     const quote = normaliseQuote(domSelection.toString())
-    if (quote.length === 0) return
+    if (quote.length === 0) return null
 
     const rootWidth = rootRect.width
     const centerX = anchorRect.left + anchorRect.width / 2 - rootRect.left
@@ -1571,7 +1654,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const askHalf = Math.min(140, Math.max(60, rootWidth / 2 - 8))
     const toolbarAbove = selTop >= 56
     const askAbove = selTop >= 190
-    setSelection({
+    const state: SelectionState = {
       page,
       rects,
       quote,
@@ -1581,10 +1664,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       askX: clamp(centerX, askHalf + 4, Math.max(askHalf + 4, rootWidth - askHalf - 4)),
       askY: askAbove ? selTop - 8 : selBottom + 12,
       askBelow: !askAbove,
-    })
+    }
+    setSelection(state)
     setAskOpen(false)
     setQuestion('')
     setCopied(false)
+    return state
   }, [])
 
   const handleSelectionEnd = useCallback(() => {
@@ -1698,12 +1783,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     applyZoom(1, true)
   }
 
-  const runCreate = async (kind: AnnotationKind) => {
-    if (selection === null || busy) return
+  const createFromSelection = async (state: SelectionState, kind: AnnotationKind): Promise<void> => {
+    if (busy) return
     const payload: PdfSelectionPayload & { kind: AnnotationKind; comment?: string } = {
-      page: selection.page,
-      rects: selection.rects,
-      quote: selection.quote,
+      page: state.page,
+      rects: state.rects,
+      quote: state.quote,
       kind,
     }
     if (kind === 'note') payload.comment = ''
@@ -1715,6 +1800,11 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     }
     setBusy(false)
     dismissSelection(true)
+  }
+
+  const runCreate = async (kind: AnnotationKind) => {
+    if (selection === null) return
+    await createFromSelection(selection, kind)
   }
 
   const openAsk = () => {
@@ -1767,6 +1857,159 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       setCopied(false)
     }, 1600)
   }
+
+  /* ── keyboard navigation / visual selection ───────────────────────────── */
+  const beginVisualSelection = useCallback((): void => {
+    const root = rootRef.current
+    if (root === null) return
+    const dom = window.getSelection()
+    if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) {
+      const view = pagesRef.current.get(currentPageRef.current)
+      const span = view?.textHost.querySelector<HTMLElement>('.textLayer span')
+      if (span !== null && span !== undefined) {
+        const range = document.createRange()
+        range.selectNodeContents(span)
+        range.collapse(true)
+        dom?.removeAllRanges()
+        dom?.addRange(range)
+      }
+    }
+    setVisualMode(true)
+    root.focus()
+  }, [])
+
+  const extendVisualSelection = useCallback((granularity: 'character' | 'word' | 'line', direction: 'forward' | 'backward'): void => {
+    let dom = window.getSelection()
+    if (dom === null || dom.rangeCount === 0) {
+      beginVisualSelection()
+      dom = window.getSelection()
+    }
+    const modify = (dom as unknown as { modify?: (alter: string, direction: string, granularity: string) => void } | null)?.modify
+    if (dom === null || typeof modify !== 'function') return
+    try {
+      modify.call(dom, 'extend', direction, granularity)
+    } catch {
+      // Selection.modify is best-effort across browser versions.
+    }
+  }, [beginVisualSelection])
+
+  const stopVisualMode = useCallback((clearNative: boolean): void => {
+    setVisualMode(false)
+    if (clearNative) {
+      const dom = window.getSelection()
+      if (dom !== null && dom.rangeCount > 0) dom.removeAllRanges()
+    }
+  }, [])
+
+  const highlightVisualSelection = useCallback((): void => {
+    const state = captureSelection()
+    setVisualMode(false)
+    if (state === null) return
+    void createFromSelection(state, 'highlight')
+  }, [captureSelection, createFromSelection])
+
+  const copyVisualSelection = useCallback(async (): Promise<void> => {
+    const text = window.getSelection()?.toString() ?? ''
+    if (text.trim() === '') return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // Clipboard may be unavailable; the toolbar copy still exists.
+    }
+  }, [])
+
+  const scrollViewer = useCallback((fraction: number): void => {
+    const scroller = scrollerRef.current
+    if (scroller === null) return
+    const amount = fraction >= 0.49 ? scroller.clientHeight * 0.5 : Math.max(60, scroller.clientHeight * 0.12)
+    scroller.scrollBy({ top: fraction >= 0 ? amount : -amount, behavior: 'auto' })
+  }, [])
+
+  useEffect(() => {
+    const root = rootRef.current
+    if (root === null || status !== 'ready') return
+    const handler = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.isComposing) return
+      if (event.key === 'Escape') {
+        if (showHelp) {
+          event.preventDefault()
+          setShowHelp(false)
+          return
+        }
+        if (visualModeRef.current) {
+          event.preventDefault()
+          stopVisualMode(true)
+          return
+        }
+        return
+      }
+      const target = event.target
+      if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]') !== null) return
+      if (root.offsetParent === null) return
+      const map = keymapRef.current
+      const hit = (action: KeyAction): boolean => matchesBinding(event, map[action])
+      const fire = (action: KeyAction, run: () => void): void => {
+        if (!hit(action)) return
+        event.preventDefault()
+        event.stopPropagation()
+        run()
+      }
+
+      if (showHelp) {
+        fire('help', () => setShowHelp(false))
+        return
+      }
+      if (visualModeRef.current) {
+        let handled = true
+        if (hit('selectLeft')) extendVisualSelection('character', 'backward')
+        else if (hit('selectRight')) extendVisualSelection('character', 'forward')
+        else if (hit('selectLineUp')) extendVisualSelection('line', 'backward')
+        else if (hit('selectLineDown')) extendVisualSelection('line', 'forward')
+        else if (hit('selectWordBackward')) extendVisualSelection('word', 'backward')
+        else if (hit('selectWordForward')) extendVisualSelection('word', 'forward')
+        else if (hit('highlightSelection')) highlightVisualSelection()
+        else if (hit('copySelection')) void copyVisualSelection()
+        else if (hit('visualMode')) stopVisualMode(true)
+        else handled = false
+        if (handled) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
+
+      fire('scrollDown', () => scrollViewer(1))
+      fire('scrollUp', () => scrollViewer(-1))
+      fire('halfPageDown', () => scrollViewer(0.5))
+      fire('halfPageUp', () => scrollViewer(-0.5))
+      fire('pageNext', () => goToPage(currentPageRef.current + 1))
+      fire('pagePrev', () => goToPage(currentPageRef.current - 1))
+      fire('firstPage', () => goToPage(1))
+      fire('lastPage', () => goToPage(numPages))
+      fire('zoomIn', () => applyZoom(zoomRef.current * 1.15, true))
+      fire('zoomOut', () => applyZoom(zoomRef.current / 1.15, true))
+      fire('zoomReset', chooseActualSize)
+      fire('visualMode', beginVisualSelection)
+      fire('highlightSelection', highlightVisualSelection)
+      fire('copySelection', () => void copyVisualSelection())
+      fire('help', () => setShowHelp(true))
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [
+    status,
+    showHelp,
+    numPages,
+    goToPage,
+    applyZoom,
+    chooseActualSize,
+    extendVisualSelection,
+    highlightVisualSelection,
+    copyVisualSelection,
+    scrollViewer,
+    beginVisualSelection,
+    stopVisualMode,
+  ])
 
   /* ── grouped annotation overlays ──────────────────────────────────────── */
   const annotationsByPage = useMemo(() => {
@@ -1922,6 +2165,33 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       {lowTextHint !== undefined && lowTextHint.length > 0 ? (
         <div className="pdv-docHint" role="status">
           {lowTextHint}
+        </div>
+      ) : null}
+
+      {visualMode ? (
+        <div className="pdv-vim-hud" role="status">
+          <strong>{labels.visualMode}</strong>
+          <span>{labels.visualHint}</span>
+        </div>
+      ) : null}
+
+      {showHelp ? (
+        <div className="pdv-vim-help" role="dialog" aria-label={labels.shortcuts}>
+          <div className="pdv-vim-help-head">
+            <strong>{labels.shortcuts}</strong>
+            <button type="button" onClick={() => setShowHelp(false)} aria-label={labels.close} title={labels.close}>
+              ×
+            </button>
+          </div>
+          <div className="pdv-vim-help-hint">{labels.shortcutsHint}</div>
+          <dl>
+            {KEY_ACTIONS.map((action) => (
+              <div key={action} className="pdv-vim-help-row">
+                <dt>{labels.keymapLabels[action]}</dt>
+                <dd><kbd>{keymap[action]}</kbd></dd>
+              </div>
+            ))}
+          </dl>
         </div>
       ) : null}
 

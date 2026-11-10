@@ -7,8 +7,10 @@ import { useEffect, useState } from 'react'
 import type { StatusPayload, SyncStatus } from '../src/types.js'
 import type { SettingsPatch, SettingsPayload } from './api.js'
 import { IconFolder, IconRefresh, IconSync } from './icons.js'
-import { errorText, useT } from './i18n.js'
+import { errorText, useLang, useT } from './i18n.js'
 import { Button, Checkbox, Field, Select, Spinner, TextInput } from './ui.js'
+import { DEFAULT_KEYMAP, KEY_ACTION_LABELS, KEY_ACTIONS, formatKeyBinding, loadKeyMap, saveKeyMap } from './keymap.js'
+import type { KeyAction, KeyMap } from './keymap.js'
 
 export interface SettingsViewProps {
   settings: SettingsPayload | null
@@ -34,6 +36,7 @@ interface SettingsForm {
 
 export function SettingsView(props: SettingsViewProps) {
   const t = useT()
+  const lang = useLang()
   const { settings, status, sync, loading, error, busy, onPickDirectory, onSave, onScanInbox, onOpenFolder, onReload } =
     props
 
@@ -46,6 +49,8 @@ export function SettingsView(props: SettingsViewProps) {
     citationSync: effective?.citationSync ?? false,
   })
   const [pathError, setPathError] = useState<string | null>(null)
+  const [keymap, setKeymap] = useState<KeyMap>(() => loadKeyMap())
+  const [capturing, setCapturing] = useState<KeyAction | null>(null)
 
   useEffect(() => {
     if (effective === null) return
@@ -217,6 +222,61 @@ export function SettingsView(props: SettingsViewProps) {
                 {saving ? t('common.saving') : t('settings.save')}
               </Button>
               {dirty ? <span className="pd-notes-dirty">{t('settings.dirty')}</span> : null}
+            </div>
+          </div>
+        </section>
+
+        <section className="pd-section">
+          <div className="pd-section-head">
+            <span>{t('settings.keymap.title')}</span>
+          </div>
+          <div className="pd-section-body">
+            <div className="pd-inline-empty">{t('settings.keymap.hint')}</div>
+            <div className="pd-keymap">
+              {KEY_ACTIONS.map((action) => {
+                return (
+                  <div key={action} className="pd-keymap-row">
+                    <span className="pd-field-label">{KEY_ACTION_LABELS[action][lang]}</span>
+                    <button
+                      type="button"
+                      className={`pd-keybinding${capturing === action ? ' is-capturing' : ''}`}
+                      onClick={() => setCapturing(action)}
+                      onKeyDown={(event) => {
+                        if (capturing !== action) return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        if (event.key === 'Escape') {
+                          setCapturing(null)
+                          return
+                        }
+                        const binding = formatKeyBinding(event)
+                        if (binding === '') return
+                        const next: KeyMap = { ...keymap, [action]: binding }
+                        setKeymap(next)
+                        saveKeyMap(next)
+                        setCapturing(null)
+                      }}
+                      onBlur={() => setCapturing((current) => (current === action ? null : current))}
+                    >
+                      {capturing === action ? t('settings.keymap.press') : keymap[action]}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="pd-settings-actions">
+              <Button
+                size="sm"
+                onClick={() => {
+                  const next = { ...DEFAULT_KEYMAP }
+                  setKeymap(next)
+                  saveKeyMap(next)
+                  setCapturing(null)
+                }}
+              >
+                {t('settings.keymap.reset')}
+              </Button>
+              <span className="pd-inline-empty">{t('settings.keymap.saved')}</span>
             </div>
           </div>
         </section>

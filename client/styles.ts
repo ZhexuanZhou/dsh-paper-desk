@@ -1534,6 +1534,22 @@ export const CSS = `
 .pd-settings-title { margin: 0; font-size: 15px; font-weight: 600; }
 .pd-settings-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pd-settings-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.pd-keymap { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 18px; margin: 2px 0 10px; }
+.pd-keymap-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.pd-keybinding {
+  min-width: 54px;
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.pd-keybinding:hover { border-color: var(--dsw-alias-border-l1); }
+.pd-keybinding.is-capturing { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); }
+.pd-keybinding.is-duplicate { border-color: var(--dsw-alias-state-error-primary, #d44); color: var(--dsw-alias-state-error-primary, #d44); }
 .pd-code {
   padding: 1px 5px;
   border-radius: 4px;
