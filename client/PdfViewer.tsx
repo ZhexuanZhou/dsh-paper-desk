@@ -86,6 +86,8 @@ const RENDER_MARGIN = '700px 0px'
 /** Keep recently rendered pages warm for fast back/forward flips. */
 const RELEASE_DELAY_MS = 1200
 const PREFETCH_IDLE_TIMEOUT_MS = 900
+/** Only this many pages exist in the DOM around the current page. */
+const PAGE_WINDOW = 5
 const STYLE_ATTR = 'paper-desk-viewer'
 
 /* ── scoped styles (injected once, removed on unmount) ───────────────────── */
@@ -208,6 +210,7 @@ const VIEWER_CSS = `
   min-height: 100%;
   padding: 14px 0 56px;
 }
+.pdv-spacer { width: 100%; flex: 0 0 auto; }
 .pdv-pageWrap {
   display: flex;
   justify-content: center;
@@ -528,6 +531,7 @@ interface PageView {
   token: number
   renderedKey?: string
   pendingKey?: string
+  previewKey?: string
   renderTask?: { promise: Promise<void>; cancel(): void }
 }
 
@@ -586,13 +590,18 @@ function cssEscape(value: string): string {
 }
 
 /** Scroll `element` into view inside `scroller` without touching ancestor scroll. */
-function scrollPageIntoView(scroller: HTMLElement, element: HTMLElement, align: 'start' | 'center'): void {
+function scrollPageIntoView(
+  scroller: HTMLElement,
+  element: HTMLElement,
+  align: 'start' | 'center',
+  behavior: ScrollBehavior = 'smooth',
+): void {
   const scrollRect = scroller.getBoundingClientRect()
   const elementRect = element.getBoundingClientRect()
   if (elementRect.height <= 0 && elementRect.width <= 0) return
   const offset = align === 'center' ? Math.max(0, (scrollRect.height - elementRect.height) / 2) : 8
   const top = scroller.scrollTop + (elementRect.top - scrollRect.top) - offset
-  scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+  scroller.scrollTo({ top: Math.max(0, top), behavior })
 }
 
 function annotationKindLabel(labels: PdfViewerLabels, kind: AnnotationKind): string {
@@ -765,6 +774,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   /** Debounce fit-width during host/sidebar animations. */
   const resizeTimerRef = useRef<number | null>(null)
   const releaseTimersRef = useRef<Map<number, number>>(new Map())
+  const previewUpgradeTimersRef = useRef<Map<number, number>>(new Map())
+  const pageOffsetsRef = useRef<number[]>([])
+  const pendingScrollPageRef = useRef<number | null>(null)
+  const jumpGuardRef = useRef<{ page: number; until: number } | null>(null)
   const zoomRef = useRef(1)
   const pageSizesRef = useRef<readonly PageSize[]>([])
   const fitModeRef = useRef(true)
@@ -784,6 +797,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageText, setPageText] = useState('1')
   const [lowTextPages, setLowTextPages] = useState<ReadonlySet<number>>(() => new Set<number>())
+  const [pageWindow, setPageWindow] = useState<{ start: number; end: number }>({ start: 1, end: 1 })
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [askOpen, setAskOpen] = useState(false)
   const [question, setQuestion] = useState('')
@@ -889,6 +903,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
 
         setPageSizes(sizes)
         pageSizesRef.current = sizes
+        setPageWindow({ start: 1, end: Math.min(doc.numPages, 1 + PAGE_WINDOW) })
         setNumPages(doc.numPages)
         setStatus('ready')
 
@@ -948,6 +963,14 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   }, [src, assetBase, attempt])
 
   /* ── current-page tracking (most visible page) ────────────────────────── */
+  const commitPage = useCallback((page: number) => {
+    jumpGuardRef.current = { page, until: Date.now() + 1500 }
+    currentPageRef.current = page
+    setCurrentPage(page)
+    setPageText(String(page))
+    onPageChangeRef.current?.(page)
+  }, [])
+
   const updateCurrentPage = useCallback(() => {
     const scroller = scrollerRef.current
     if (scroller === null) return
@@ -962,12 +985,40 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         bestPage = page
       }
     }
-    if (bestPage < 1 || bestVisible <= 0) return
+    // When the scrollbar jumps outside the DOM window there is no rendered
+    // page to measure; find the page from the cumulative page offsets instead.
+    if (bestPage < 1 || bestVisible <= 0) {
+      const offsets = pageOffsetsRef.current
+      const y = scroller.scrollTop + Math.min(scroller.clientHeight * 0.5, 220)
+      if (offsets.length >= 2) {
+        let low = 0
+        let high = offsets.length - 2
+        while (low <= high) {
+          const mid = (low + high) >> 1
+          if ((offsets[mid + 1] ?? 0) < y) low = mid + 1
+          else if ((offsets[mid] ?? 0) > y) high = mid - 1
+          else { bestPage = mid + 1; break }
+        }
+        if (bestPage < 1) bestPage = Math.max(1, Math.min(offsets.length - 1, low + 1))
+      }
+    }
+    if (bestPage < 1) return
+    const guard = jumpGuardRef.current
+    if (guard !== null) {
+      if (Date.now() < guard.until) bestPage = guard.page
+      else jumpGuardRef.current = null
+    }
+    setPageWindow((current) => {
+      if (bestPage >= current.start && bestPage <= current.end) return current
+      const start = Math.max(1, bestPage - PAGE_WINDOW)
+      const end = Math.min(numPages, bestPage + PAGE_WINDOW)
+      return start === current.start && end === current.end ? current : { start, end }
+    })
     if (bestPage === currentPageRef.current) return
     currentPageRef.current = bestPage
     setCurrentPage(bestPage)
     onPageChangeRef.current?.(bestPage)
-  }, [])
+  }, [numPages])
 
   /* ── zoom helpers ─────────────────────────────────────────────────────── */
   const captureZoomAnchor = useCallback((): ZoomAnchor | null => {
@@ -1021,6 +1072,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     view.renderTask = undefined
     view.pendingKey = undefined
     view.renderedKey = undefined
+    view.previewKey = undefined
+    const upgrade = previewUpgradeTimersRef.current.get(pageNumber)
+    if (upgrade !== undefined) {
+      window.clearTimeout(upgrade)
+      previewUpgradeTimersRef.current.delete(pageNumber)
+    }
     view.textHost.replaceChildren()
     view.canvas.width = 0
     view.canvas.height = 0
@@ -1067,6 +1124,38 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       const dpr = currentDpr()
       const viewport = page.getViewport({ scale })
       const canvas = view.canvas
+
+      // First paint a cheap preview so fast flips never sit on a blank sheet;
+      // the full-resolution pass follows on idle/short delay.
+      if (view.previewKey !== key) {
+        try {
+          const previewViewport = page.getViewport({ scale: scale * 0.45 })
+          canvas.width = Math.max(1, Math.round(previewViewport.width))
+          canvas.height = Math.max(1, Math.round(previewViewport.height))
+          canvas.style.width = `${viewport.width}px`
+          canvas.style.height = `${viewport.height}px`
+          const previewTask = page.render({
+            canvas,
+            viewport: previewViewport,
+            transform: [1, 0, 0, 1, 0, 0],
+            intent: 'display',
+          })
+          view.renderTask = previewTask
+          await previewTask.promise
+          if (epoch !== epochRef.current || token !== view.token) return
+          view.previewKey = key
+          view.pendingKey = undefined
+          view.wrap.dataset.rendered = 'true'
+          const timer = window.setTimeout(() => {
+            previewUpgradeTimersRef.current.delete(pageNumber)
+            void renderPage(pageNumber)
+          }, 100)
+          previewUpgradeTimersRef.current.set(pageNumber, timer)
+          return
+        } catch {
+          // Preview is optional; fall through to the full render.
+        }
+      }
       // Back the canvas with device pixels; draw at CSS size viewport.width/height.
       canvas.width = Math.max(1, Math.round(viewport.width * dpr))
       canvas.height = Math.max(1, Math.round(viewport.height * dpr))
@@ -1083,6 +1172,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       await task.promise
       if (epoch !== epochRef.current || token !== view.token) return
       view.renderedKey = key
+      view.previewKey = key
       view.renderTask = undefined
       view.wrap.dataset.rendered = 'true'
 
@@ -1201,7 +1291,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     )
     for (const view of pagesRef.current.values()) observer.observe(view.wrap)
     return () => observer.disconnect()
-  }, [status, numPages, attempt, renderPage, scheduleRelease, updateCurrentPage])
+  }, [status, numPages, attempt, pageWindow.start, pageWindow.end, renderPage, scheduleRelease, updateCurrentPage])
 
   /* ── continuous scroll: current page + dismiss floating tools ─────────── */
   useEffect(() => {
@@ -1322,14 +1412,34 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (status !== 'ready' || focusPage === undefined) return
     const page = Math.round(focusPage)
     if (!Number.isFinite(page) || page < 1 || page > numPages) return
+    if (page < pageWindow.start || page > pageWindow.end) {
+      setPageWindow({
+        start: Math.max(1, page - PAGE_WINDOW),
+        end: Math.min(numPages, page + PAGE_WINDOW),
+      })
+      pendingScrollPageRef.current = page
+      return
+    }
     const scroller = scrollerRef.current
     const view = pagesRef.current.get(page)
     if (scroller === null || view === undefined) return
     void renderPage(page)
-    scrollPageIntoView(scroller, view.pageEl, 'start')
-    currentPageRef.current = page
-    setCurrentPage(page)
-  }, [focusPage, focusNonce, status, numPages])
+    scrollPageIntoView(scroller, view.pageEl, 'start', 'auto')
+    commitPage(page)
+  }, [focusPage, focusNonce, status, numPages, pageWindow.start, pageWindow.end, renderPage, commitPage])
+
+  /* Scroll to a page that was outside the virtual window once its DOM exists. */
+  useEffect(() => {
+    const target = pendingScrollPageRef.current
+    if (target === null || status !== 'ready') return
+    const scroller = scrollerRef.current
+    const view = pagesRef.current.get(target)
+    if (scroller === null || view === undefined) return
+    pendingScrollPageRef.current = null
+    void renderPage(target)
+    scrollPageIntoView(scroller, view.pageEl, 'start', 'auto')
+    commitPage(target)
+  }, [pageWindow.start, pageWindow.end, status, renderPage, commitPage])
 
   useEffect(() => {
     if (focusAnnotationId === undefined || focusAnnotationId === null || focusAnnotationId.length === 0) {
@@ -1466,6 +1576,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
       for (const timer of releaseTimersRef.current.values()) window.clearTimeout(timer)
       releaseTimersRef.current.clear()
+      for (const timer of previewUpgradeTimersRef.current.values()) window.clearTimeout(timer)
+      previewUpgradeTimersRef.current.clear()
     }
   }, [])
 
@@ -1478,15 +1590,22 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   /* ── toolbar / selection actions ──────────────────────────────────────── */
   const goToPage = (value: number) => {
     const target = clamp(Math.round(value), 1, Math.max(1, numPages))
+    if (target < pageWindow.start || target > pageWindow.end) {
+      setPageWindow({
+        start: Math.max(1, target - PAGE_WINDOW),
+        end: Math.min(numPages, target + PAGE_WINDOW),
+      })
+      pendingScrollPageRef.current = target
+      setPageText(String(target))
+      return
+    }
     const scroller = scrollerRef.current
     const view = pagesRef.current.get(target)
     // Start the target raster before the smooth scroll arrives; the loading
     // placeholder covers the remaining gap instead of showing a blank sheet.
     void renderPage(target)
-    if (scroller !== null && view !== undefined) scrollPageIntoView(scroller, view.pageEl, 'start')
-    currentPageRef.current = target
-    setCurrentPage(target)
-    setPageText(String(target))
+    if (scroller !== null && view !== undefined) scrollPageIntoView(scroller, view.pageEl, 'start', 'auto')
+    commitPage(target)
   }
 
   const commitPageInput = () => {
@@ -1609,6 +1728,32 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     return map
   }, [annotations])
 
+  const pageLayout = useMemo(() => {
+    const offsets: number[] = [0]
+    let total = 0
+    const scale = zoom * CSS_UNITS
+    for (const size of pageSizes) {
+      total += 18 + size.height * scale
+      offsets.push(total)
+    }
+    return { offsets, total }
+  }, [pageSizes, zoom])
+
+  useEffect(() => {
+    pageOffsetsRef.current = pageLayout.offsets
+  }, [pageLayout.offsets])
+
+  /* Drop page DOM/refs that fall outside the virtual window. */
+  useEffect(() => {
+    for (const [page, view] of pagesRef.current) {
+      if (page < pageWindow.start || page > pageWindow.end) {
+        releasePage(page)
+        pagesRef.current.delete(page)
+        visibleRef.current.delete(page)
+      }
+    }
+  }, [pageWindow.start, pageWindow.end, releasePage])
+
   /* ── render ───────────────────────────────────────────────────────────── */
   if (status === 'loading') {
     return (
@@ -1728,8 +1873,15 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
 
       <div className="pdv-scroll" ref={scrollerRef} onMouseUp={handleSelectionEnd} onKeyUp={handleSelectionEnd}>
         <div className="pdv-pages">
-          {pageSizes.map((size, index) => {
-            const page = index + 1
+          {pageWindow.start > 1 ? (
+            <div
+              className="pdv-spacer"
+              style={{ height: `${pageLayout.offsets[pageWindow.start - 1] ?? 0}px` }}
+              aria-hidden="true"
+            />
+          ) : null}
+          {pageSizes.slice(pageWindow.start - 1, pageWindow.end).map((size, index) => {
+            const page = pageWindow.start + index
             const pageStyle = {
               width: `${size.width * viewportScale}px`,
               height: `${size.height * viewportScale}px`,
@@ -1762,6 +1914,13 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
               </div>
             )
           })}
+          {pageWindow.end < pageSizes.length ? (
+            <div
+              className="pdv-spacer"
+              style={{ height: `${pageLayout.total - (pageLayout.offsets[pageWindow.end] ?? pageLayout.total)}px` }}
+              aria-hidden="true"
+            />
+          ) : null}
         </div>
       </div>
 
