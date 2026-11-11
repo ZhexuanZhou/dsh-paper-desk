@@ -2369,9 +2369,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (draggingThumb) {
       positionThumb(thumbRect.top - railRect.top)
     } else {
-      // Track click: centre the thumb on the click, but do not touch the PDF
-      // scroll offset yet. Dragging a huge PDF stays a pure thumb animation.
+      // Track click: centre the thumb on the click and scroll immediately so
+      // the control feels direct; the page window is committed on release.
       positionThumb(event.clientY - railRect.top - thumbHeight / 2)
+      scroller.scrollTop = Math.min(maxScroll, Math.max(0, targetScroll))
     }
 
     rail.dataset.dragging = 'true'
@@ -2382,6 +2383,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const onMove = (moveEvent: PointerEvent): void => {
       if (draggingThumb) positionThumb(startTop + moveEvent.clientY - startY)
       else positionThumb(moveEvent.clientY - railRect.top - thumbHeight / 2)
+      // Scrolling with the thumb must move the document, not only a detached
+      // handle. The expensive page-window/current-page work is still deferred
+      // until pointerup, so dragging stays lightweight.
+      scroller.scrollTop = Math.min(maxScroll, Math.max(0, targetScroll))
     }
     const finish = (apply: boolean): void => {
       window.removeEventListener('pointermove', onMove)
