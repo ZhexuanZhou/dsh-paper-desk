@@ -60,14 +60,21 @@ export const CSS = `
 .pd-root *, .pd-root *::before, .pd-root *::after { box-sizing: border-box; }
 .pd-root :focus-visible { outline: 2px solid ${BRAND}; outline-offset: 1px; border-radius: 4px; }
 .pd-root ::selection { background: color-mix(in srgb, ${BRAND} 28%, transparent); }
-.pd-root ::-webkit-scrollbar { width: 10px; height: 10px; }
+.pd-root ::-webkit-scrollbar { width: 12px; height: 12px; }
 .pd-root ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 36%, transparent);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
 }
+.pd-root ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 58%, transparent);
+}
 .pd-root ::-webkit-scrollbar-track { background: transparent; }
+.pd-root .pd-list-scroll,
+.pd-root .pd-ai-scroll,
+.pd-root .pd-annot-scroll,
+.pd-root .pd-cards-scroll { scrollbar-gutter: stable; }
 
 .pd-sr {
   position: absolute;
@@ -189,18 +196,38 @@ export const CSS = `
   background: ${L1};
   overflow: hidden;
 }
-.pd-pane-list { position: relative; flex: 0 0 320px; width: 320px; min-width: 240px; max-width: 560px; }
+.pd-pane-list {
+  position: relative;
+  flex: 0 0 320px;
+  width: 320px;
+  min-width: 240px;
+  max-width: 560px;
+  overflow: visible;
+}
 .pd-list-resizer {
   position: absolute;
   top: 0;
-  right: -4px;
+  right: -12px;
   bottom: 0;
-  z-index: 3;
-  width: 8px;
+  z-index: 20;
+  width: 12px;
   cursor: col-resize;
   touch-action: none;
 }
-.pd-list-resizer:hover { background: color-mix(in srgb, ${FG} 10%, transparent); }
+.pd-list-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 36px;
+  border-radius: 999px;
+  background: color-mix(in srgb, ${FG} 24%, transparent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.pd-list-resizer:hover { background: color-mix(in srgb, ${FG} 7%, transparent); }
+.pd-list-resizer:hover::after { background: ${BRAND}; }
 .pd-list-restore {
   position: absolute;
   top: 50%;
@@ -835,18 +862,31 @@ export const CSS = `
   background: ${L1};
 }
 .pd-annot-rail[data-open="false"] { display: none; }
-.pd-annot-rail { position: relative; }
+.pd-annot-rail { position: relative; overflow: visible; }
 .pd-drawer-resizer {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -3px;
-  z-index: 2;
-  width: 6px;
+  left: -12px;
+  z-index: 20;
+  width: 12px;
   cursor: col-resize;
   touch-action: none;
 }
-.pd-drawer-resizer:hover { background: color-mix(in srgb, ${FG} 12%, transparent); }
+.pd-drawer-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 36px;
+  border-radius: 999px;
+  background: color-mix(in srgb, ${FG} 24%, transparent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.pd-drawer-resizer:hover { background: color-mix(in srgb, ${FG} 7%, transparent); }
+.pd-drawer-resizer:hover::after { background: ${BRAND}; }
 .pd-annot-rail[data-tab="ai"] { width: 360px; }
 .pd-drawer-tabs {
   display: flex;

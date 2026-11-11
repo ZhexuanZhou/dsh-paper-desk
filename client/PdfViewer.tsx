@@ -211,13 +211,17 @@ const VIEWER_CSS = `
   overflow-anchor: none;
   background: var(--dsw-alias-bg-layer-2);
 }
-.pdv-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.pdv-scroll::-webkit-scrollbar { width: 14px; height: 14px; }
 .pdv-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
 }
+.pdv-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 60%, transparent);
+}
+.pdv-scroll { scrollbar-gutter: stable; }
 .pdv-scroll::-webkit-scrollbar-track { background: transparent; }
 .pdv-pages {
   display: flex;
@@ -847,6 +851,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const jumpGuardRef = useRef<{ page: number; until: number } | null>(null)
   const scrollingRef = useRef(false)
   const scrollIdleTimerRef = useRef<number | null>(null)
+  const windowResizingRef = useRef(false)
+  const windowResizeTimerRef = useRef<number | null>(null)
   const zoomRef = useRef(1)
   const pageSizesRef = useRef<readonly PageSize[]>([])
   const fitModeRef = useRef(true)
@@ -1185,7 +1191,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     releaseTimersRef.current.set(pageNumber, timer)
   }, [releasePage])
 
-  const renderDpr = useCallback((): number => (scrollingRef.current ? 1 : currentDpr()), [])
+  const renderDpr = useCallback((): number => (scrollingRef.current || windowResizingRef.current ? 1 : currentDpr()), [])
 
   const renderPage = useCallback(async (pageNumber: number, previewOnly = false): Promise<void> => {
     const view = pagesRef.current.get(pageNumber)
@@ -1423,8 +1429,38 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         scrollIdleTimerRef.current = null
       }
       scrollingRef.current = false
+      if (windowResizeTimerRef.current !== null) {
+        window.clearTimeout(windowResizeTimerRef.current)
+        windowResizeTimerRef.current = null
+      }
+      windowResizingRef.current = false
     }
   }, [status, updateCurrentPage])
+
+  /* Window/panel resize: keep rasterising at 1x until resizing settles. A
+     maximise can otherwise trigger several expensive 2x page renders in a
+     row before the layout stabilises. */
+  useEffect(() => {
+    if (status !== 'ready') return
+    const onResize = (): void => {
+      windowResizingRef.current = true
+      if (windowResizeTimerRef.current !== null) window.clearTimeout(windowResizeTimerRef.current)
+      windowResizeTimerRef.current = window.setTimeout(() => {
+        windowResizeTimerRef.current = null
+        windowResizingRef.current = false
+        setQualityVersion((value) => value + 1)
+      }, 260)
+    }
+    window.addEventListener('resize', onResize, { passive: true })
+    return () => {
+      window.removeEventListener('resize', onResize)
+      if (windowResizeTimerRef.current !== null) {
+        window.clearTimeout(windowResizeTimerRef.current)
+        windowResizeTimerRef.current = null
+      }
+      windowResizingRef.current = false
+    }
+  }, [status])
 
   /* After scrolling stops, re-rasterise visible pages at full DPR while the
      low-resolution versions stay visible until each replacement is ready. */
@@ -1521,7 +1557,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       resizeTimerRef.current = window.setTimeout(() => {
         resizeTimerRef.current = null
         applyZoom(computeFitZoom(pageSizesRef.current), true)
-      }, 140)
+      }, 220)
     })
     observer.observe(scroller)
     return () => {
