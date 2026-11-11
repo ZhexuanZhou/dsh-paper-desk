@@ -4,7 +4,7 @@
  * Purely presentational — all data and callbacks come from `App`.
  */
 import { memo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type { PaperStatus, PaperSummary } from '../src/types.js'
 import { IconBook, IconImport } from './icons.js'
 import { useT } from './i18n.js'
@@ -16,6 +16,41 @@ const STATUS_FILTERS: readonly (PaperStatus | 'all')[] = ['all', 'unread', 'read
 
 function statusText(status: PaperStatus | 'all'): string {
   return status === 'all' ? 'status.all' : `status.${status}`
+}
+
+/** Local (not synced) preference for the library list presentation. */
+const VIEW_STORAGE_KEY = 'paperdesk:library-view'
+
+type LibraryViewMode = 'list' | 'table'
+
+function readStoredViewMode(): LibraryViewMode {
+  try {
+    return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'table' ? 'table' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+
+function storeViewMode(mode: LibraryViewMode): void {
+  try {
+    window.localStorage.setItem(VIEW_STORAGE_KEY, mode)
+  } catch {
+    /* Private mode / storage disabled: the toggle still works for this mount. */
+  }
+}
+
+/** Stable hue (0..359) per tag name — presentation only, never persisted. */
+function tagHue(tag: string): number {
+  let hash = 2166136261
+  for (let index = 0; index < tag.length; index += 1) {
+    hash ^= tag.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return Math.abs(hash) % 360
+}
+
+function tagStyle(tag: string): CSSProperties {
+  return { '--pd-tag-hue': String(tagHue(tag)) } as unknown as CSSProperties
 }
 
 export interface LibraryViewProps {
@@ -87,6 +122,20 @@ function LibraryViewImpl(props: LibraryViewProps) {
   const sectionRef = useRef<HTMLElement | null>(null)
   const dragWidthRef = useRef(width)
   const [dragging, setDragging] = useState(false)
+  const [viewMode, setViewMode] = useState<LibraryViewMode>(readStoredViewMode)
+
+  const toggleViewMode = (): void => {
+    const next: LibraryViewMode = viewMode === 'list' ? 'table' : 'list'
+    setViewMode(next)
+    storeViewMode(next)
+  }
+
+  const sortAria = (field: 'title' | 'year'): 'ascending' | 'descending' | 'none' =>
+    sort === field ? (field === 'title' ? 'ascending' : 'descending') : 'none'
+
+  const toggleSort = (field: 'title' | 'year'): void => {
+    onSort(sort === field ? 'added' : field)
+  }
 
   /**
    * Resize the pane by writing its width directly. Updating App state on every
@@ -145,6 +194,15 @@ function LibraryViewImpl(props: LibraryViewProps) {
           <span className="pd-list-count">{t('list.count', { n: count })}</span>
           <div className="pd-list-tools">
             {loading ? <Spinner size={12} label={t('list.loading')} /> : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={toggleViewMode}
+              aria-pressed={viewMode === 'table'}
+              title={t('list.view.toggle')}
+            >
+              {viewMode === 'list' ? t('list.view.table') : t('list.view.list')}
+            </Button>
             <Select
               small
               value={sort}
@@ -223,7 +281,7 @@ function LibraryViewImpl(props: LibraryViewProps) {
           )
         ) : null}
 
-        {papers.length > 0 ? (
+        {papers.length > 0 && viewMode === 'list' ? (
           <ul className="pd-list" role="list">
             {papers.map((paper) => (
               <li key={paper.id}>
@@ -273,7 +331,7 @@ function LibraryViewImpl(props: LibraryViewProps) {
                       {paper.tags.length > 0 || paper.pdfEvicted ? (
                         <span className="pd-row-tags">
                           {paper.tags.slice(0, 4).map((tag) => (
-                            <span key={`${paper.id}-${tag}`} className="pd-tag">
+                            <span key={`${paper.id}-${tag}`} className="pd-tag pd-tag-hue" style={tagStyle(tag)}>
                               {tag}
                             </span>
                           ))}
@@ -290,6 +348,82 @@ function LibraryViewImpl(props: LibraryViewProps) {
               </li>
             ))}
           </ul>
+        ) : null}
+
+        {papers.length > 0 && viewMode === 'table' ? (
+          <div className="pd-table-scroll">
+            <table className="pd-table">
+              <thead>
+                <tr>
+                  <th scope="col" aria-sort={sortAria('title')}>
+                    <button
+                      type="button"
+                      className="pd-table-sort"
+                      onClick={() => toggleSort('title')}
+                      title={t('list.sortTitle')}
+                    >
+                      {t('list.col.title')}
+                      {sort === 'title' ? <span aria-hidden="true"> ↑</span> : null}
+                    </button>
+                  </th>
+                  <th scope="col">{t('list.col.authors')}</th>
+                  <th scope="col" aria-sort={sortAria('year')}>
+                    <button
+                      type="button"
+                      className="pd-table-sort"
+                      onClick={() => toggleSort('year')}
+                      title={t('list.sortYear')}
+                    >
+                      {t('list.col.year')}
+                      {sort === 'year' ? <span aria-hidden="true"> ↓</span> : null}
+                    </button>
+                  </th>
+                  <th scope="col">{t('list.col.tags')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {papers.map((paper) => (
+                  <tr
+                    key={paper.id}
+                    className="pd-table-row"
+                    data-active={paper.id === selectedId ? 'true' : 'false'}
+                    tabIndex={0}
+                    aria-label={paper.title}
+                    onClick={() => onSelect(paper.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      onSelect(paper.id)
+                    }}
+                  >
+                    <td>
+                      <span
+                        className="pd-dot"
+                        data-status={paper.status}
+                        title={t(`status.${paper.status}`)}
+                        aria-hidden="true"
+                      />
+                      <span className="pd-table-title" title={paper.title}>
+                        {paper.title}
+                      </span>
+                    </td>
+                    <td className="pd-table-cell-authors" title={paper.authors.join(', ')}>
+                      {paper.authors.length > 0 ? paper.authors.join(', ') : '—'}
+                    </td>
+                    <td className="pd-table-cell-year">{paper.year ?? '—'}</td>
+                    <td className="pd-table-cell-tags">
+                      {paper.tags.slice(0, 2).map((tag) => (
+                        <span key={`${paper.id}-table-${tag}`} className="pd-tag pd-tag-hue" style={tagStyle(tag)}>
+                          {tag}
+                        </span>
+                      ))}
+                      {paper.tags.length > 2 ? <span className="pd-tag">+{paper.tags.length - 2}</span> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
       </div>
 

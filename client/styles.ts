@@ -427,6 +427,77 @@ export const CSS = `
   font-size: 10px;
   line-height: 1.7;
 }
+/* ── library: table view + tag colouring ───────────────────────────────── */
+.pd-table-scroll { width: 100%; overflow-x: auto; }
+.pd-table {
+  width: 100%;
+  min-width: 340px;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.pd-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 6px;
+  border-bottom: 1px solid ${B1};
+  background: ${L1};
+  color: ${FG_2};
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.pd-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pd-table-sort:hover { color: ${FG}; }
+.pd-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid color-mix(in srgb, ${FG} 6%, transparent);
+  vertical-align: middle;
+}
+.pd-table-row { cursor: pointer; }
+.pd-table-row:hover td { background: ${HOVER}; }
+.pd-table-row[data-active="true"] td { background: color-mix(in srgb, ${BRAND} 9%, transparent); }
+.pd-table-row:focus-visible { outline: 2px solid ${BRAND}; outline-offset: -2px; }
+.pd-table .pd-dot { display: inline-block; margin: 0 5px 0 0; vertical-align: middle; }
+.pd-table-title {
+  display: inline-block;
+  max-width: 170px;
+  overflow: hidden;
+  color: ${FG};
+  font-weight: 550;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.pd-table-cell-authors {
+  max-width: 120px;
+  overflow: hidden;
+  color: ${FG_2};
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-table-cell-year { color: ${FG_2}; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pd-table-cell-tags { white-space: nowrap; }
+.pd-table .pd-tag { max-width: 84px; overflow: hidden; font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Stable per-tag colour: hue derived from the tag name, never persisted. */
+.pd-tag-hue {
+  border: 1px solid hsl(var(--pd-tag-hue, 210) 55% 52% / 0.34);
+  background: hsl(var(--pd-tag-hue, 210) 70% 58% / 0.15);
+  color: color-mix(in srgb, hsl(var(--pd-tag-hue, 210) 62% 42%) 78%, var(--dsw-alias-label-primary));
+}
+
 .pd-list-note { padding: 8px 10px 12px; }
 .pd-list-note-line {
   display: flex;

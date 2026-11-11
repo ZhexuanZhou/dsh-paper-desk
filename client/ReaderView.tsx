@@ -9,6 +9,7 @@ import type {
   AnnotationDocument,
   ChatsDocument,
   AnnotationItem,
+  AnnotationColor,
   AnnotationKind,
   AnnotationPatch,
   AnnotationRect,
@@ -458,6 +459,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
   const [askOpen, setAskOpen] = useState(false)
   const [question, setQuestion] = useState('')
   const [drawer, setDrawer] = useState<DrawerState>(() => readDrawerState())
+  const [aiPrefill, setAiPrefill] = useState<{ text: string; token: number } | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number>(() => readDrawerWidth())
   const drawerElRef = useRef<HTMLElement | null>(null)
   const drawerDragWidthRef = useRef(drawerWidth)
@@ -657,6 +659,17 @@ function ReaderViewImpl(props: ReaderViewProps) {
       shortcuts: t('viewer.shortcuts'),
       shortcutsHint: t('viewer.shortcutsHint'),
       close: t('viewer.close'),
+      outline: t('viewer.outline'),
+      noOutline: t('viewer.noOutline'),
+      find: t('viewer.find'),
+      findPlaceholder: t('viewer.findPlaceholder'),
+      findNoResults: t('viewer.findNoResults'),
+      findPrev: t('viewer.findPrev'),
+      findNext: t('viewer.findNext'),
+      hand: t('viewer.hand'),
+      darkPaper: t('viewer.darkPaper'),
+      lightPaper: t('viewer.lightPaper'),
+      addToAi: t('viewer.addToAi'),
       keymapLabels: Object.fromEntries(
         KEY_ACTIONS.map((action) => [action, KEY_ACTION_LABELS[action][lang]]),
       ) as Record<KeyAction, string>,
@@ -849,7 +862,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
     text === null ? 0 : text.pages.reduce((total, page) => total + page.text.replace(/\s+/g, '').length, 0)
 
   const createFromSelection = async (
-    payload: PdfSelectionPayload & { kind: AnnotationKind; comment?: string },
+    payload: PdfSelectionPayload & { kind: AnnotationKind; comment?: string; color?: AnnotationColor },
   ): Promise<void> => {
     const createdId = await onCreateAnnotation({
       page: payload.page,
@@ -857,6 +870,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
       rects: payload.rects,
       quote: payload.quote,
       comment: payload.comment ?? '',
+      color: payload.color,
       source: 'user',
     })
     if (createdId === null) return
@@ -1267,6 +1281,14 @@ function ReaderViewImpl(props: ReaderViewProps) {
                       rects: payload.rects,
                     })
                   }}
+                  onAddToAi={(payload) => {
+                    setTab('read')
+                    openDrawer('ai')
+                    const intro = lang === 'zh'
+                      ? `【第 ${payload.page} 页选中内容】\n\n> ${payload.quote}\n\n`
+                      : `[Selected on page ${payload.page}]\n\n> ${payload.quote}\n\n`
+                    setAiPrefill({ text: intro, token: Date.now() })
+                  }}
                   onFocusAnnotation={(id) => {
                     setActiveAnnotationId(id)
                     setFocusTarget({ annotationId: id })
@@ -1393,6 +1415,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                     ai={ai}
                     expectedThreadKey={aiThreadKey}
                     draftKey={aiDraftKey}
+                    prefill={aiPrefill ?? undefined}
                     history={activeChat?.messages ?? []}
                     busyTask={assistBusy}
                     labels={aiLabels}

@@ -58,6 +58,8 @@ export interface AiPanelProps {
   expectedThreadKey: string | null
   /** Stable key for the unsent draft (per paper + active chat, or 'new'). */
   draftKey: string | null
+  /** External composer prefill (e.g. a PDF selection); `token` forces re-apply. */
+  prefill?: { text: string; token: number }
   /** Persisted transcript shown while the DSH session is empty (e.g. deleted). */
   history: readonly { role: 'user' | 'assistant'; text: string }[]
   busyTask: AssistTask | null
@@ -209,6 +211,7 @@ export function AiPanel(props: AiPanelProps) {
   const [hasNew, setHasNew] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const noteScope = props.draftKey ?? props.expectedThreadKey ?? 'default'
   const noteStoreKey = `paperdesk:ai-notes:${noteScope}`
   const [notes, setNotes] = useState<AnswerNote[]>([])
@@ -284,6 +287,31 @@ export function AiPanel(props: AiPanelProps) {
       setDraft('')
     }
   }, [draftStoreKey])
+
+  /* Prefill the composer from an external selection (token changes each time,
+     so selecting the same passage twice still re-applies). */
+  useEffect(() => {
+    const prefill = props.prefill
+    if (prefill === undefined || prefill.text.length === 0) return
+    setDraft((current) => (current.trim().length > 0 ? `${current}\n\n${prefill.text}` : prefill.text))
+    if (draftStoreKey !== null) {
+      try {
+        const existing = localStorage.getItem(draftStoreKey) ?? ''
+        const next = existing.trim().length > 0 ? `${existing}\n\n${prefill.text}` : prefill.text
+        localStorage.setItem(draftStoreKey, next)
+      } catch {
+        // Draft persistence is a convenience only.
+      }
+    }
+    window.requestAnimationFrame(() => {
+      const element = inputRef.current
+      if (element === null) return
+      element.focus()
+      const end = element.value.length
+      try { element.setSelectionRange(end, end) } catch { /* non-text */ }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.prefill?.token])
 
   useEffect(() => {
     setNoteDraft(null)
@@ -846,6 +874,7 @@ export function AiPanel(props: AiPanelProps) {
         </div>
         <div className="pd-ai-inputRow">
           <textarea
+            ref={inputRef}
             className="pd-textarea pd-ai-input"
             rows={2}
             value={draft}

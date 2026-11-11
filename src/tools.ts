@@ -20,6 +20,7 @@ import { sha256File } from './util.js'
 import type { EffectiveSettings, NoteSection, PaperMeta, PaperStatus } from './types.js'
 
 const MAX_TEXT_CHARS = 24_000
+const NOTES_TEXT_CAP = 24_000
 const PAPER_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
 type ToolResult = Record<string, unknown> & { ok: boolean; error?: string }
@@ -101,6 +102,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             ok: { type: 'boolean', required: true },
             error: { type: 'string' },
             count: { type: 'number' },
+            truncated: { type: 'boolean' },
             tags: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
             papers: {
               type: 'array',
@@ -143,6 +145,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         return {
           ok: true,
           count: papers.length,
+          truncated: papers.length >= limit,
           tags: await listTags(library.root),
           papers: papers.map((paper) => ({
             id: paper.id,
@@ -176,6 +179,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             ok: { type: 'boolean', required: true },
             error: { type: 'string' },
             count: { type: 'number' },
+            truncated: { type: 'boolean' },
             hits: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
           },
         },
@@ -198,6 +202,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         return {
           ok: true,
           count: hits.length,
+          truncated: hits.length >= limit,
           hits: hits.map((hit) => ({
             paperId: hit.paper.id,
             title: hit.paper.title,
@@ -385,9 +390,15 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             markdown: { type: 'string' },
             hash: { type: 'string' },
             exists: { type: 'boolean' },
+            truncated: { type: 'boolean' },
           },
         },
-        render: (_args, value) => textResult(value.ok ? String(value.markdown ?? '') : `PaperDesk unavailable: ${String(value.error ?? '')}`),
+        render: (_args, value) =>
+          textResult(
+            value.ok
+              ? `${String(value.markdown ?? '')}${value.truncated === true ? '\n\n[... notes truncated]' : ''}`
+              : `PaperDesk unavailable: ${String(value.error ?? '')}`,
+          ),
       },
       async execute(args, exec) {
         exec.signal.throwIfAborted()
@@ -396,7 +407,14 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         const library = libraryOrError(settings())
         if (isToolFailure(library)) return library
         const notes = await readNotes(library.root, args.paperId)
-        return { ok: true, markdown: notes.markdown, hash: notes.hash, exists: notes.exists }
+        const truncated = notes.markdown.length > NOTES_TEXT_CAP
+        return {
+          ok: true,
+          markdown: truncated ? notes.markdown.slice(0, NOTES_TEXT_CAP) : notes.markdown,
+          hash: notes.hash,
+          exists: notes.exists,
+          truncated,
+        }
       },
     }),
   )
@@ -607,6 +625,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             ok: { type: 'boolean', required: true },
             error: { type: 'string' },
             count: { type: 'number' },
+            truncated: { type: 'boolean' },
             stats: { type: 'object', additionalProperties: true, properties: {} },
             annotations: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
           },
@@ -635,6 +654,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         return {
           ok: true,
           count: filtered.length,
+          truncated: filtered.length > limit,
           stats: annotationStats(doc),
           annotations: filtered.slice(0, limit).map((item) => ({
             id: item.id,
@@ -668,6 +688,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             ok: { type: 'boolean', required: true },
             error: { type: 'string' },
             count: { type: 'number' },
+            truncated: { type: 'boolean' },
             cards: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
           },
         },
@@ -693,6 +714,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         return {
           ok: true,
           count: doc.items.length,
+          truncated: doc.items.length > limit,
           cards: doc.items.slice(0, limit).map((card) => ({
             id: card.id,
             title: card.title,
@@ -723,6 +745,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             ok: { type: 'boolean', required: true },
             error: { type: 'string' },
             count: { type: 'number' },
+            truncated: { type: 'boolean' },
             relations: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
           },
         },
@@ -760,6 +783,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         return {
           ok: true,
           count: scoped.length,
+          truncated: scoped.length > limit,
           relations: scoped.slice(0, limit).map((relation) => ({
             id: relation.id,
             from: relation.from,

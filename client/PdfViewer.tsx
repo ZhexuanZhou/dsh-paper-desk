@@ -25,9 +25,10 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactElement,
 } from 'react'
-import type { AnnotationItem, AnnotationKind, AnnotationRect } from '../src/types.js'
+import type { AnnotationColor, AnnotationItem, AnnotationKind, AnnotationRect } from '../src/types.js'
+import { configurePdfjsRenderer } from './pdf-engine.js'
 import { loadPdfjs, pdfjsAsset } from './pdfjs.js'
-import type { PdfDocumentLike, PdfjsModule } from './pdfjs.js'
+import type { PdfDocumentLike, PdfPageLike, PdfjsModule, PdfViewportLike } from './pdfjs.js'
 
 /* ── labels / props (contract — do not change) ───────────────────────────── */
 
@@ -60,6 +61,19 @@ export interface PdfViewerLabels {
   shortcutsHint: string
   close: string
   keymapLabels: Record<KeyAction, string>
+  /* Optional labels for the reader-UI extras (defaults in the viewer keep old
+     integrators — and locales without new keys — working unchanged). */
+  outline?: string
+  noOutline?: string
+  find?: string
+  findPlaceholder?: string
+  findNoResults?: string
+  findPrev?: string
+  findNext?: string
+  hand?: string
+  darkPaper?: string
+  lightPaper?: string
+  addToAi?: string
 }
 
 export interface PdfSelectionPayload {
@@ -73,8 +87,10 @@ export interface PdfViewerProps {
   assetBase?: string
   annotations: readonly AnnotationItem[]
   labels: PdfViewerLabels
-  onCreate: (payload: PdfSelectionPayload & { kind: AnnotationKind; comment?: string }) => void | Promise<void>
+  onCreate: (payload: PdfSelectionPayload & { kind: AnnotationKind; comment?: string; color?: AnnotationColor }) => void | Promise<void>
   onAsk: (payload: PdfSelectionPayload & { question: string }) => void | Promise<void>
+  /** Hand the selection to the AI chat composer (prefill, no automatic run). */
+  onAddToAi?: (payload: PdfSelectionPayload) => void | Promise<void>
   onFocusAnnotation?: (id: string) => void
   onPageChange?: (page: number) => void
   focusPage?: number
@@ -104,6 +120,36 @@ const PREFETCH_IDLE_TIMEOUT_MS = 900
 /** Only this many pages exist in the DOM around the current page. */
 const PAGE_WINDOW = 2
 const STYLE_ATTR = 'paper-desk-viewer'
+const PAPER_TONE_STORAGE = 'paperdesk:paper-tone'
+const HIGHLIGHT_COLOR_STORAGE = 'paperdesk:highlight-color'
+/** Selection-menu highlight palette (>=3 colours required by the reader UX). */
+const HIGHLIGHT_COLORS: readonly AnnotationColor[] = ['yellow', 'green', 'blue', 'pink', 'purple']
+const OUTLINE_MAX_NODES = 400
+const LINK_MAX_PER_PAGE = 200
+const FIND_DEBOUNCE_MS = 260
+const FIND_MAX_PAGES = 4000
+
+/** Defaults for the optional reader-UI labels, so older integrators keep working. */
+const UI_DEFAULTS = {
+  outline: 'Outline',
+  noOutline: 'No outline in this PDF',
+  find: 'Find in PDF',
+  findPlaceholder: 'Search text…',
+  findNoResults: 'No matches',
+  findPrev: 'Previous match',
+  findNext: 'Next match',
+  hand: 'Pan tool',
+  darkPaper: 'Dark paper',
+  lightPaper: 'Light paper',
+  addToAi: 'Add to AI',
+} as const
+
+type UiLabelKey = keyof typeof UI_DEFAULTS
+
+function uiLabel(labels: PdfViewerLabels, key: UiLabelKey): string {
+  const value = labels[key]
+  return value !== undefined && value.length > 0 ? value : UI_DEFAULTS[key]
+}
 
 /* ── scoped styles (injected once, removed on unmount) ───────────────────── */
 
@@ -448,13 +494,185 @@ const VIEWER_CSS = `
   font-size: 11px;
 }
 
+/* ── outline drawer ─────────────────────────────────────────────────────── */
+.pdv-outline {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  width: min(284px, calc(100% - 24px));
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-1));
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--dsw-alias-label-primary) 22%, transparent);
+}
+.pdv-outlineHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+.pdv-outlineHead button {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.pdv-outlineHead button:hover { background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent)); }
+.pdv-outlineBody { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px; }
+.pdv-outlineRowWrap { display: flex; align-items: center; }
+.pdv-outlineRow {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pdv-outlineRow:hover { background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent)); }
+.pdv-outlineRow[data-active='true'] { color: var(--dsw-alias-brand-primary); }
+.pdv-outlineToggle {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+.pdv-outlineTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 4px 4px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.pdv-outlineEmpty { padding: 12px 10px; color: var(--dsw-alias-label-secondary); }
+
+/* ── find bar ───────────────────────────────────────────────────────────── */
+.pdv-findbar {
+  position: absolute;
+  top: 8px;
+  right: 32px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-1));
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--dsw-alias-label-primary) 20%, transparent);
+}
+.pdv-findInput {
+  width: 176px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+.pdv-findInput:focus { border-color: var(--dsw-alias-brand-primary); outline: none; }
+.pdv-findCount {
+  min-width: 50px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.pdv-findbar button {
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.pdv-findbar button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent)); }
+.pdv-findbar button:disabled { opacity: .4; cursor: default; }
+.pdv-textHost .textLayer span.pdv-findHit {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 52%, transparent);
+  border-radius: 2px;
+}
+.pdv-textHost .textLayer span.pdv-findHitCurrent {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 85%, transparent);
+  border-radius: 2px;
+}
+
+/* ── link layer ─────────────────────────────────────────────────────────── */
+.pdv-linkLayer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.pdv-link {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.pdv-link:hover {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);
+}
+
+/* ── hand / pan ─────────────────────────────────────────────────────────── */
+.pdv-root[data-hand='true'] .pdv-scroll { cursor: grab; }
+.pdv-root[data-panning='true'] .pdv-scroll { cursor: grabbing; }
+.pdv-root[data-hand='true'] .pdv-textHost,
+.pdv-root[data-hand='true'] .pdv-annotLayer,
+.pdv-root[data-hand='true'] .pdv-linkLayer { pointer-events: none; user-select: none; }
+.pdv-root[data-hand='true'] .pdv-textHost .textLayer span { cursor: inherit; }
+
+/* ── dark paper ─────────────────────────────────────────────────────────── */
+.pdv-root[data-paper='dark'] .pdv-scroll { background: #14161a; }
+.pdv-root[data-paper='dark'] .pdv-page { background: #14161a; box-shadow: 0 1px 2px #0008, 0 8px 24px #0006; }
+.pdv-root[data-paper='dark'] .pdv-canvas { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.95); }
+.pdv-root[data-paper='dark'] .pdv-pageLoading { background: #14161a; color: var(--dsw-alias-label-secondary); }
+.pdv-root[data-paper='dark'] .pdv-mark-highlight {
+  background: color-mix(in srgb, var(--pdv-annot-color) 62%, transparent);
+  mix-blend-mode: screen;
+}
+.pdv-root[data-paper='dark'] .pdv-lowText { background: #1c1f24; border-color: #3a3f46; }
+
 /* ── floating selection toolbar ────────────────────────────────────────── */
 .pdv-selbar {
   position: absolute;
   z-index: 10;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 2px;
+  max-width: calc(100% - 16px);
   padding: 3px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 9px;
@@ -479,6 +697,20 @@ const VIEWER_CSS = `
   background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent));
 }
 .pdv-selbar button:disabled { opacity: .45; cursor: default; }
+.pdv-selColors { display: flex; align-items: center; gap: 3px; padding: 0 4px; }
+.pdv-selbar .pdv-selColor {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, #000 20%, transparent);
+  border-radius: 50%;
+  background: var(--pdv-swatch);
+}
+.pdv-selbar .pdv-selColor[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--dsw-alias-bg-overlay, #fff), 0 0 0 3px var(--dsw-alias-brand-primary);
+}
+.pdv-selbar .pdv-selAi { display: inline-flex; align-items: center; gap: 3px; color: var(--dsw-alias-brand-primary); font-weight: 600; }
 
 /* ── ask popover ───────────────────────────────────────────────────────── */
 .pdv-ask {
@@ -647,6 +879,48 @@ interface PageView {
   renderTask?: { promise: Promise<void>; cancel(): void }
 }
 
+/** One flattened outline entry (pdf.js outline tree → drawer rows). */
+interface OutlineEntry {
+  id: string
+  title: string
+  /** 1-based page, or null for external/unsupported destinations. */
+  page: number | null
+  /** External http(s) URL when the outline item is a web link. */
+  url: string | null
+  depth: number
+  children: OutlineEntry[]
+}
+
+/** One clickable PDF link annotation, normalised to the page box. */
+interface PageLink {
+  id: string
+  rect: AnnotationRect
+  page: number | null
+  url: string | null
+}
+
+interface FindPageMatch {
+  page: number
+  count: number
+}
+
+/** Structural view of the pdf.js document/page methods used by the new UI. */
+interface OutlineDocumentLike {
+  getOutline?(): Promise<unknown>
+  getDestination?(name: string): Promise<unknown>
+  getPageIndex?(ref: unknown): Promise<number>
+}
+
+interface LinkPageLike {
+  getAnnotations?(): Promise<unknown>
+}
+
+interface LinkViewportLike {
+  width: number
+  height: number
+  convertToViewportRectangle?(rect: number[]): number[]
+}
+
 interface ZoomAnchor {
   page: number
   /** Viewport-top offset inside the page, as a fraction of the page height. */
@@ -688,6 +962,16 @@ function currentDpr(): number {
 
 function renderKey(zoom: number, dpr = currentDpr()): string {
   return `${(zoom * CSS_UNITS).toFixed(4)}|${dpr}`
+}
+
+/**
+ * Surface whether pdf.js actually used its renderer worker for this page. The
+ * attribute is diagnostic only (live A/B tests read it); rendering already
+ * falls back to the main thread internally when the worker is unavailable.
+ */
+function recordRenderMode(view: PageView, task: unknown): void {
+  const used = (task as { isWorkerRendering?: unknown } | null)?.isWorkerRendering === true
+  view.wrap.dataset.render = used ? 'worker' : 'main'
 }
 
 function normaliseQuote(text: string): string {
@@ -760,9 +1044,201 @@ function annotationRank(kind: AnnotationKind): number {
   }
 }
 
+/* ── outline / find / links / tone helpers ──────────────────────────────── */
+
+function loadStoredTone(): 'light' | 'dark' {
+  try {
+    return globalThis.localStorage?.getItem(PAPER_TONE_STORAGE) === 'dark' ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+function loadStoredHighlightColor(): AnnotationColor {
+  try {
+    const stored = globalThis.localStorage?.getItem(HIGHLIGHT_COLOR_STORAGE)
+    if (stored !== null && stored !== undefined && (HIGHLIGHT_COLORS as readonly string[]).includes(stored)) {
+      return stored as AnnotationColor
+    }
+  } catch {
+    // ignore storage failures
+  }
+  return 'yellow'
+}
+
+function normaliseSearchText(text: string): string {
+  return text.replace(/\u00ad/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle.length === 0) return 0
+  let count = 0
+  let index = haystack.indexOf(needle)
+  while (index !== -1 && count < 999) {
+    count += 1
+    index = haystack.indexOf(needle, index + needle.length)
+  }
+  return count
+}
+
+/** Mark matching text-layer spans on every currently mounted page. */
+function applyFindHighlights(root: ParentNode, query: string, currentPage: number | null): void {
+  const needle = normaliseSearchText(query)
+  for (const layer of root.querySelectorAll<HTMLElement>('.textLayer')) {
+    const page = Number(layer.dataset.pdvPage)
+    for (const span of layer.querySelectorAll<HTMLElement>('span')) {
+      span.classList.remove('pdv-findHit', 'pdv-findHitCurrent')
+      if (needle.length === 0) continue
+      const text = normaliseSearchText(span.textContent ?? '')
+      if (text.length === 0 || !text.includes(needle)) continue
+      span.classList.add('pdv-findHit')
+      if (page === currentPage) span.classList.add('pdv-findHitCurrent')
+    }
+  }
+}
+
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, 'https://example.invalid/')
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function openExternalUrl(url: string): void {
+  if (!isSafeExternalUrl(url)) return
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch {
+    // Popup blocked; nothing else to do.
+  }
+}
+
+/** Resolve an outline/link destination (named or explicit) to a 1-based page. */
+async function resolveOutlineDest(doc: OutlineDocumentLike, dest: unknown): Promise<number | null> {
+  let explicit = dest
+  if (typeof explicit === 'string' && typeof doc.getDestination === 'function') {
+    try {
+      explicit = await doc.getDestination(explicit)
+    } catch {
+      return null
+    }
+  }
+  if (!Array.isArray(explicit) || explicit.length === 0) return null
+  const ref: unknown = explicit[0]
+  if (typeof ref === 'number' && Number.isFinite(ref)) return Math.max(1, Math.round(ref) + 1)
+  if (ref !== null && typeof ref === 'object' && typeof doc.getPageIndex === 'function') {
+    try {
+      const index = await doc.getPageIndex(ref)
+      return Number.isFinite(index) ? Math.max(1, index + 1) : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+async function buildOutlineEntries(
+  doc: OutlineDocumentLike,
+  nodes: unknown,
+  depth: number,
+  prefix: string,
+  budget: { left: number },
+): Promise<OutlineEntry[]> {
+  if (!Array.isArray(nodes) || budget.left <= 0) return []
+  const entries: OutlineEntry[] = []
+  for (let index = 0; index < nodes.length && budget.left > 0; index += 1) {
+    const node: unknown = nodes[index]
+    if (node === null || typeof node !== 'object') continue
+    const raw = node as Record<string, unknown>
+    const title = typeof raw.title === 'string' ? raw.title.trim() : ''
+    if (title.length === 0) continue
+    budget.left -= 1
+    const id = `${prefix}-${index}`
+    const page = raw.dest === undefined || raw.dest === null ? null : await resolveOutlineDest(doc, raw.dest)
+    const url = typeof raw.url === 'string' && isSafeExternalUrl(raw.url) ? raw.url : null
+    const children = await buildOutlineEntries(doc, raw.items, depth + 1, id, budget)
+    entries.push({ id, title, page, url, depth, children })
+  }
+  return entries
+}
+
+/** Count which pages contain `query` (page-level matches, no per-character spans). */
+async function findPages(
+  doc: PdfDocumentLike,
+  query: string,
+  isCancelled: () => boolean,
+  textCache?: Map<number, string>,
+): Promise<FindPageMatch[]> {
+  const needle = normaliseSearchText(query)
+  if (needle.length === 0) return []
+  const matches: FindPageMatch[] = []
+  const total = Math.min(doc.numPages, FIND_MAX_PAGES)
+  for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
+    if (isCancelled()) return matches
+    try {
+      let text = textCache?.get(pageNumber)
+      if (text === undefined) {
+        const page = await doc.getPage(pageNumber)
+        const content = (await page.getTextContent({ disableNormalization: false })) as {
+          items?: readonly unknown[]
+        }
+        text = (content.items ?? [])
+          .map((item) => {
+            if (item !== null && typeof item === 'object' && typeof (item as { str?: unknown }).str === 'string') {
+              return (item as { str: string }).str
+            }
+            return ''
+          })
+          .join(' ')
+        textCache?.set(pageNumber, text)
+      }
+      if (isCancelled()) return matches
+      const count = countOccurrences(normaliseSearchText(text), needle)
+      if (count > 0) matches.push({ page: pageNumber, count })
+    } catch {
+      // A single broken page must not abort the whole search.
+    }
+  }
+  return matches
+}
+
+/** Normalise a PDF-space link rectangle into the page box (0..1). */
+function normaliseLinkRect(viewport: LinkViewportLike, rect: readonly number[]): AnnotationRect | null {
+  if (rect.length < 4) return null
+  let x1 = rect[0] ?? 0
+  let y1 = rect[1] ?? 0
+  let x2 = rect[2] ?? 0
+  let y2 = rect[3] ?? 0
+  if (typeof viewport.convertToViewportRectangle === 'function') {
+    const converted = viewport.convertToViewportRectangle([x1, y1, x2, y2])
+    if (Array.isArray(converted) && converted.length >= 4) {
+      x1 = converted[0] ?? x1
+      y1 = converted[1] ?? y1
+      x2 = converted[2] ?? x2
+      y2 = converted[3] ?? y2
+    }
+  }
+  if (viewport.width <= 0 || viewport.height <= 0) return null
+  const left = Math.min(x1, x2)
+  const top = Math.min(y1, y2)
+  const width = Math.abs(x2 - x1)
+  const height = Math.abs(y2 - y1)
+  if (width <= 0 || height <= 0) return null
+  return {
+    x: clamp01(left / viewport.width),
+    y: clamp01(top / viewport.height),
+    w: clamp01(width / viewport.width),
+    h: clamp01(height / viewport.height),
+  }
+}
+
 /* ── small local icons (no external icon imports in this file) ──────────── */
 
-function ToolbarIcon({ name }: { name: 'prev' | 'next' | 'zoomIn' | 'zoomOut' }): ReactElement {
+type ToolbarIconName = 'prev' | 'next' | 'zoomIn' | 'zoomOut' | 'outline' | 'find' | 'hand' | 'moon' | 'sun' | 'ai'
+
+function ToolbarIcon({ name }: { name: ToolbarIconName }): ReactElement {
   return (
     <svg
       width="14"
@@ -780,6 +1256,38 @@ function ToolbarIcon({ name }: { name: 'prev' | 'next' | 'zoomIn' | 'zoomOut' })
       {name === 'next' ? <path d="m6 3 5 5-5 5" /> : null}
       {name === 'zoomIn' ? <path d="M8 3.2v9.6M3.2 8h9.6" /> : null}
       {name === 'zoomOut' ? <path d="M3.2 8h9.6" /> : null}
+      {name === 'outline' ? (
+        <>
+          <path d="M3.2 4h.1M3.2 8h.1M3.2 12h.1M6 4h7M6 8h7M6 12h5" />
+        </>
+      ) : null}
+      {name === 'find' ? (
+        <>
+          <circle cx="7.2" cy="7.2" r="3.7" />
+          <path d="m10 10 3.2 3.2" />
+        </>
+      ) : null}
+      {name === 'hand' ? (
+        <>
+          <path d="M5.1 8.2V4.6a1 1 0 0 1 2 0v3.1" />
+          <path d="M7.1 7.7V3.6a1 1 0 0 1 2 0v4.1" />
+          <path d="M9.1 7.7V4.6a1 1 0 0 1 2 0v4.2" />
+          <path d="M11.1 8.2v-1a1 1 0 0 1 2 0v3.1c0 2.1-1.7 3.7-3.8 3.7h-1c-1.2 0-2.2-.5-3-1.4L3 10.4a1 1 0 0 1 1.5-1.3l1.2 1.2" />
+        </>
+      ) : null}
+      {name === 'moon' ? <path d="M12.6 9.4A5.2 5.2 0 0 1 6.6 3.4a5.3 5.3 0 1 0 6 6Z" /> : null}
+      {name === 'sun' ? (
+        <>
+          <circle cx="8" cy="8" r="2.8" />
+          <path d="M8 1.6v1.2M8 13.2v1.2M1.6 8h1.2M13.2 8h1.2M3.5 3.5l.9.9M11.6 11.6l.9.9M12.5 3.5l-.9.9M4.4 11.6l-.9.9" />
+        </>
+      ) : null}
+      {name === 'ai' ? (
+        <>
+          <path d="M8 2.2 9.3 6l3.8 1.3-3.8 1.3L8 12.4 6.7 8.6 2.9 7.3 6.7 6Z" />
+          <path d="M12.4 11.2v2M11.4 12.2h2" />
+        </>
+      ) : null}
     </svg>
   )
 }
@@ -913,6 +1421,15 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const copyTimerRef = useRef<number | null>(null)
   const lastFocusedAnnotationRef = useRef<string | null>(null)
   const lastTextPointRef = useRef<{ x: number; y: number } | null>(null)
+  const outlineLoadedRef = useRef(false)
+  const linksLoadedRef = useRef<Set<number>>(new Set())
+  const textCacheRef = useRef<Map<number, string>>(new Map())
+  const findInputRef = useRef<HTMLInputElement | null>(null)
+  const findTimerRef = useRef<number | null>(null)
+  const findQueryRef = useRef('')
+  const findActivePageRef = useRef<number | null>(null)
+  const panRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null)
+  const handActiveRef = useRef(false)
 
   const [status, setStatus] = useState<Status>('loading')
   const [errorText, setErrorText] = useState('')
@@ -935,10 +1452,34 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const [visualMode, setVisualMode] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [keymap, setKeymap] = useState<KeyMap>(() => loadKeyMap())
+  const [outline, setOutline] = useState<OutlineEntry[]>([])
+  const [outlineLoaded, setOutlineLoaded] = useState(false)
+  const [outlineOpen, setOutlineOpen] = useState(false)
+  const [outlineExpanded, setOutlineExpanded] = useState<ReadonlySet<string>>(() => new Set<string>())
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findMatches, setFindMatches] = useState<FindPageMatch[]>([])
+  const [findIndex, setFindIndex] = useState(0)
+  const [findBusy, setFindBusy] = useState(false)
+  const [handMode, setHandMode] = useState(false)
+  const [spaceHeld, setSpaceHeld] = useState(false)
+  const [panning, setPanning] = useState(false)
+  const [paperTone, setPaperTone] = useState<'light' | 'dark'>(() => loadStoredTone())
+  const [highlightColor, setHighlightColor] = useState<AnnotationColor>(() => loadStoredHighlightColor())
+  const [pageLinks, setPageLinks] = useState<ReadonlyMap<number, PageLink[]>>(() => new Map<number, PageLink[]>())
   const visualModeRef = useRef(false)
   visualModeRef.current = visualMode
   const keymapRef = useRef<KeyMap>(keymap)
   keymapRef.current = keymap
+  findQueryRef.current = findQuery
+  {
+    const active = findMatches.length > 0
+      ? findMatches[Math.min(Math.max(findIndex, 0), findMatches.length - 1)]
+      : undefined
+    findActivePageRef.current = active?.page ?? null
+  }
+  const handActive = handMode || spaceHeld
+  handActiveRef.current = handActive
 
   const onPageChangeRef = useRef<PdfViewerProps['onPageChange']>(props.onPageChange)
   onPageChangeRef.current = props.onPageChange
@@ -948,6 +1489,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   onAskRef.current = props.onAsk
   const onFocusAnnotationRef = useRef<PdfViewerProps['onFocusAnnotation']>(props.onFocusAnnotation)
   onFocusAnnotationRef.current = props.onFocusAnnotation
+  const onAddToAiRef = useRef<PdfViewerProps['onAddToAi']>(props.onAddToAi)
+  onAddToAiRef.current = props.onAddToAi
 
   useEffect(() => {
     pageSizesRef.current = pageSizes
@@ -1011,11 +1554,33 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     fitModeRef.current = true
     setFitMode(true)
     zoomAnchorRef.current = null
+    setOutline([])
+    setOutlineLoaded(false)
+    setOutlineOpen(false)
+    setPageLinks(new Map<number, PageLink[]>())
+    setFindOpen(false)
+    setFindQuery('')
+    setFindMatches([])
+    setFindIndex(0)
+    setFindBusy(false)
+    findQueryRef.current = ''
+    linksLoadedRef.current.clear()
+    textCacheRef.current.clear()
+    if (findTimerRef.current !== null) {
+      window.clearTimeout(findTimerRef.current)
+      findTimerRef.current = null
+    }
 
     void (async () => {
       try {
         const pdfjs = await loadPdfjs(assetBase)
         if (cancelled || epoch !== epochRef.current) return
+        // Move page rasterisation to pdf.js' renderer worker when available;
+        // the document/text layer/annotation coordinates stay untouched.
+        const rendererConfig = configurePdfjsRenderer(pdfjs, assetBase)
+        if (rootRef.current !== null) {
+          rootRef.current.dataset.pdfRenderer = rendererConfig.mode
+        }
         const documentTask = pdfjs.getDocument({
           url: src,
           cMapUrl: pdfjsAsset('cmaps/', assetBase),
@@ -1025,18 +1590,19 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           rangeChunkSize: 1024 * 1024,
           disableAutoFetch: false,
           disableStream: false,
+          disableWorkerRendering: rendererConfig.mode === 'main',
         }) as LoadingTaskLike
         loadingTaskRef.current = documentTask
         const doc = await documentTask.promise
         if (cancelled || epoch !== epochRef.current) {
           loadingTaskRef.current = null
-          void doc.destroy().catch(() => undefined)
+          void documentTask.destroy?.().catch(() => undefined)
           return
         }
         const firstPage = await doc.getPage(1)
         if (cancelled || epoch !== epochRef.current) {
           loadingTaskRef.current = null
-          void doc.destroy().catch(() => undefined)
+          void documentTask.destroy?.().catch(() => undefined)
           return
         }
         const firstViewport = firstPage.getViewport({ scale: 1 })
@@ -1058,6 +1624,26 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         setPageWindow({ start: 1, end: Math.min(doc.numPages, 1 + PAGE_WINDOW) })
         setNumPages(doc.numPages)
         setStatus('ready')
+
+        // Outline/bookmarks drawer: loaded in the background after first paint.
+        void (async () => {
+          const outlineDoc = doc as unknown as OutlineDocumentLike
+          if (typeof outlineDoc.getOutline !== 'function') {
+            if (!cancelled && epoch === epochRef.current) setOutlineLoaded(true)
+            return
+          }
+          try {
+            const raw = await outlineDoc.getOutline()
+            if (cancelled || epoch !== epochRef.current) return
+            const entries = await buildOutlineEntries(outlineDoc, raw, 0, 'o', { left: OUTLINE_MAX_NODES })
+            if (cancelled || epoch !== epochRef.current) return
+            setOutline(entries)
+            setOutlineExpanded(new Set(entries.map((entry) => entry.id)))
+            setOutlineLoaded(true)
+          } catch {
+            if (!cancelled && epoch === epochRef.current) setOutlineLoaded(true)
+          }
+        })()
 
         // Placeholder boxes for pages with a different aspect ratio: fetch scale-1
         // viewports in small batches so scrollbar/extent stay stable. Cheap: reading
@@ -1104,6 +1690,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       }
       pagesRef.current.clear()
       visibleRef.current.clear()
+      if (findTimerRef.current !== null) {
+        window.clearTimeout(findTimerRef.current)
+        findTimerRef.current = null
+      }
+      linksLoadedRef.current.clear()
+      textCacheRef.current.clear()
       const task = loadingTaskRef.current
       loadingTaskRef.current = null
       const doc = docRef.current
@@ -1264,6 +1856,45 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     [],
   )
 
+  /** Load link annotations for one page once (normalised to the page box). */
+  const loadPageLinks = useCallback(async (pageNumber: number, page: PdfPageLike, viewport: PdfViewportLike): Promise<void> => {
+    if (linksLoadedRef.current.has(pageNumber)) return
+    linksLoadedRef.current.add(pageNumber)
+    const linkPage = page as unknown as LinkPageLike
+    if (typeof linkPage.getAnnotations !== 'function') return
+    try {
+      const annotations = await linkPage.getAnnotations()
+      if (!Array.isArray(annotations)) return
+      const outlineDoc = docRef.current as unknown as OutlineDocumentLike | null
+      const links: PageLink[] = []
+      for (const annotation of annotations.slice(0, 400)) {
+        if (annotation === null || typeof annotation !== 'object') continue
+        const raw = annotation as Record<string, unknown>
+        if (raw.subtype !== 'Link') continue
+        const rect = Array.isArray(raw.rect) ? (raw.rect as number[]) : null
+        if (rect === null) continue
+        const url = typeof raw.url === 'string' && isSafeExternalUrl(raw.url) ? raw.url : null
+        let target: number | null = null
+        if (url === null && raw.dest !== undefined && outlineDoc !== null) {
+          target = await resolveOutlineDest(outlineDoc, raw.dest)
+        }
+        if (url === null && target === null) continue
+        const normalised = normaliseLinkRect(viewport as unknown as LinkViewportLike, rect)
+        if (normalised === null) continue
+        links.push({ id: `l-${pageNumber}-${links.length}`, rect: normalised, page: target, url })
+        if (links.length >= LINK_MAX_PER_PAGE) break
+      }
+      if (links.length === 0) return
+      setPageLinks((previous) => {
+        const next = new Map(previous)
+        next.set(pageNumber, links)
+        return next
+      })
+    } catch {
+      // Link annotations are optional.
+    }
+  }, [])
+
   const renderPage = useCallback(async (pageNumber: number, previewOnly = false): Promise<void> => {
     // A window/panel resize is in flight: do not start raster work until the
     // layout has settled. The resize idle effect re-renders visible pages.
@@ -1322,6 +1953,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
             intent: 'display',
           })
           view.renderTask = previewTask
+          recordRenderMode(view, previewTask)
           await previewTask.promise
           if (epoch !== epochRef.current || token !== view.token) return
           view.previewKey = key
@@ -1352,6 +1984,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         intent: 'display',
       })
       view.renderTask = task
+      recordRenderMode(view, task)
       await task.promise
       if (epoch !== epochRef.current || token !== view.token) return
       canvas.width = fullCanvas.width
@@ -1363,6 +1996,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       view.previewKey = key
       view.renderTask = undefined
       view.wrap.dataset.rendered = 'true'
+      void loadPageLinks(pageNumber, page, viewport)
 
       // Selectable text is useful but not on the raster critical path. Build it
       // on idle so scrolling starts as soon as the canvas is painted.
@@ -1383,6 +2017,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           const textLayer = new pdfjs.TextLayer({ textContentSource: source, container, viewport })
           await textLayer.render()
           if (epoch !== epochRef.current || token !== view.token) return
+          applyFindHighlights(view.wrap, findQueryRef.current, findActivePageRef.current)
           const hasText = (container.textContent ?? '').trim().length > 0
           setLowTextPages((previous) => {
             const isLow = !hasText
@@ -1943,7 +2578,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const centerX = anchorRect.left + anchorRect.width / 2 - rootRect.left
     const selTop = anchorRect.top - rootRect.top
     const selBottom = anchorRect.bottom - rootRect.top
-    const half = Math.min(150, Math.max(60, rootWidth / 2 - 8))
+    const half = Math.min(200, Math.max(60, rootWidth / 2 - 8))
     const askHalf = Math.min(140, Math.max(60, rootWidth / 2 - 8))
     const toolbarAbove = selTop >= 56
     const askAbove = selTop >= 190
@@ -2079,15 +2714,20 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     applyZoom(1, true)
   }
 
-  const createFromSelection = async (state: SelectionState, kind: AnnotationKind): Promise<void> => {
+  const createFromSelection = async (
+    state: SelectionState,
+    kind: AnnotationKind,
+    color?: AnnotationColor,
+  ): Promise<void> => {
     if (busy) return
-    const payload: PdfSelectionPayload & { kind: AnnotationKind; comment?: string } = {
+    const payload: PdfSelectionPayload & { kind: AnnotationKind; comment?: string; color?: AnnotationColor } = {
       page: state.page,
       rects: state.rects,
       quote: state.quote,
       kind,
     }
     if (kind === 'note') payload.comment = ''
+    if (kind === 'highlight' || kind === 'underline') payload.color = color ?? highlightColor
     setBusy(true)
     try {
       await onCreateRef.current(payload)
@@ -2098,9 +2738,24 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     dismissSelection(true)
   }
 
-  const runCreate = async (kind: AnnotationKind) => {
+  const runCreate = async (kind: AnnotationKind, color?: AnnotationColor) => {
     if (selection === null) return
-    await createFromSelection(selection, kind)
+    if (color !== undefined) setHighlightColor(color)
+    await createFromSelection(selection, kind, color)
+  }
+
+  const addSelectionToAi = async (): Promise<void> => {
+    if (selection === null) return
+    const handler = onAddToAiRef.current
+    if (handler === undefined) return
+    setBusy(true)
+    try {
+      await handler({ page: selection.page, rects: selection.rects, quote: selection.quote })
+    } catch {
+      // The parent owns error reporting/toasts.
+    }
+    setBusy(false)
+    dismissSelection(true)
   }
 
   const openAsk = () => {
@@ -2153,6 +2808,241 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       setCopied(false)
     }, 1600)
   }
+
+  /* ── find in document ─────────────────────────────────────────────────── */
+  const closeFind = (): void => {
+    setFindOpen(false)
+    setFindQuery('')
+    setFindMatches([])
+    setFindIndex(0)
+    findQueryRef.current = ''
+    const root = rootRef.current
+    if (root !== null) applyFindHighlights(root, '', null)
+  }
+
+  const runFind = (raw: string): void => {
+    setFindQuery(raw)
+    if (findTimerRef.current !== null) {
+      window.clearTimeout(findTimerRef.current)
+      findTimerRef.current = null
+    }
+    const query = raw.trim()
+    if (query.length === 0) {
+      setFindMatches([])
+      setFindIndex(0)
+      setFindBusy(false)
+      const root = rootRef.current
+      if (root !== null) applyFindHighlights(root, '', null)
+      return
+    }
+    setFindBusy(true)
+    const epoch = epochRef.current
+    findTimerRef.current = window.setTimeout(() => {
+      findTimerRef.current = null
+      const doc = docRef.current
+      if (doc === null || epoch !== epochRef.current) {
+        setFindBusy(false)
+        return
+      }
+      void findPages(doc, query, () => epoch !== epochRef.current, textCacheRef.current)
+        .then((matches) => {
+          if (epoch !== epochRef.current) return
+          setFindMatches(matches)
+          setFindIndex(0)
+          setFindBusy(false)
+          const first = matches[0]
+          if (first !== undefined) goToPage(first.page)
+        })
+        .catch(() => {
+          if (epoch === epochRef.current) setFindBusy(false)
+        })
+    }, FIND_DEBOUNCE_MS)
+  }
+
+  const stepFind = (delta: number): void => {
+    if (findMatches.length === 0) return
+    const next = (findIndex + delta + findMatches.length) % findMatches.length
+    setFindIndex(next)
+    const match = findMatches[next]
+    if (match !== undefined) goToPage(match.page)
+  }
+
+  /* ── outline drawer ───────────────────────────────────────────────────── */
+  const activateOutline = (entry: OutlineEntry): void => {
+    if (entry.page !== null) goToPage(entry.page)
+    else if (entry.url !== null) openExternalUrl(entry.url)
+  }
+
+  const toggleOutlineEntry = (id: string): void => {
+    setOutlineExpanded((previous) => {
+      const next = new Set(previous)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const outlineRows = (entries: readonly OutlineEntry[]): ReactElement[] =>
+    entries.flatMap((entry) => {
+      const expanded = outlineExpanded.has(entry.id)
+      const rows: ReactElement[] = [
+        <div key={entry.id} className="pdv-outlineRowWrap" style={{ paddingLeft: `${entry.depth * 12}px` }}>
+          {entry.children.length > 0 ? (
+            <button
+              type="button"
+              className="pdv-outlineToggle"
+              aria-label={entry.title}
+              aria-expanded={expanded}
+              onClick={() => toggleOutlineEntry(entry.id)}
+            >
+              {expanded ? '▾' : '▸'}
+            </button>
+          ) : (
+            <span className="pdv-outlineToggle" aria-hidden="true" />
+          )}
+          <button
+            type="button"
+            className="pdv-outlineRow"
+            data-active={entry.page !== null && entry.page === currentPage ? 'true' : undefined}
+            title={entry.title}
+            onClick={() => activateOutline(entry)}
+          >
+            <span className="pdv-outlineTitle">{entry.title}</span>
+          </button>
+        </div>,
+      ]
+      if (entry.children.length > 0 && expanded) rows.push(...outlineRows(entry.children))
+      return rows
+    })
+
+  /* ── hand / pan ───────────────────────────────────────────────────────── */
+  const beginPan = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!handActiveRef.current || event.button !== 0) return
+    const scroller = scrollerRef.current
+    if (scroller === null) return
+    event.preventDefault()
+    panRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: scroller.scrollLeft,
+      top: scroller.scrollTop,
+    }
+    setPanning(true)
+    try {
+      scroller.setPointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture is best-effort.
+    }
+    if (selection !== null || askOpen) dismissSelection(false)
+  }
+
+  const movePan = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const pan = panRef.current
+    const scroller = scrollerRef.current
+    if (pan === null || scroller === null || pan.pointerId !== event.pointerId) return
+    event.preventDefault()
+    scroller.scrollLeft = pan.left - (event.clientX - pan.x)
+    scroller.scrollTop = pan.top - (event.clientY - pan.y)
+  }
+
+  const endPan = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const pan = panRef.current
+    const scroller = scrollerRef.current
+    if (pan === null || scroller === null) return
+    try {
+      scroller.releasePointerCapture(pan.pointerId)
+    } catch {
+      // Already released.
+    }
+    panRef.current = null
+    setPanning(false)
+    void event
+  }
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(PAPER_TONE_STORAGE, paperTone)
+    } catch {
+      // Preference persistence is optional.
+    }
+  }, [paperTone])
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(HIGHLIGHT_COLOR_STORAGE, highlightColor)
+    } catch {
+      // Preference persistence is optional.
+    }
+  }, [highlightColor])
+
+  /* Cmd/Ctrl+F opens the find bar while the document is ready. */
+  useEffect(() => {
+    if (status !== 'ready') return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'f') return
+      event.preventDefault()
+      setFindOpen(true)
+      window.requestAnimationFrame(() => {
+        findInputRef.current?.focus()
+        findInputRef.current?.select()
+      })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [status])
+
+  /* Escape closes the outline drawer. */
+  useEffect(() => {
+    if (!outlineOpen) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOutlineOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [outlineOpen])
+
+  /* Escape closes the find bar (the selection toolbar takes precedence). */
+  useEffect(() => {
+    if (!findOpen) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeFind()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findOpen])
+
+  /* Hold Space to temporarily pan, like a desktop PDF reader. */
+  useEffect(() => {
+    const isEditable = (target: EventTarget | null): boolean =>
+      target instanceof HTMLElement &&
+      target.closest('input, textarea, select, [contenteditable="true"]') !== null
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.code !== 'Space' || event.repeat || isEditable(event.target)) return
+      event.preventDefault()
+      setSpaceHeld(true)
+    }
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.code === 'Space') setSpaceHeld(false)
+    }
+    const onBlur = (): void => setSpaceHeld(false)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [])
+
+  /* Re-apply find highlights whenever matches or mounted pages change. */
+  useEffect(() => {
+    const root = rootRef.current
+    if (root === null) return
+    applyFindHighlights(root, findQuery, findActivePageRef.current)
+  }, [findQuery, findMatches, findIndex, pageWindow.start, pageWindow.end, lowTextPages])
 
   /* ── keyboard navigation / visual selection ───────────────────────────── */
   const beginVisualSelection = useCallback((): void => {
@@ -2446,7 +3336,14 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const zoomPercent = Math.round(zoom * 100)
 
   return (
-    <div className="pdv-root" ref={rootRef} onPointerDown={handleRootPointerDown}>
+    <div
+      className="pdv-root"
+      ref={rootRef}
+      data-paper={paperTone}
+      data-hand={handActive ? 'true' : 'false'}
+      data-panning={panning ? 'true' : 'false'}
+      onPointerDown={handleRootPointerDown}
+    >
       <div className="pdv-toolbar" role="toolbar">
         <button
           type="button"
@@ -2529,6 +3426,49 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         >
           {labels.actualSize}
         </button>
+        <button
+          type="button"
+          className="pdv-btn"
+          aria-label={uiLabel(labels, 'outline')}
+          title={uiLabel(labels, 'outline')}
+          aria-pressed={outlineOpen}
+          onClick={() => setOutlineOpen((open) => !open)}
+        >
+          <ToolbarIcon name="outline" />
+        </button>
+        <button
+          type="button"
+          className="pdv-btn"
+          aria-label={uiLabel(labels, 'find')}
+          title={uiLabel(labels, 'find')}
+          aria-pressed={findOpen}
+          onClick={() => {
+            setFindOpen(true)
+            window.requestAnimationFrame(() => findInputRef.current?.focus())
+          }}
+        >
+          <ToolbarIcon name="find" />
+        </button>
+        <button
+          type="button"
+          className="pdv-btn"
+          aria-label={uiLabel(labels, 'hand')}
+          title={uiLabel(labels, 'hand')}
+          aria-pressed={handMode}
+          onClick={() => setHandMode((enabled) => !enabled)}
+        >
+          <ToolbarIcon name="hand" />
+        </button>
+        <button
+          type="button"
+          className="pdv-btn"
+          aria-label={paperTone === 'dark' ? uiLabel(labels, 'lightPaper') : uiLabel(labels, 'darkPaper')}
+          title={paperTone === 'dark' ? uiLabel(labels, 'lightPaper') : uiLabel(labels, 'darkPaper')}
+          aria-pressed={paperTone === 'dark'}
+          onClick={() => setPaperTone((tone) => (tone === 'dark' ? 'light' : 'dark'))}
+        >
+          <ToolbarIcon name={paperTone === 'dark' ? 'sun' : 'moon'} />
+        </button>
       </div>
 
       {lowTextHint !== undefined && lowTextHint.length > 0 ? (
@@ -2565,7 +3505,16 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       ) : null}
 
       <div className="pdv-scrollWrap">
-      <div className="pdv-scroll" ref={scrollerRef} onMouseUp={handleSelectionEnd} onKeyUp={handleSelectionEnd}>
+      <div
+        className="pdv-scroll"
+        ref={scrollerRef}
+        onMouseUp={handleSelectionEnd}
+        onKeyUp={handleSelectionEnd}
+        onPointerDown={beginPan}
+        onPointerMove={movePan}
+        onPointerUp={endPan}
+        onPointerCancel={endPan}
+      >
         <div className="pdv-pages">
           {pageWindow.start > 1 ? (
             <div
@@ -2610,6 +3559,28 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
                       onFocusAnnotationRef.current,
                     )}
                   </div>
+                  <div className="pdv-linkLayer">
+                    {(pageLinks.get(page) ?? []).map((link) => (
+                      <button
+                        key={link.id}
+                        type="button"
+                        className="pdv-link"
+                        data-pdv-link={link.url ?? link.page ?? ''}
+                        style={{
+                          left: `${link.rect.x * 100}%`,
+                          top: `${link.rect.y * 100}%`,
+                          width: `${link.rect.w * 100}%`,
+                          height: `${link.rect.h * 100}%`,
+                        } as CSSProperties}
+                        aria-label={link.url ?? `${labels.page} ${link.page ?? ''}`}
+                        title={link.url ?? `${labels.page} ${link.page ?? ''}`}
+                        onClick={() => {
+                          if (link.url !== null) openExternalUrl(link.url)
+                          else if (link.page !== null) goToPage(link.page)
+                        }}
+                      />
+                    ))}
+                  </div>
                   {lowText ? <div className="pdv-lowText">{labels.textLayerUnavailable}</div> : null}
                 </div>
               </div>
@@ -2636,6 +3607,74 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         <div className="pdv-scrollThumb" ref={scrollThumbRef} />
         <div className="pdv-scrollGhost" ref={scrollGhostRef} aria-hidden="true" />
       </div>
+
+      {outlineOpen ? (
+        <aside className="pdv-outline" aria-label={uiLabel(labels, 'outline')}>
+          <div className="pdv-outlineHead">
+            <span>{uiLabel(labels, 'outline')}</span>
+            <button type="button" aria-label={labels.close} title={labels.close} onClick={() => setOutlineOpen(false)}>
+              ×
+            </button>
+          </div>
+          <div className="pdv-outlineBody">
+            {outline.length > 0
+              ? outlineRows(outline)
+              : outlineLoaded
+                ? <div className="pdv-outlineEmpty">{uiLabel(labels, 'noOutline')}</div>
+                : null}
+          </div>
+        </aside>
+      ) : null}
+
+      {findOpen ? (
+        <div className="pdv-findbar" role="search">
+          <input
+            ref={findInputRef}
+            className="pdv-findInput"
+            aria-label={uiLabel(labels, 'findPlaceholder')}
+            placeholder={uiLabel(labels, 'findPlaceholder')}
+            value={findQuery}
+            onChange={(event) => runFind(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                stepFind(event.shiftKey ? -1 : 1)
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                closeFind()
+              }
+            }}
+          />
+          <span className="pdv-findCount" aria-live="polite">
+            {findBusy
+              ? '…'
+              : findMatches.length === 0
+                ? findQuery.trim().length === 0 ? '' : uiLabel(labels, 'findNoResults')
+                : `${findIndex + 1}/${findMatches.length}`}
+          </span>
+          <button
+            type="button"
+            aria-label={uiLabel(labels, 'findPrev')}
+            title={uiLabel(labels, 'findPrev')}
+            disabled={findMatches.length === 0}
+            onClick={() => stepFind(-1)}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            aria-label={uiLabel(labels, 'findNext')}
+            title={uiLabel(labels, 'findNext')}
+            disabled={findMatches.length === 0}
+            onClick={() => stepFind(1)}
+          >
+            ↓
+          </button>
+          <button type="button" aria-label={labels.close} title={labels.close} onClick={closeFind}>
+            ×
+          </button>
+        </div>
+      ) : null}
       </div>
 
       {selection !== null && !askOpen ? (
@@ -2645,12 +3684,29 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           role="toolbar"
           onMouseDown={(event) => event.preventDefault()}
         >
+          <div className="pdv-selColors" role="group" aria-label={labels.highlight}>
+            {HIGHLIGHT_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                className="pdv-selColor"
+                style={{ '--pdv-swatch': annotationColor(color) } as CSSProperties}
+                aria-label={`${labels.highlight} ${color}`}
+                title={`${labels.highlight} ${color}`}
+                aria-pressed={highlightColor === color}
+                disabled={busy}
+                onClick={() => {
+                  void runCreate('highlight', color)
+                }}
+              />
+            ))}
+          </div>
           <button
             type="button"
             aria-label={labels.highlight}
             disabled={busy}
             onClick={() => {
-              void runCreate('highlight')
+              void runCreate('highlight', highlightColor)
             }}
           >
             {labels.highlight}
@@ -2678,6 +3734,21 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           <button type="button" aria-label={labels.ask} disabled={busy} onClick={openAsk}>
             {labels.ask}
           </button>
+          {props.onAddToAi !== undefined ? (
+            <button
+              type="button"
+              className="pdv-selAi"
+              aria-label={uiLabel(labels, 'addToAi')}
+              title={uiLabel(labels, 'addToAi')}
+              disabled={busy}
+              onClick={() => {
+                void addSelectionToAi()
+              }}
+            >
+              <ToolbarIcon name="ai" />
+              {uiLabel(labels, 'addToAi')}
+            </button>
+          ) : null}
           <button
             type="button"
             aria-label={copied ? labels.copied : labels.copy}

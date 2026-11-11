@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { NotesDocument, NotesWriteResult } from '../src/types.js'
 import { IconCheck, IconNote, IconQuote, IconSave, IconWarning } from './icons.js'
+import { createAutosaveQueue } from './autosave.js'
+import type { AutosaveQueue } from './autosave.js'
 import { errorText, useT } from './i18n.js'
 import { renderMarkdownSectioned } from './markdown.js'
 import { Button, Modal, TextInput, Textarea } from './ui.js'
@@ -77,6 +79,88 @@ export function NotesEditor(props: NotesEditorProps) {
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
+  /* ── autosave (400 ms debounce, serialized, does not replace explicit save) ── */
+
+  const onSaveRef = useRef(onSave)
+  const onToastRef = useRef(onToast)
+  const tRef = useRef(t)
+  const conflictRef = useRef<NotesWriteResult | null>(null)
+  const disabledRef = useRef(disabled)
+  onSaveRef.current = onSave
+  onToastRef.current = onToast
+  tRef.current = t
+  conflictRef.current = conflict
+  disabledRef.current = disabled
+
+  const writeRef = useRef<(markdown: string) => Promise<void>>(async () => {})
+
+  const autosaveRef = useRef<AutosaveQueue | null>(null)
+  if (autosaveRef.current === null) {
+    autosaveRef.current = createAutosaveQueue({
+      write: (markdown) => writeRef.current(markdown),
+      onError: (error) => {
+        const detail = errorText(error)
+        /* A conflict already shows its own banner + toast from the write path. */
+        if (detail === tRef.current('notes.conflict.title')) return
+        onToastRef.current(
+          'warn',
+          detail !== '' ? `${tRef.current('notes.autosaveFailed')} · ${detail}` : tRef.current('notes.autosaveFailed'),
+        )
+      },
+    })
+  }
+
+  writeRef.current = async (markdown: string): Promise<void> => {
+    const base = baseHashRef.current !== '' ? baseHashRef.current : undefined
+    const result = await onSaveRef.current(markdown, base)
+    if (!result.ok) {
+      if (result.conflict) {
+        conflictRef.current = result
+        setConflict(result)
+        throw new Error(tRef.current('notes.conflict.title'))
+      }
+      throw new Error(tRef.current('notes.saveFailed'))
+    }
+    setBaseHash(result.notes.hash)
+    baseHashRef.current = result.notes.hash
+    setSavedMarkdown(result.notes.markdown)
+    savedMarkdownRef.current = result.notes.markdown
+    setConflict(null)
+    conflictRef.current = null
+    autosaveRef.current?.markSaved(result.notes.markdown)
+  }
+
+  const scheduleAutosave = useCallback((next: string): void => {
+    const queue = autosaveRef.current
+    if (queue === null || disabledRef.current || conflictRef.current !== null) return
+    if (next === savedMarkdownRef.current) {
+      queue.cancel()
+      return
+    }
+    queue.schedule(next)
+  }, [])
+
+  /* Flush pending autosave when the page is hidden/unloaded (tab close/reload). */
+  useEffect(() => {
+    const flush = (): void => {
+      void autosaveRef.current?.flush()
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+      /* Paper switches are guarded by App (save/discard): never write a
+         discarded draft on unmount, just drop the pending debounce. */
+      autosaveRef.current?.dispose()
+    }
+  }, [])
+
   /* Adopt disk versions pushed by the parent (reload, agent append, …). */
   useEffect(() => {
     const incoming = notes?.markdown ?? ''
@@ -87,6 +171,7 @@ export function NotesEditor(props: NotesEditorProps) {
     setSavedMarkdown(incoming)
     setBaseHash(incomingHash)
     baseHashRef.current = incomingHash
+    autosaveRef.current?.markSaved(incoming)
   }, [notes?.hash, notes?.markdown])
 
   /* Report dirty state to the shell (unsaved-changes guard). */
@@ -105,6 +190,9 @@ export function NotesEditor(props: NotesEditorProps) {
       savingRef.current = true
       setSaving(true)
       try {
+        const queue = autosaveRef.current
+        queue?.cancel()
+        if (!overwrite) await queue?.wait()
         const markdown = draftRef.current
         const base = overwrite ? undefined : baseHashRef.current !== '' ? baseHashRef.current : undefined
         const result = await onSave(markdown, base)
@@ -112,11 +200,15 @@ export function NotesEditor(props: NotesEditorProps) {
           setBaseHash(result.notes.hash)
           baseHashRef.current = result.notes.hash
           setSavedMarkdown(result.notes.markdown)
+          savedMarkdownRef.current = result.notes.markdown
           setConflict(null)
+          conflictRef.current = null
+          autosaveRef.current?.markSaved(result.notes.markdown)
           onToast('success', t('notes.saved'))
           return true
         }
         if (result.conflict) {
+          conflictRef.current = result
           setConflict(result)
           onToast('warn', t('notes.conflict.title'))
           return false
@@ -164,6 +256,10 @@ export function NotesEditor(props: NotesEditorProps) {
       setBaseHash(fresh.hash)
       baseHashRef.current = fresh.hash
       setConflict(null)
+      conflictRef.current = null
+      savedMarkdownRef.current = fresh.markdown
+      autosaveRef.current?.cancel()
+      autosaveRef.current?.markSaved(fresh.markdown)
       onToast('success', t('notes.conflict.diskLoaded'))
     } catch (error) {
       onToast('error', errorText(error) || t('notes.loadFailed'))
@@ -217,6 +313,9 @@ export function NotesEditor(props: NotesEditorProps) {
         setBaseHash(result.notes.hash)
         baseHashRef.current = result.notes.hash
         setConflict(null)
+        conflictRef.current = null
+        autosaveRef.current?.cancel()
+        autosaveRef.current?.markSaved(result.notes.markdown)
         setAppendOpen(false)
         onToast('success', t('notes.appendQuote.appended'))
         return
@@ -310,7 +409,11 @@ export function NotesEditor(props: NotesEditorProps) {
               placeholder={t('notes.placeholder')}
               value={draft}
               spellCheck={false}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value
+                setDraft(next)
+                scheduleAutosave(next)
+              }}
               onKeyDown={(event) => {
                 if ((event.metaKey || event.ctrlKey) && (event.key === 's' || event.key === 'S')) {
                   event.preventDefault()
