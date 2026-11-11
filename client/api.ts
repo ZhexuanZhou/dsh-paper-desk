@@ -13,6 +13,7 @@ import type {
   ChatsDocument,
   NewPaperChat,
   ComparisonSummary,
+  CardContextTurn,
   NewNoteCard,
   NewRelation,
   NoteCard,
@@ -385,11 +386,25 @@ export const api = {
   updateCard(
     id: string,
     cardId: string,
-    patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>>,
+    patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>,
   ): Promise<CardsDocument> {
     return requestJson<CardsDocument>(`/cards${query({ id, cardId })}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    })
+  },
+
+  synthesizeCard(id: string, turns: readonly CardContextTurn[]): Promise<{ title: string; body: string; tags: string[]; pages: number[] }> {
+    return requestJson<{ title: string; body: string; tags: string[]; pages: number[] }>(`/cards/synthesize${query({ id })}`, {
+      method: 'POST',
+      body: JSON.stringify({ turns }),
+    })
+  },
+
+  summarizeCards(id: string): Promise<{ text: string }> {
+    return requestJson<{ text: string }>(`/cards/summary${query({ id })}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     })
   },
 

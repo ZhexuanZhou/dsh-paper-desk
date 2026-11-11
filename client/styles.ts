@@ -1142,7 +1142,9 @@ export const CSS = `
 .pd-cards-head-spacer { flex: 1 1 auto; }
 .pd-cards-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px; }
 .pd-card-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.pd-card-select { position: absolute; top: 6px; right: 6px; z-index: 2; }
 .pd-card-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1209,6 +1211,14 @@ export const CSS = `
 .pd-card-actions { display: flex; flex-wrap: wrap; gap: 1px; }
 .pd-card-actions .pd-btn { min-height: 22px; padding: 1px 5px; color: ${FG_2}; font-size: 10.5px; }
 .pd-card-actions .pd-btn:hover:not(:disabled) { color: ${FG}; }
+.pd-card-context { margin: 6px 0 2px; border: 1px solid ${B1}; border-radius: 7px; }
+.pd-card-context-head { display: flex; align-items: center; gap: 6px; padding: 4px 7px; }
+.pd-card-context-toggle { flex: 1 1 auto; border: 0; background: transparent; color: ${FG_2}; font: inherit; font-size: 11px; text-align: left; cursor: pointer; padding: 0; }
+.pd-card-context-list { display: flex; flex-direction: column; gap: 3px; max-height: 210px; overflow: auto; padding: 0 7px 7px; }
+.pd-card-context-turn { display: flex; align-items: flex-start; gap: 5px; padding: 3px 0; border-top: 1px dashed ${B1}; font-size: 10.5px; line-height: 1.45; cursor: pointer; }
+.pd-card-context-turn input { margin-top: 2px; flex: 0 0 auto; }
+.pd-card-context-role { flex: 0 0 auto; color: var(--dsw-alias-brand-primary); }
+.pd-card-context-text { color: ${FG_2}; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 54px; overflow: auto; }
 .pd-card-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .pd-card-pages-empty { color: ${FG_2}; font-size: 11.5px; }
 .pd-card-page-add { display: inline-flex; align-items: center; gap: 2px; }

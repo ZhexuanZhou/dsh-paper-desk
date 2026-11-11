@@ -6,7 +6,7 @@
  * presentational — persistence lives in `App`, which owns the `/cards` API.
  */
 import { useEffect, useState } from 'react'
-import type { NoteCard } from '../src/types.js'
+import type { CardContextTurn, NoteCard } from '../src/types.js'
 import { IconEdit, IconNote, IconPlus, IconTrash } from './icons.js'
 import { useT } from './i18n.js'
 import { Button, EmptyState, Field, IconButton, Modal, Spinner, Textarea, TextInput } from './ui.js'
@@ -17,6 +17,7 @@ export interface CardDraft {
   body: string
   tags: string[]
   pages: number[]
+  context: CardContextTurn[]
 }
 
 /** Suggested title: first non-empty line with markdown decoration stripped. */
@@ -86,18 +87,25 @@ export interface CardEditorProps {
   mode: 'create' | 'edit'
   initial: CardDraft | null
   busy: boolean
+  /** Turns available for the context picker (current AI thread). */
+  availableTurns?: readonly CardContextTurn[]
+  /** Turn the selected conversation into a card draft with the Host model. */
+  onSynthesize?: (turns: readonly CardContextTurn[]) => Promise<CardDraft | null>
   onClose: () => void
   onSave: (draft: CardDraft) => void | Promise<void>
   onDelete?: (() => void | Promise<void>) | undefined
 }
 
-export function CardEditor({ open, mode, initial, busy, onClose, onSave, onDelete }: CardEditorProps) {
+export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthesize, onClose, onSave, onDelete }: CardEditorProps) {
   const t = useT()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [tagsText, setTagsText] = useState('')
   const [pages, setPages] = useState<number[]>([])
   const [pageInput, setPageInput] = useState('')
+  const [context, setContext] = useState<CardContextTurn[]>([])
+  const [showContext, setShowContext] = useState(false)
+  const [synthesizing, setSynthesizing] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -106,7 +114,41 @@ export function CardEditor({ open, mode, initial, busy, onClose, onSave, onDelet
     setTagsText((initial?.tags ?? []).join(', '))
     setPages(normalizePages(initial?.pages ?? []))
     setPageInput('')
+    setContext([...(initial?.context ?? [])])
+    setShowContext((initial?.context?.length ?? 0) > 0)
+    setSynthesizing(false)
   }, [open, initial])
+
+  const contextKey = (turn: CardContextTurn): string => turn.id ?? `${turn.role}:${turn.text.slice(0, 120)}`
+  const selectedKeys = new Set(context.map(contextKey))
+
+  const toggleTurn = (turn: CardContextTurn): void => {
+    const key = contextKey(turn)
+    setContext((previous) =>
+      previous.some((entry) => contextKey(entry) === key)
+        ? previous.filter((entry) => contextKey(entry) !== key)
+        : [...previous, turn],
+    )
+  }
+
+  const synthesize = async (): Promise<void> => {
+    if (onSynthesize === undefined || synthesizing) return
+    const turns = context.length > 0 ? context : [...(availableTurns ?? [])]
+    if (turns.length === 0) return
+    setSynthesizing(true)
+    try {
+      const draft = await onSynthesize(turns)
+      if (draft !== null) {
+        setTitle(draft.title)
+        setBody(draft.body)
+        setTagsText(draft.tags.join(', '))
+        setPages(normalizePages(draft.pages))
+        setShowContext(true)
+      }
+    } finally {
+      setSynthesizing(false)
+    }
+  }
 
   const canSave = title.trim() !== '' && body.trim() !== '' && !busy
 
@@ -127,6 +169,7 @@ export function CardEditor({ open, mode, initial, busy, onClose, onSave, onDelet
       body: body.trim(),
       tags: parseTagList(tagsText),
       pages: normalizePages(pages),
+      context,
     })
   }
 
@@ -172,6 +215,39 @@ export function CardEditor({ open, mode, initial, busy, onClose, onSave, onDelet
           ariaLabel={t('cards.bodyLabel')}
         />
       </Field>
+      {(availableTurns !== undefined && availableTurns.length > 0) || context.length > 0 ? (
+        <div className="pd-card-context">
+          <div className="pd-card-context-head">
+            <button type="button" className="pd-card-context-toggle" onClick={() => setShowContext((value) => !value)}>
+              {showContext ? '▾' : '▸'} {t('cards.contextLabel')} · {context.length}
+            </button>
+            {onSynthesize !== undefined ? (
+              <Button size="sm" variant="ghost" loading={synthesizing} disabled={busy || context.length === 0} onClick={() => void synthesize()}>
+                {t('cards.synthesize')}
+              </Button>
+            ) : null}
+          </div>
+          {showContext ? (
+            <div className="pd-card-context-list">
+              {(availableTurns !== undefined && availableTurns.length > 0 ? availableTurns : context).map((turn, index) => {
+                const key = contextKey(turn)
+                return (
+                  <label key={`${key}-${index}`} className="pd-card-context-turn">
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(key)}
+                      onChange={() => toggleTurn(turn)}
+                      disabled={busy || synthesizing}
+                    />
+                    <span className="pd-card-context-role">{turn.role === 'user' ? t('cards.contextUser') : t('cards.contextAssistant')}</span>
+                    <span className="pd-card-context-text">{turn.text}</span>
+                  </label>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <Field label={t('cards.tagsLabel')} hint={t('cards.tagsHint')} htmlFor="pd-card-tags">
         <TextInput
           id="pd-card-tags"
@@ -234,11 +310,16 @@ export interface CardsPanelProps {
   onCopy: (card: NoteCard) => void
   onDelete: (card: NoteCard) => void
   onJumpPages: (card: NoteCard) => void
+  onSummarize?: () => Promise<void>
+  onMerge?: (cards: readonly NoteCard[]) => Promise<void>
 }
 
 export function CardsPanel(props: CardsPanelProps) {
   const t = useT()
-  const { cards, loading, onNew, onEdit, onInsert, onCopy, onDelete, onJumpPages } = props
+  const { cards, loading, onNew, onEdit, onInsert, onCopy, onDelete, onJumpPages, onSummarize, onMerge } = props
+  const [summarizing, setSummarizing] = useState(false)
+  const [merging, setMerging] = useState(false)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set<string>())
 
   return (
     <aside className="pd-cards-rail" aria-label={t('cards.title')}>
@@ -249,6 +330,39 @@ export function CardsPanel(props: CardsPanelProps) {
           {t('cards.count', { n: cards.length })}
         </span>
         <span className="pd-cards-head-spacer" />
+        {onMerge !== undefined ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={merging}
+            disabled={selected.size < 2}
+            onClick={() => {
+              const chosen = cards.filter((card) => selected.has(card.id))
+              if (chosen.length < 2) return
+              setMerging(true)
+              void onMerge(chosen).finally(() => {
+                setMerging(false)
+                setSelected(new Set())
+              })
+            }}
+          >
+            {t('cards.mergeSelected', { n: selected.size })}
+          </Button>
+        ) : null}
+        {onSummarize !== undefined ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={summarizing}
+            disabled={cards.length === 0 || loading}
+            onClick={() => {
+              setSummarizing(true)
+              void onSummarize().finally(() => setSummarizing(false))
+            }}
+          >
+            {t('cards.summarize')}
+          </Button>
+        ) : null}
         <IconButton label={t('cards.create')} onClick={onNew}>
           <IconPlus size={12} />
         </IconButton>
@@ -274,12 +388,31 @@ export function CardsPanel(props: CardsPanelProps) {
           <ul className="pd-card-list">
             {cards.map((card) => (
               <li key={card.id} className="pd-card-item">
+                {onMerge !== undefined ? (
+                  <label className="pd-card-select" title={t('cards.mergeSelect')}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(card.id)}
+                      onChange={(event) => {
+                        setSelected((previous) => {
+                          const next = new Set(previous)
+                          if (event.target.checked) next.add(card.id)
+                          else next.delete(card.id)
+                          return next
+                        })
+                      }}
+                    />
+                  </label>
+                ) : null}
                 <button type="button" className="pd-card-locate" onClick={() => onEdit(card)} title={t('cards.edit')}>
                   <span className="pd-card-title">{card.title}</span>
                   <span className="pd-card-excerpt">{excerpt(card.body)}</span>
                 </button>
-                {card.tags.length > 0 || card.pages.length > 0 ? (
+                {(card.tags.length > 0 || card.pages.length > 0 || (card.context?.length ?? 0) > 0) ? (
                   <div className="pd-card-meta">
+                    {(card.context?.length ?? 0) > 0 ? (
+                      <span className="pd-tag">{t('cards.contextCount', { n: card.context?.length ?? 0 })}</span>
+                    ) : null}
                     {card.pages.map((page) => (
                       <button
                         key={`${card.id}-page-${page}`}

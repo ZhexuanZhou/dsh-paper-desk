@@ -44,7 +44,10 @@ import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { importPaperFromUrl } from './urlImport.js'
 import { createLlmTagger } from './tagging.js'
+import { synthesizeCard, type SynthesizedCard } from './cardsynth.js'
+import { synthesizeNotes } from './notesynth.js'
 import type { AutoTagFn } from './autotag.js'
+import type { CardContextTurn } from './types.js'
 import { ensureText } from './pdf.js'
 import { assistPayload, comparePrompt, discoverRelationsPrompt } from './prompt.js'
 import { listTags, queryPapers, searchLibrary } from './search.js'
@@ -375,7 +378,17 @@ async function enrichPaper(settings: EffectiveSettings, paperId: string): Promis
   }
 }
 
-async function handle(req: Req, res: Res, config: Config, autoTag?: AutoTagFn): Promise<void> {
+type CardSynthFn = (turns: readonly CardContextTurn[]) => Promise<SynthesizedCard>
+type NotesSynthFn = (cards: Awaited<ReturnType<typeof readCards>>['items']) => Promise<string>
+
+async function handle(
+  req: Req,
+  res: Res,
+  config: Config,
+  autoTag?: AutoTagFn,
+  cardSynth?: CardSynthFn,
+  notesSynth?: NotesSynthFn,
+): Promise<void> {
   try {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const method = (req.method ?? 'GET').toUpperCase()
@@ -659,6 +672,35 @@ async function handle(req: Req, res: Res, config: Config, autoTag?: AutoTagFn): 
         return
       }
       return methodNotAllowed(res)
+    }
+
+    if (route === 'cards/synthesize') {
+      if (method !== 'POST') return methodNotAllowed(res)
+      if (cardSynth === undefined) throw new HttpError(503, 'card synthesis is unavailable')
+      const body = await readJsonBody(req)
+      const rawTurns = body['turns']
+      if (!Array.isArray(rawTurns) || rawTurns.length === 0) throw new HttpError(400, 'turns are required')
+      const turns: CardContextTurn[] = []
+      for (const value of rawTurns.slice(0, 12)) {
+        if (value === null || typeof value !== 'object') continue
+        const record = value as Record<string, unknown>
+        const role = record['role'] === 'user' ? 'user' : record['role'] === 'assistant' ? 'assistant' : null
+        const text = typeof record['text'] === 'string' ? record['text'].trim() : ''
+        if (role === null || text === '') continue
+        turns.push({ role, text: text.slice(0, 4000), ...(typeof record['id'] === 'string' ? { id: record['id'] } : {}) })
+      }
+      if (turns.length === 0) throw new HttpError(400, 'no valid turns')
+      json(res, 200, await cardSynth(turns))
+      return
+    }
+
+    if (route === 'cards/summary') {
+      if (method !== 'POST') return methodNotAllowed(res)
+      if (notesSynth === undefined) throw new HttpError(503, 'card summary is unavailable')
+      const id = requirePdfId(q['id'] ?? null)
+      const doc = await readCards(root, id)
+      json(res, 200, { text: await notesSynth(doc.items) })
+      return
     }
 
     if (route === 'cards') {
@@ -1135,8 +1177,19 @@ function loadSettingsForUi(): Record<string, unknown> {
 }
 
 /** The browser panel's data routes, registered under /api/paper-desk. */
-export function buildRoutes(config: Config, autoTag?: AutoTagFn): WebRoute[] {
-  return [{ kind: 'prefix', path: '/api/paper-desk', handler: (req, res) => handle(req, res, config, autoTag) }]
+export function buildRoutes(
+  config: Config,
+  autoTag?: AutoTagFn,
+  cardSynth?: CardSynthFn,
+  notesSynth?: NotesSynthFn,
+): WebRoute[] {
+  return [
+    {
+      kind: 'prefix',
+      path: '/api/paper-desk',
+      handler: (req, res) => handle(req, res, config, autoTag, cardSynth, notesSynth),
+    },
+  ]
 }
 
 export const name = 'paper-desk-workbench'
@@ -1146,8 +1199,10 @@ export const inject = ['webServer']
 
 export function apply(ctx: Context, config: Config): void {
   const autoTag = createLlmTagger(ctx, config)
+  const cardSynth: CardSynthFn = (turns) => synthesizeCard(ctx, config, turns)
+  const notesSynth: NotesSynthFn = (cards) => synthesizeNotes(ctx, config, cards)
   ctx.effect(() => {
-    const disposers = buildRoutes(config, autoTag).map((route) => ctx.webServer.register(route))
+    const disposers = buildRoutes(config, autoTag, cardSynth, notesSynth).map((route) => ctx.webServer.register(route))
     return () => disposers.forEach((dispose) => dispose())
   })
 }

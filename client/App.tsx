@@ -21,6 +21,7 @@ import type {
   ChatsDocument,
   ExtractedText,
   NewAnnotation,
+  CardContextTurn,
   NewNoteCard,
   NoteCard,
   NotesDocument,
@@ -44,6 +45,7 @@ import { errorText, I18nProvider, useT } from './i18n.js'
 import type { Lang } from './i18n.js'
 import { IconBook, IconClose, IconGear, IconImport, IconLang, IconLink, IconSearch, IconSync } from './icons.js'
 import { cardToNotesMarkdown } from './CardsPanel.js'
+import type { CardDraft } from './CardsPanel.js'
 import { CompareView } from './CompareView.js'
 import { LibraryView } from './LibraryView.js'
 import type { SortKey } from './LibraryView.js'
@@ -932,10 +934,85 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     [selectedId, setCardsDoc, pushToast, reportError],
   )
 
+  const handleSynthesizeCard = useCallback(
+    async (turns: readonly CardContextTurn[]): Promise<CardDraft | null> => {
+      const paperId = selectedId
+      if (paperId === null) return null
+      try {
+        const result = await api.synthesizeCard(paperId, turns)
+        return { ...result, context: [...turns] }
+      } catch (error) {
+        reportError(error, 'cards.saveFailed')
+        return null
+      }
+    },
+    [selectedId, reportError],
+  )
+
+  const handleSummarizeCards = useCallback(async (): Promise<void> => {
+    const paperId = selectedId
+    if (paperId === null) return
+    try {
+      const result = await api.summarizeCards(paperId)
+      const text = result.text.trim()
+      if (text === '') {
+        pushToast('warn', tRef.current('cards.summarizeFailed'))
+        return
+      }
+      const appended = await api.appendNote(paperId, {
+        section: 'summary',
+        text: `### 卡片总结\n\n${text}`,
+        by: 'user',
+      })
+      if (appended.ok) {
+        setDetail((previous) =>
+          previous !== null && previous.meta.id === paperId ? { ...previous, notes: appended.notes } : previous,
+        )
+        pushToast('success', tRef.current('cards.summarized'))
+      } else {
+        pushToast('warn', tRef.current('cards.summarizeFailed'))
+      }
+    } catch (error) {
+      reportError(error, 'cards.summarizeFailed')
+    }
+  }, [selectedId, pushToast, reportError])
+
+  const handleMergeCards = useCallback(
+    async (chosen: readonly NoteCard[]): Promise<void> => {
+      const paperId = selectedId
+      if (paperId === null || chosen.length < 2) return
+      try {
+        const pages = [...new Set(chosen.flatMap((card) => card.pages))].slice(0, 20)
+        const tags = [...new Set(chosen.flatMap((card) => card.tags))].slice(0, 12)
+        const context = chosen.flatMap((card) => card.context ?? []).slice(0, 12)
+        const body = chosen
+          .map((card) => `## ${card.title}\n\n${card.body.trim()}`)
+          .join('\n\n')
+        const created = await api.addCard(paperId, {
+          title: chosen[0]?.title ?? 'Merged card',
+          body,
+          tags,
+          pages,
+          context,
+          source: 'user',
+        })
+        let latest = created
+        for (const card of chosen) {
+          latest = await api.deleteCard(paperId, card.id)
+        }
+        setCardsDoc(latest)
+        pushToast('success', tRef.current('cards.merged'))
+      } catch (error) {
+        reportError(error, 'cards.mergeFailed')
+      }
+    },
+    [selectedId, pushToast, reportError],
+  )
+
   const handleUpdateCard = useCallback(
     async (
       cardId: string,
-      patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>>,
+      patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>,
     ): Promise<void> => {
       const paperId = selectedId
       if (paperId === null) return
@@ -2228,6 +2305,9 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               relationCount={relationCount}
               onOpenRelations={openRelationsOverlay}
               onCreateCard={handleCreateCard}
+              onSynthesizeCard={handleSynthesizeCard}
+              onSummarizeCards={handleSummarizeCards}
+              onMergeCards={handleMergeCards}
               onUpdateCard={handleUpdateCard}
               onDeleteCard={handleDeleteCard}
               onInsertCard={handleInsertCard}

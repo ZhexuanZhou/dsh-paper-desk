@@ -13,6 +13,7 @@ import type {
   AnnotationPatch,
   AnnotationRect,
   AssistTask,
+  CardContextTurn,
   CardsDocument,
   ExtractedText,
   NewAnnotation,
@@ -129,6 +130,7 @@ interface CardEditorState {
   cardId: string | null
   source: 'ai' | 'user'
   initial: CardDraft
+  availableTurns?: readonly CardContextTurn[]
 }
 
 const READER_TABS: readonly ReaderTab[] = ['read', 'text', 'notes', 'info']
@@ -200,7 +202,10 @@ export interface ReaderViewProps {
   relationCount: number
   onOpenRelations: () => void
   onCreateCard: (input: NewNoteCard) => Promise<string | null>
-  onUpdateCard: (cardId: string, patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>>) => Promise<void>
+  onSynthesizeCard: (turns: readonly CardContextTurn[]) => Promise<CardDraft | null>
+  onSummarizeCards: () => Promise<void>
+  onMergeCards: (cards: readonly NoteCard[]) => Promise<void>
+  onUpdateCard: (cardId: string, patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>) => Promise<void>
   onDeleteCard: (cardId: string) => Promise<void>
   onInsertCard: (card: NoteCard) => Promise<void>
   onCopyCard: (card: NoteCard) => Promise<void>
@@ -436,6 +441,9 @@ export function ReaderView(props: ReaderViewProps) {
     relationCount,
     onOpenRelations,
     onCreateCard,
+    onSynthesizeCard,
+    onSummarizeCards,
+    onMergeCards,
     onUpdateCard,
     onDeleteCard,
     onInsertCard,
@@ -864,16 +872,38 @@ export function ReaderView(props: ReaderViewProps) {
 
   /* ── note cards (AI answer / manual) ─────────────────────────────────── */
 
+  const currentConversationTurns = (): CardContextTurn[] => {
+    const turnList: CardContextTurn[] = []
+    const snapshot = ai.getSnapshot()
+    if (snapshot.rows.length > 0) {
+      for (const row of snapshot.rows) {
+        if (row.kind === 'user' || row.kind === 'assistant') {
+          turnList.push({ id: row.id, role: row.kind, text: row.text })
+        }
+      }
+    } else if (activeChat !== null && activeChat !== undefined) {
+      activeChat.messages.forEach((message, index) => {
+        turnList.push({ id: `history-${index}`, role: message.role, text: message.text })
+      })
+    }
+    return turnList
+  }
+
   const openNewCard = (): void => {
     setCardEditor({
       mode: 'create',
       cardId: null,
       source: 'user',
-      initial: { title: '', body: '', tags: [], pages: [] },
+      initial: { title: '', body: '', tags: [], pages: [], context: [] },
+      availableTurns: currentConversationTurns(),
     })
   }
 
-  const openCardFromAnswer = (row: AiRow): void => {
+  const openCardFromAnswer = (
+    row: AiRow,
+    availableTurns?: readonly CardContextTurn[],
+    defaultContext?: readonly CardContextTurn[],
+  ): void => {
     setCardEditor({
       mode: 'create',
       cardId: null,
@@ -883,7 +913,9 @@ export function ReaderView(props: ReaderViewProps) {
         body: row.text,
         tags: [],
         pages: collectCitedPages([row]),
+        context: defaultContext === undefined ? [] : [...defaultContext],
       },
+      ...(availableTurns !== undefined ? { availableTurns } : {}),
     })
   }
 
@@ -892,7 +924,14 @@ export function ReaderView(props: ReaderViewProps) {
       mode: 'edit',
       cardId: card.id,
       source: card.source === 'ai' ? 'ai' : 'user',
-      initial: { title: card.title, body: card.body, tags: [...card.tags], pages: [...card.pages] },
+      initial: {
+        title: card.title,
+        body: card.body,
+        tags: [...card.tags],
+        pages: [...card.pages],
+        context: [...(card.context ?? [])],
+      },
+      availableTurns: currentConversationTurns(),
     })
   }
 
@@ -908,6 +947,7 @@ export function ReaderView(props: ReaderViewProps) {
           tags: draft.tags,
           pages: draft.pages,
           source: editor.source,
+          context: draft.context,
         })
       } else if (editor.cardId !== null) {
         await onUpdateCard(editor.cardId, {
@@ -915,6 +955,7 @@ export function ReaderView(props: ReaderViewProps) {
           body: draft.body,
           tags: draft.tags,
           pages: draft.pages,
+          context: draft.context,
         })
       }
       setCardEditor(null)
@@ -1430,6 +1471,8 @@ export function ReaderView(props: ReaderViewProps) {
               onCopy={(card) => void onCopyCard(card)}
               onDelete={(card) => setPendingCardDelete(card)}
               onJumpPages={jumpToCardPage}
+              onSummarize={onSummarizeCards}
+              onMerge={onMergeCards}
             />
           </div>
         </div>
@@ -1574,6 +1617,8 @@ export function ReaderView(props: ReaderViewProps) {
         mode={cardEditor?.mode ?? 'create'}
         initial={cardEditor?.initial ?? null}
         busy={cardSaving}
+        availableTurns={cardEditor?.availableTurns}
+        onSynthesize={onSynthesizeCard}
         onClose={() => setCardEditor(null)}
         onSave={(draft) => void saveCard(draft)}
         onDelete={cardEditor?.mode === 'edit' ? () => void deleteCardFromEditor() : undefined}

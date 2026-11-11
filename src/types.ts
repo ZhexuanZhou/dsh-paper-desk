@@ -377,6 +377,14 @@ export const ANNOTATION_LIMITS = {
 /** Where a note card came from. */
 export type CardSource = 'ai' | 'user' | 'agent'
 
+/** One turn of the conversation a card was distilled from. */
+export interface CardContextTurn {
+  /** Stable id from the AI thread row when available. */
+  id?: string
+  role: 'user' | 'assistant'
+  text: string
+}
+
 /** One distilled note card attached to a paper (`papers/<id>/cards.json`). */
 export interface NoteCard {
   id: string
@@ -387,6 +395,8 @@ export interface NoteCard {
   /** Pages the card refers to (1-based). */
   pages: number[]
   source: CardSource
+  /** Conversation turns this card was distilled from (collapsed in the UI). */
+  context?: CardContextTurn[]
   createdAt: string
   updatedAt: string
 }
@@ -404,6 +414,7 @@ export interface NewNoteCard {
   tags?: string[]
   pages?: number[]
   source?: CardSource
+  context?: CardContextTurn[]
 }
 
 /* ── Paper relations (knowledge graph) ─────────────────────────────────── */

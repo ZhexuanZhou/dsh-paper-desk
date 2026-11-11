@@ -19,6 +19,7 @@ const lib = (...parts) => path.join(here, '..', 'lib', ...parts)
 const { ensureLayout, createPaper, getPaper, listPapers, deletePaper, readMeta, bibtexOf, importInbox } =
   await import(lib('library.js'))
 const { appendToNotes, readNotes, writeNotes } = await import(lib('notes.js'))
+const { addCard, updateCard, readCards } = await import(lib('cards.js'))
 const { ensureText } = await import(lib('pdf.js'))
 const { searchLibrary } = await import(lib('search.js'))
 const { syncStatus } = await import(lib('sync.js'))
@@ -116,6 +117,30 @@ try {
   const detail = await getPaper(root, created.id)
   check('getPaper returns detail', detail !== null && detail.meta.id === created.id)
   check('initial notes exist', detail?.notes.exists === true)
+
+  const cardDoc = await addCard(root, created.id, {
+    title: 'Context card',
+    body: 'A conclusion from a multi-turn conversation.',
+    tags: ['diffusion-model'],
+    pages: [2],
+    context: [
+      { role: 'user', text: 'Why does this method work?' },
+      { role: 'assistant', text: 'Because it aligns the reward with answer quality.' },
+    ],
+  })
+  check(
+    'card context persisted',
+    cardDoc.items[0]?.context?.length === 2 && cardDoc.items[0]?.context?.[0]?.role === 'user',
+  )
+  const updatedCard = await updateCard(root, created.id, cardDoc.items[0].id, {
+    context: [
+      { role: 'user', text: 'Why?' },
+      { role: 'assistant', text: 'Alignment.' },
+      { role: 'user', text: 'What is the evidence?' },
+    ],
+  })
+  check('card context appendable', updatedCard.items[0]?.context?.length === 3)
+  check('readCards returns context', (await readCards(root, created.id)).items[0]?.context?.length === 3)
 
   // Text extraction (pdfjs) — real PDF may take longer.
   const text = await ensureText(root, created.id, {

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { ReactElement } from 'react'
 import type { AssistTask } from '../src/types.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
+import type { CardContextTurn } from '../src/types.js'
 import { cleanUserPrompt } from './chatText.js'
 import { Markdown } from './markdown.js'
 import { Button, Spinner } from './ui.js'
@@ -70,8 +71,12 @@ export interface AiPanelProps {
   onCopy: (text: string) => void | Promise<void>
   onOpenInSession: () => void | Promise<void>
   onJumpPage: (page: number) => void
-  /** Per-answer 「生成卡片」 action (omitted → no per-message card button). */
-  onCreateCard?: (row: AiRow) => void
+  /** Per-answer 「保存为卡片」 action (omitted → no per-message card button). */
+  onCreateCard?: (
+    row: AiRow,
+    availableTurns?: readonly CardContextTurn[],
+    defaultContext?: readonly CardContextTurn[],
+  ) => void
 }
 
 /** Distinct cited pages from the assistant text, capped at 8. */
@@ -224,6 +229,29 @@ export function AiPanel(props: AiPanelProps) {
     }
     return null
   }, [rows])
+
+  const conversationTurns = useMemo<CardContextTurn[]>(() => {
+    const out: CardContextTurn[] = []
+    if (rows.length > 0) {
+      for (const row of rows) {
+        if (row.kind === 'user' || row.kind === 'assistant') {
+          out.push({ id: row.id, role: row.kind, text: row.text })
+        }
+      }
+    } else {
+      history.forEach((message, index) => {
+        out.push({ id: `history-${index}`, role: message.role, text: message.text })
+      })
+    }
+    return out
+  }, [rows, history])
+
+  const contextForRow = (row: AiRow): CardContextTurn[] => {
+    const index = conversationTurns.findIndex((turn) => turn.id === row.id)
+    if (index < 0) return []
+    const start = Math.max(0, index - 2)
+    return conversationTurns.slice(start, index + 1).map((turn) => ({ ...turn }))
+  }
 
   const toolCount = rows.reduce((count, row) => count + (row.kind === 'tool' ? 1 : 0), 0)
   const visibleRows = useMemo(
@@ -515,7 +543,11 @@ export function AiPanel(props: AiPanelProps) {
             {row.streaming === true ? <span className="pd-ai-caret" aria-hidden="true" /> : null}
             {row.streaming !== true && onCreateCard !== undefined ? (
               <div className="pd-ai-row-actions">
-                <Button size="sm" variant="ghost" onClick={() => onCreateCard(row)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onCreateCard(row, conversationTurns, contextForRow(row))}
+                >
                   {labels.createCard}
                 </Button>
               </div>
@@ -611,6 +643,23 @@ export function AiPanel(props: AiPanelProps) {
                   <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
                     <div className="pd-ai-assistant">
                       <Markdown markdown={message.text} />
+                      {onCreateCard !== undefined ? (
+                        <div className="pd-ai-row-actions">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              const row: AiRow = { id: `history-${index}`, kind: 'assistant', text: message.text }
+                              const turnIndex = conversationTurns.findIndex((turn) => turn.id === row.id)
+                              const defaultContext =
+                                turnIndex < 0 ? [] : conversationTurns.slice(Math.max(0, turnIndex - 2), turnIndex + 1)
+                              onCreateCard(row, conversationTurns, defaultContext)
+                            }}
+                          >
+                            {labels.createCard}
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ),
@@ -776,16 +825,6 @@ export function AiPanel(props: AiPanelProps) {
               {labels.stop}
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={answer === null || answer.trim() === ''}
-            onClick={() => {
-              if (answer !== null && answer.trim() !== '') void onSaveToNotes(answer)
-            }}
-          >
-            {labels.saveToNotes}
-          </Button>
           <Button
             size="sm"
             variant="ghost"

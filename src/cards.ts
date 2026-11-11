@@ -21,7 +21,7 @@ import { constants } from 'node:fs'
 import { copyFile, mkdir, readFile, unlink } from 'node:fs/promises'
 import path from 'node:path'
 
-import type { CardSource, CardsDocument, NewNoteCard, NoteCard } from './types.js'
+import type { CardContextTurn, CardSource, CardsDocument, NewNoteCard, NoteCard } from './types.js'
 import { fileInfo, nowIso, posixJoin, safeJoin, writeJsonFile } from './util.js'
 
 /** File name of a paper's card document inside its directory. */
@@ -46,6 +46,8 @@ const CARD_LIMITS = {
   tagLength: 40,
   pages: 20,
   page: 999,
+  contextTurns: 12,
+  contextText: 4000,
 } as const
 
 const SOURCES: readonly CardSource[] = ['ai', 'user', 'agent']
@@ -152,9 +154,20 @@ function coerceCard(value: unknown): NoteCard | null {
   if (pages === null) return null
 
   const source = isCardSource(record['source']) ? record['source'] : DEFAULT_SOURCE
+  const context = coerceContext(record['context'])
   const createdAt = isoOr(record['createdAt'], nowIso())
   const updatedAt = isoOr(record['updatedAt'], createdAt)
-  return { id, title, body, tags, pages, source, createdAt, updatedAt }
+  return {
+    id,
+    title,
+    body,
+    tags,
+    pages,
+    source,
+    ...(context.length > 0 ? { context } : {}),
+    createdAt,
+    updatedAt,
+  }
 }
 
 function isCardSource(value: unknown): value is CardSource {
@@ -198,6 +211,21 @@ function coercePages(value: unknown): number[] | null {
     if (!pages.includes(entry)) pages.push(entry)
   }
   return pages.length <= CARD_LIMITS.pages ? pages : null
+}
+
+function coerceContext(value: unknown): CardContextTurn[] {
+  if (!Array.isArray(value)) return []
+  const turns: CardContextTurn[] = []
+  for (const entry of value.slice(0, CARD_LIMITS.contextTurns)) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    if (record['role'] !== 'user' && record['role'] !== 'assistant') continue
+    const text = storedText(record['text'], CARD_LIMITS.contextText)
+    if (text === null) continue
+    const id = typeof record['id'] === 'string' && record['id'].length <= MAX_CARD_ID_LENGTH ? record['id'] : undefined
+    turns.push({ ...(id !== undefined ? { id } : {}), role: record['role'], text })
+  }
+  return turns
 }
 
 function isValidPage(value: unknown): value is number {
@@ -294,6 +322,7 @@ interface NewCardFields {
   tags: string[]
   pages: number[]
   source: CardSource
+  context: CardContextTurn[]
 }
 
 /** Validate a `NewNoteCard` payload, keeping only the known fields. */
@@ -307,7 +336,30 @@ function sanitizeNewCard(input: NewNoteCard): NewCardFields {
   const tags = sanitizeTags(record['tags'])
   const pages = sanitizePages(record['pages'])
   const source = record['source'] === undefined ? DEFAULT_SOURCE : assertSource(record['source'])
-  return { title, body, tags, pages, source }
+  const context = sanitizeContext(record['context'])
+  return { title, body, tags, pages, source, context }
+}
+
+function sanitizeContext(value: unknown): CardContextTurn[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw fail('card context must be an array', 400)
+  const turns: CardContextTurn[] = []
+  for (const entry of value) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw fail('card context turns must be objects', 400)
+    }
+    const record = entry as Record<string, unknown>
+    const role = record['role']
+    if (role !== 'user' && role !== 'assistant') throw fail('card context role must be user or assistant', 400)
+    const text = storedText(record['text'], CARD_LIMITS.contextText)
+    if (text === null) throw fail('card context text is empty or too long', 400)
+    const id = typeof record['id'] === 'string' && record['id'].length <= MAX_CARD_ID_LENGTH ? record['id'] : undefined
+    turns.push({ ...(id !== undefined ? { id } : {}), role, text })
+  }
+  if (turns.length > CARD_LIMITS.contextTurns) {
+    throw fail(`too many card context turns (max ${CARD_LIMITS.contextTurns})`, 400)
+  }
+  return turns
 }
 
 function sanitizeTitle(value: unknown): string {
@@ -435,7 +487,7 @@ export async function updateCard(
   root: string,
   paperId: string,
   cardId: string,
-  patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>>,
+  patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>,
 ): Promise<CardsDocument> {
   assertPaperId(paperId)
   const id = assertCardId(cardId)
@@ -443,11 +495,12 @@ export async function updateCard(
     throw fail('card patch must be an object', 400)
   }
   const record = patch as unknown as Record<string, unknown>
-  const update: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages'>> = {}
+  const update: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>> = {}
   if (record['title'] !== undefined) update.title = sanitizeTitle(record['title'])
   if (record['body'] !== undefined) update.body = sanitizeBody(record['body'])
   if (record['tags'] !== undefined) update.tags = sanitizeTags(record['tags'])
   if (record['pages'] !== undefined) update.pages = sanitizePages(record['pages'])
+  if (record['context'] !== undefined) update.context = sanitizeContext(record['context'])
 
   return mutateDocument(root, paperId, (doc) => {
     const index = doc.items.findIndex((item) => item.id === id)
@@ -460,6 +513,7 @@ export async function updateCard(
       body: update.body !== undefined ? update.body : current.body,
       tags: update.tags !== undefined ? update.tags : current.tags,
       pages: update.pages !== undefined ? update.pages : current.pages,
+      context: update.context !== undefined ? update.context : current.context,
       updatedAt: now,
     }
     const items = [...doc.items]
