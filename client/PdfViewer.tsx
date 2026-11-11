@@ -242,6 +242,23 @@ const VIEWER_CSS = `
 }
 .pdv-scrollThumb:hover { background: color-mix(in srgb, var(--dsw-alias-label-secondary) 68%, transparent); }
 .pdv-scrollRail[data-dragging='true'] .pdv-scrollThumb { cursor: grabbing; }
+.pdv-scrollGhost {
+  position: absolute;
+  right: 24px;
+  top: 0;
+  min-width: 42px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2));
+  box-shadow: 0 4px 14px color-mix(in srgb, #000 18%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.pdv-scrollRail[data-dragging='true'] .pdv-scrollGhost { opacity: 1; }
 .pdv-pages {
   display: flex;
   flex-direction: column;
@@ -881,6 +898,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const resizeCooldownTimerRef = useRef<number | null>(null)
   const scrollRailRef = useRef<HTMLDivElement | null>(null)
   const scrollThumbRef = useRef<HTMLDivElement | null>(null)
+  const scrollGhostRef = useRef<HTMLDivElement | null>(null)
   const scrollbarSyncFrameRef = useRef<number | null>(null)
   const scrollbarDraggingRef = useRef(false)
   const zoomRef = useRef(1)
@@ -1531,6 +1549,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (scrollbarSyncFrameRef.current !== null) return
     scrollbarSyncFrameRef.current = window.requestAnimationFrame(() => {
       scrollbarSyncFrameRef.current = null
+      if (scrollbarDraggingRef.current) return
       const scroller = scrollerRef.current
       const rail = scrollRailRef.current
       const thumb = scrollThumbRef.current
@@ -1579,33 +1598,63 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (maxScroll <= 1) return
     event.preventDefault()
     const railRect = rail.getBoundingClientRect()
-    const thumbHeight = thumb.getBoundingClientRect().height
+    const thumbRect = thumb.getBoundingClientRect()
+    const thumbHeight = thumbRect.height
+    const trackHeight = Math.max(1, railRect.height - thumbHeight)
     const target = event.target as Element
     const draggingThumb = target.closest('.pdv-scrollThumb') !== null
-    let startY = event.clientY
-    let startScroll = scroller.scrollTop
-    if (!draggingThumb) {
-      const ratio = Math.min(1, Math.max(0, (event.clientY - railRect.top - thumbHeight / 2) / Math.max(1, railRect.height - thumbHeight)))
-      scroller.scrollTop = ratio * maxScroll
-      startY = event.clientY
-      startScroll = scroller.scrollTop
+    const pointerOffset = event.clientY - thumbRect.top
+    let targetScroll = scroller.scrollTop
+    const ghost = scrollGhostRef.current
+
+    const positionThumb = (desiredTop: number): void => {
+      const top = Math.min(trackHeight, Math.max(0, desiredTop))
+      thumb.style.transform = `translateY(${top}px)`
+      const ratio = top / trackHeight
+      targetScroll = ratio * maxScroll
+      if (ghost !== null) {
+        ghost.textContent = `${Math.max(1, Math.min(numPages, Math.round(ratio * Math.max(0, numPages - 1)) + 1))} / ${numPages}`
+        ghost.style.top = `${top + thumbHeight / 2}px`
+      }
     }
+
+    if (draggingThumb) {
+      positionThumb(thumbRect.top - railRect.top)
+    } else {
+      // Track click: centre the thumb on the click, but do not touch the PDF
+      // scroll offset yet. Dragging a huge PDF stays a pure thumb animation.
+      positionThumb(event.clientY - railRect.top - thumbHeight / 2)
+    }
+
     rail.dataset.dragging = 'true'
     scrollbarDraggingRef.current = true
+    const startY = event.clientY
+    const startTop = draggingThumb ? thumbRect.top - railRect.top : parseFloat(thumb.style.transform.replace(/[^0-9.-]/g, '')) || 0
+
     const onMove = (moveEvent: PointerEvent): void => {
-      const usable = Math.max(1, railRect.height - thumbHeight)
-      const next = startScroll + ((moveEvent.clientY - startY) / usable) * maxScroll
-      scroller.scrollTop = Math.min(maxScroll, Math.max(0, next))
+      if (draggingThumb) positionThumb(startTop + moveEvent.clientY - startY)
+      else positionThumb(moveEvent.clientY - railRect.top - thumbHeight / 2)
     }
-    const onUp = (): void => {
+    const finish = (apply: boolean): void => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
       delete rail.dataset.dragging
       scrollbarDraggingRef.current = false
+      if (!apply) {
+        syncScrollbar()
+        return
+      }
+      // Commit once on release: no per-frame PDF relayout or page rendering.
+      scroller.scrollTop = Math.min(maxScroll, Math.max(0, targetScroll))
       updateCurrentPage()
+      syncScrollbar()
     }
+    const onUp = (): void => finish(true)
+    const onCancel = (): void => finish(false)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
   }
 
   /* After scrolling stops, re-rasterise visible pages at full DPR while the
@@ -2538,6 +2587,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         aria-label={labels.page}
       >
         <div className="pdv-scrollThumb" ref={scrollThumbRef} />
+        <div className="pdv-scrollGhost" ref={scrollGhostRef} aria-hidden="true" />
       </div>
       </div>
 
