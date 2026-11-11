@@ -459,6 +459,10 @@ function ReaderViewImpl(props: ReaderViewProps) {
   const [question, setQuestion] = useState('')
   const [drawer, setDrawer] = useState<DrawerState>(() => readDrawerState())
   const [drawerWidth, setDrawerWidth] = useState<number>(() => readDrawerWidth())
+  const drawerElRef = useRef<HTMLElement | null>(null)
+  const drawerDragWidthRef = useRef(drawerWidth)
+  const drawerDragFrameRef = useRef<number | null>(null)
+  const [drawerResizing, setDrawerResizing] = useState(false)
 
   useEffect(() => {
     try {
@@ -772,11 +776,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
   const openDrawer = (drawerTab: DrawerTab): void => {
     setDrawer({ open: true, tab: drawerTab })
   }
-
-  const drawerElRef = useRef<HTMLElement | null>(null)
-  const drawerDragWidthRef = useRef(drawerWidth)
-  const drawerDragFrameRef = useRef<number | null>(null)
-  const [drawerResizing, setDrawerResizing] = useState(false)
 
   /**
    * Same optimization as the paper-list resizer: write the width directly to
