@@ -119,6 +119,8 @@ const RELEASE_DELAY_MS = 1200
 const PREFETCH_IDLE_TIMEOUT_MS = 900
 /** Only this many pages exist in the DOM around the current page. */
 const PAGE_WINDOW = 2
+/** Cap full-page raster DPR: 2x on Retina makes a cold page take seconds. */
+const MAX_RASTER_DPR = 1
 const STYLE_ATTR = 'paper-desk-viewer'
 const PAPER_TONE_STORAGE = 'paperdesk:paper-tone'
 const HIGHLIGHT_COLOR_STORAGE = 'paperdesk:highlight-color'
@@ -1852,7 +1854,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   }, [])
 
   const renderDpr = useCallback(
-    (): number => (scrollingRef.current || windowResizingRef.current || resizeCooldownRef.current ? 1 : currentDpr()),
+    (): number =>
+      scrollingRef.current || windowResizingRef.current || resizeCooldownRef.current
+        ? 1
+        : Math.min(currentDpr(), MAX_RASTER_DPR),
     [],
   )
 
@@ -2342,7 +2347,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
      low-resolution versions stay visible until each replacement is ready. */
   useEffect(() => {
     if (status !== 'ready' || scrollingRef.current) return
-    const key = renderKey(zoomRef.current, currentDpr())
+    const key = renderKey(zoomRef.current, renderDpr())
     for (const page of visibleRef.current) {
       const view = pagesRef.current.get(page)
       if (view === undefined || view.renderedKey === key || view.pendingKey === key) continue
@@ -2355,7 +2360,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       view.previewKey = key
       void renderPage(page)
     }
-  }, [qualityVersion, status, renderPage])
+  }, [qualityVersion, status, renderPage, renderDpr])
 
   /* Warm the next/previous page while the reader is idle, so fast sequential
      flips usually find a ready canvas instead of a blank page. */
