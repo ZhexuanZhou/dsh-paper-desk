@@ -128,7 +128,8 @@ export function LibraryView(props: LibraryViewProps) {
               aria-label={t('list.collapse')}
               onClick={onToggleCollapsed}
             >
-              ‹
+              <span aria-hidden="true">‹</span>
+              <span className="pd-list-collapse-label">{t('list.collapseShort')}</span>
             </button>
             <Select
               small
@@ -290,6 +291,8 @@ export function LibraryView(props: LibraryViewProps) {
         aria-orientation="vertical"
         aria-label={t('list.resize')}
         onPointerDown={beginResize}
+        onDoubleClick={onToggleCollapsed}
+        title={t('list.collapse')}
       />
     </section>
   )

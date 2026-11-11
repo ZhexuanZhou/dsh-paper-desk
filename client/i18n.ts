@@ -68,6 +68,7 @@ const zh = {
   // ── library list ───────────────────────────────────────────────────────
   'list.title': '论文库',
   'list.collapse': '收起论文列表',
+  'list.collapseShort': '收起',
   'list.restore': '展开论文列表',
   'list.resize': '调整论文列表宽度',
   'list.count': '{n} 篇',
@@ -619,6 +620,7 @@ const en: Record<DictKey, string> = {
   // ── library list ───────────────────────────────────────────────────────
   'list.title': 'Library',
   'list.collapse': 'Collapse paper list',
+  'list.collapseShort': 'Hide',
   'list.restore': 'Show paper list',
   'list.resize': 'Resize paper list',
   'list.count': '{n} papers',

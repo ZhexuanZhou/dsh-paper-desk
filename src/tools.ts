@@ -10,6 +10,7 @@ import { readCards } from './cards.js'
 import { readRelations, relationForPaper } from './relations.js'
 import type { Config } from './config.js'
 import { createPaper, readMeta, updateMeta } from './library.js'
+import type { AutoTagFn } from './autotag.js'
 import { appendToNotes, readNotes } from './notes.js'
 import { ensureText, pageText } from './pdf.js'
 import { listTags, queryPapers, searchLibrary } from './search.js'
@@ -71,7 +72,7 @@ export interface ToolRegistryLike {
  * Register the `paper_*` tools. Returns one disposer that unregisters them all,
  * so the caller can own the registration through a single `ctx.effect`.
  */
-export function registerTools(tools: ToolRegistryLike, config: Config): () => void {
+export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?: AutoTagFn): () => void {
   const settings = (): EffectiveSettings => effectiveSettings(config)
   const disposers: (() => void)[] = []
   const add = (definition: ToolDefinition): void => {
@@ -504,6 +505,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config): () => vo
             source: 'agent',
             meta,
             enrich: current.enrich,
+            autoTag,
             language: current.language,
             device: deviceShort(),
           })

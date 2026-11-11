@@ -220,9 +220,14 @@ export const CSS = `
 }
 .pd-list-restore:hover { color: ${FG}; background: ${L2}; }
 .pd-list-collapse {
-  width: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: auto;
+  min-width: 22px;
   height: 22px;
-  border: 0;
+  padding: 0 6px;
+  border: 1px solid ${B1};
   border-radius: 5px;
   background: transparent;
   color: ${FG_2};
@@ -232,6 +237,7 @@ export const CSS = `
   cursor: pointer;
 }
 .pd-list-collapse:hover { color: ${FG}; background: ${HOVER}; }
+.pd-list-collapse-label { font-size: 10px; letter-spacing: .02em; }
 .pd-pane-detail { flex: 1 1 auto; min-width: 0; position: relative; }
 .pd-pane-single { flex: 1 1 auto; min-width: 0; overflow: auto; }
 

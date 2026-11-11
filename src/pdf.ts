@@ -183,7 +183,7 @@ function isLowText(pages: PageText[]): boolean {
  * Throws a descriptive `Error` for unreadable/encrypted/corrupt PDFs and on
  * timeout; callers (e.g. `ensureText`) may degrade to `text: null`.
  */
-export async function extractText(absPath: string): Promise<ExtractedText> {
+export async function extractText(absPath: string, maxPages = 0): Promise<ExtractedText> {
   const bytes = await readPdfBytes(absPath)
   const sourceSha256 = sha256(bytes)
   const deadline = Date.now() + EXTRACT_TIMEOUT_MS
@@ -193,7 +193,8 @@ export async function extractText(absPath: string): Promise<ExtractedText> {
     const pageCount = doc.numPages
     const pages: PageText[] = []
 
-    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    const lastPage = maxPages > 0 ? Math.min(pageCount, Math.floor(maxPages)) : pageCount
+    for (let pageNumber = 1; pageNumber <= lastPage; pageNumber += 1) {
       const page = await withDeadline(
         deadline,
         doc.getPage(pageNumber),

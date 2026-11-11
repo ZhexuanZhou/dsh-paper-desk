@@ -25,7 +25,7 @@ import {
   normalizeDoi,
 } from './metadata.js'
 import type { PdfGuess } from './metadata.js'
-import { autoTags } from './autotag.js'
+import { autoTags, type AutoTagFn } from './autotag.js'
 import {
   extractNotePreview,
   initialNotesMarkdown,
@@ -415,6 +415,8 @@ export interface CreatePaperOptions {
   sourceUrl?: string
   meta?: Partial<PaperMeta>
   enrich?: boolean
+  /** Optional host-side tagger (LLM); falls back to the local taxonomy. */
+  autoTag?: AutoTagFn
   language: Language
   device?: string
 }
@@ -563,12 +565,26 @@ export async function createPaper(
       (arxivId ? `https://arxiv.org/abs/${arxivId}` : '')
     const keywords = stringArray(explicit.keywords)
     const explicitTags = stringArray(explicit.tags)
-    // New papers with an abstract get deterministic topic tags unless the
-    // caller supplied tags explicitly. User/AI edits always take precedence.
-    const tags =
-      explicitTags.length > 0
-        ? explicitTags
-        : autoTags({ title, abstract, keywords, venue })
+    let tags = explicitTags
+    if (tags.length === 0 && abstract.trim().length > 0) {
+      // Prefer the Host LLM (abstract + introduction). If no model is
+      // available the tagger itself falls back to the deterministic taxonomy.
+      let generated: readonly string[] = []
+      if (opts.autoTag !== undefined) {
+        try {
+          generated = await opts.autoTag({ title, abstract, keywords, venue, pdfAbs: tempAbs })
+        } catch {
+          generated = []
+        }
+      }
+      if (generated.length === 0) {
+        generated = autoTags({ title, abstract, keywords, venue })
+      }
+      tags = generated
+        .map((tag) => String(tag).trim())
+        .filter((tag) => tag.length > 0)
+        .slice(0, 5)
+    }
 
     const id = await uniquePaperId(root, title, year, sha)
     const dirRel = paperDirRel(id)
@@ -729,7 +745,7 @@ export async function stats(
  * removed from the inbox (known duplicates too). Returns the ids of
  * *newly* created papers (an already-known paper is not counted).
  */
-export async function importInbox(root: string, language: Language): Promise<string[]> {
+export async function importInbox(root: string, language: Language, autoTag?: AutoTagFn): Promise<string[]> {
   let entries
   try {
     entries = await readdir(safeJoin(root, INBOX_DIR), { withFileTypes: true })
@@ -749,7 +765,7 @@ export async function importInbox(root: string, language: Language): Promise<str
     // Zero-byte files are usually iCloud placeholders: leave them for later.
     if (info === null || info.size === 0) continue
     try {
-      const created = await createPaper(root, { sourcePath: absPath, source: 'inbox', language })
+      const created = await createPaper(root, { sourcePath: absPath, source: 'inbox', language, autoTag })
       await rm(absPath, { force: true }).catch(() => {})
       if (!created.duplicated && !seen.has(created.id)) {
         seen.add(created.id)

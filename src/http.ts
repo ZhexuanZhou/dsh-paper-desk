@@ -43,6 +43,8 @@ import {
 import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { importPaperFromUrl } from './urlImport.js'
+import { createLlmTagger } from './tagging.js'
+import type { AutoTagFn } from './autotag.js'
 import { ensureText } from './pdf.js'
 import { assistPayload, comparePrompt, discoverRelationsPrompt } from './prompt.js'
 import { listTags, queryPapers, searchLibrary } from './search.js'
@@ -373,7 +375,7 @@ async function enrichPaper(settings: EffectiveSettings, paperId: string): Promis
   }
 }
 
-async function handle(req: Req, res: Res, config: Config): Promise<void> {
+async function handle(req: Req, res: Res, config: Config, autoTag?: AutoTagFn): Promise<void> {
   try {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const method = (req.method ?? 'GET').toUpperCase()
@@ -485,6 +487,7 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
             sourcePath: absolute,
             source: 'import',
             enrich,
+            autoTag,
             language: settings.language,
             device: deviceShort(),
           })
@@ -509,6 +512,7 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
             fileName: safeFileName,
             source: 'import',
             enrich,
+            autoTag,
             language: settings.language,
             device: deviceShort(),
           })
@@ -530,6 +534,7 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
           language: settings.language,
           device: deviceShort(),
           enrich: settings.enrich,
+          autoTag,
         })
         json(res, 200, created)
       } catch (error) {
@@ -936,7 +941,7 @@ async function handle(req: Req, res: Res, config: Config): Promise<void> {
 
     if (route === 'inbox') {
       if (method !== 'POST') return methodNotAllowed(res)
-      const imported = await importInbox(root, settings.language)
+      const imported = await importInbox(root, settings.language, autoTag)
       const papers = await queryPapers(root, { limit: 200 })
       json(res, 200, { imported, papers })
       return
@@ -1130,8 +1135,8 @@ function loadSettingsForUi(): Record<string, unknown> {
 }
 
 /** The browser panel's data routes, registered under /api/paper-desk. */
-export function buildRoutes(config: Config): WebRoute[] {
-  return [{ kind: 'prefix', path: '/api/paper-desk', handler: (req, res) => handle(req, res, config) }]
+export function buildRoutes(config: Config, autoTag?: AutoTagFn): WebRoute[] {
+  return [{ kind: 'prefix', path: '/api/paper-desk', handler: (req, res) => handle(req, res, config, autoTag) }]
 }
 
 export const name = 'paper-desk-workbench'
@@ -1140,8 +1145,9 @@ export const name = 'paper-desk-workbench'
 export const inject = ['webServer']
 
 export function apply(ctx: Context, config: Config): void {
+  const autoTag = createLlmTagger(ctx, config)
   ctx.effect(() => {
-    const disposers = buildRoutes(config).map((route) => ctx.webServer.register(route))
+    const disposers = buildRoutes(config, autoTag).map((route) => ctx.webServer.register(route))
     return () => disposers.forEach((dispose) => dispose())
   })
 }

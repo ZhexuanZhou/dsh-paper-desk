@@ -12,6 +12,7 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import { createPaper } from './library.js'
+import type { AutoTagFn } from './autotag.js'
 import type { CreatePaperOptions } from './library.js'
 import type { PaperMeta, PaperSource } from './types.js'
 
@@ -117,6 +118,7 @@ export interface UrlImportOptions {
   language: CreatePaperOptions['language']
   device?: string
   enrich: boolean
+  autoTag?: AutoTagFn
 }
 
 export async function importPaperFromUrl(
@@ -179,6 +181,7 @@ export async function importPaperFromUrl(
     source,
     sourceUrl,
     enrich: options.enrich,
+    autoTag: options.autoTag,
     language: options.language,
     device: options.device,
   })

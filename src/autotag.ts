@@ -14,6 +14,15 @@ export interface AutoTagInput {
   venue?: string
 }
 
+/** Input available to a host-side tagger (LLM or heuristic). */
+export interface AutoTagContext extends AutoTagInput {
+  /** Absolute PDF path; layered taggers may read the introduction from it. */
+  pdfAbs: string
+}
+
+/** Generates tags for a newly imported paper. Must not throw. */
+export type AutoTagFn = (input: AutoTagContext) => Promise<readonly string[]>
+
 interface TagRule {
   tag: string
   patterns: readonly RegExp[]
