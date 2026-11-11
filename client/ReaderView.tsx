@@ -1230,7 +1230,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
         </header>
 
         <div className="pd-tab-panel" hidden={tab !== 'read'}>
-          <div className="pd-read-shell">
+          <div className="pd-read-shell" data-drawer-open={drawer.open ? 'true' : 'false'}>
             <div className="pd-viewer-host">
               {detail.pdfEvicted ? (
                 <EmptyState

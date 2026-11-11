@@ -2016,6 +2016,9 @@ export const CSS = `
     backdrop-filter: blur(8px);
   }
   .pd-annot-rail[data-tab="ai"] { width: min(380px, 100%); }
+  .pd-read-shell[data-drawer-open="true"] .pdv-scrollRail {
+    right: calc(min(380px, 100%) + 8px);
+  }
   .pd-reader-row-tabs { flex-wrap: wrap; padding-bottom: 4px; }
   .pd-assist-inline { flex-wrap: wrap; overflow: visible; }
   .pd-reader-authors { max-width: 32%; }

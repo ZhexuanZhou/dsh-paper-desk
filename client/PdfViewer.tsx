@@ -301,16 +301,20 @@ const VIEWER_CSS = `
   font: inherit;
   text-align: center;
 }
+.pdv-root[data-resizing='true'] .pdv-textHost { content-visibility: hidden; }
 .pdv-pageWrap {
   display: flex;
   justify-content: center;
   width: 100%;
   padding: 9px ${PAGE_GUTTER}px;
   scroll-margin-top: 10px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1200px;
 }
 .pdv-page {
   position: relative;
   flex: 0 0 auto;
+  contain: layout paint;
   overflow: hidden;
   border-radius: 2px;
   background: #fff;
@@ -863,6 +867,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const epochRef = useRef(0)
   /** Debounce fit-width during host/sidebar animations. */
   const resizeTimerRef = useRef<number | null>(null)
+  const observedWidthRef = useRef(0)
   const releaseTimersRef = useRef<Map<number, number>>(new Map())
   const previewUpgradeTimersRef = useRef<Map<number, number>>(new Map())
   const pageOffsetsRef = useRef<number[]>([])
@@ -872,9 +877,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const scrollIdleTimerRef = useRef<number | null>(null)
   const windowResizingRef = useRef(false)
   const windowResizeTimerRef = useRef<number | null>(null)
+  const resizeCooldownRef = useRef(false)
+  const resizeCooldownTimerRef = useRef<number | null>(null)
   const scrollRailRef = useRef<HTMLDivElement | null>(null)
   const scrollThumbRef = useRef<HTMLDivElement | null>(null)
   const scrollbarSyncFrameRef = useRef<number | null>(null)
+  const scrollbarDraggingRef = useRef(false)
   const zoomRef = useRef(1)
   const pageSizesRef = useRef<readonly PageSize[]>([])
   const fitModeRef = useRef(true)
@@ -937,6 +945,13 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     fitModeRef.current = fitMode
   }, [fitMode])
+
+  const setResizingUi = useCallback((active: boolean): void => {
+    const root = rootRef.current
+    if (root === null) return
+    if (active) root.dataset.resizing = 'true'
+    else delete root.dataset.resizing
+  }, [])
 
   /* ── CSS / pdf_viewer.css injection (once, removed on unmount) ────────── */
   useEffect(() => {
@@ -1213,7 +1228,20 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     releaseTimersRef.current.set(pageNumber, timer)
   }, [releasePage])
 
-  const renderDpr = useCallback((): number => (scrollingRef.current || windowResizingRef.current ? 1 : currentDpr()), [])
+  const beginResizeCooldown = useCallback((): void => {
+    resizeCooldownRef.current = true
+    if (resizeCooldownTimerRef.current !== null) window.clearTimeout(resizeCooldownTimerRef.current)
+    resizeCooldownTimerRef.current = window.setTimeout(() => {
+      resizeCooldownTimerRef.current = null
+      resizeCooldownRef.current = false
+      setQualityVersion((value) => value + 1)
+    }, 900)
+  }, [])
+
+  const renderDpr = useCallback(
+    (): number => (scrollingRef.current || windowResizingRef.current || resizeCooldownRef.current ? 1 : currentDpr()),
+    [],
+  )
 
   const renderPage = useCallback(async (pageNumber: number, previewOnly = false): Promise<void> => {
     const view = pagesRef.current.get(pageNumber)
@@ -1435,6 +1463,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         // Warm pages rendered during scrolling at the readable resolution.
         setQualityVersion((value) => value + 1)
       }, 220)
+      // While the scrollbar thumb is being dragged, moving the scroll offset
+      // is cheap; recalculating page windows and re-rendering mid-drag is not.
+      // Commit the page once on pointerup instead.
+      if (scrollbarDraggingRef.current) return
       if (frame !== 0) return
       frame = requestAnimationFrame(() => {
         frame = 0
@@ -1466,12 +1498,15 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (status !== 'ready') return
     const onResize = (): void => {
       windowResizingRef.current = true
+      setResizingUi(true)
       if (windowResizeTimerRef.current !== null) window.clearTimeout(windowResizeTimerRef.current)
       windowResizeTimerRef.current = window.setTimeout(() => {
         windowResizeTimerRef.current = null
         windowResizingRef.current = false
+        setResizingUi(false)
+        beginResizeCooldown()
         setQualityVersion((value) => value + 1)
-      }, 260)
+      }, 300)
     }
     window.addEventListener('resize', onResize, { passive: true })
     return () => {
@@ -1481,8 +1516,14 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         windowResizeTimerRef.current = null
       }
       windowResizingRef.current = false
+      setResizingUi(false)
+      if (resizeCooldownTimerRef.current !== null) {
+        window.clearTimeout(resizeCooldownTimerRef.current)
+        resizeCooldownTimerRef.current = null
+      }
+      resizeCooldownRef.current = false
     }
-  }, [status])
+  }, [status, beginResizeCooldown, setResizingUi])
 
   /* Custom scrollbar: the native overlay scrollbar is tiny on macOS and hard
      to hit. A fixed-width rail with a minimum-size thumb is precise to drag. */
@@ -1550,6 +1591,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       startScroll = scroller.scrollTop
     }
     rail.dataset.dragging = 'true'
+    scrollbarDraggingRef.current = true
     const onMove = (moveEvent: PointerEvent): void => {
       const usable = Math.max(1, railRect.height - thumbHeight)
       const next = startScroll + ((moveEvent.clientY - startY) / usable) * maxScroll
@@ -1559,6 +1601,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       delete rail.dataset.dragging
+      scrollbarDraggingRef.current = false
+      updateCurrentPage()
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -1655,6 +1699,20 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (status !== 'ready' || scroller === null) return
     const observer = new ResizeObserver(() => {
       if (!fitModeRef.current) return
+      const width = scroller.clientWidth
+      const previousWidth = observedWidthRef.current
+      observedWidthRef.current = width
+      if (previousWidth === 0 || Math.abs(width - previousWidth) < 1) return
+      // Hold rasterisation until the pane width stops changing; the PDF keeps
+      // the previous canvas stretched in the meantime instead of freezing.
+      windowResizingRef.current = true
+      if (windowResizeTimerRef.current !== null) window.clearTimeout(windowResizeTimerRef.current)
+      windowResizeTimerRef.current = window.setTimeout(() => {
+        windowResizeTimerRef.current = null
+        windowResizingRef.current = false
+        beginResizeCooldown()
+        setQualityVersion((value) => value + 1)
+      }, 300)
       if (resizeTimerRef.current !== null) window.clearTimeout(resizeTimerRef.current)
       resizeTimerRef.current = window.setTimeout(() => {
         resizeTimerRef.current = null
@@ -1669,7 +1727,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         resizeTimerRef.current = null
       }
     }
-  }, [status, applyZoom, computeFitZoom])
+  }, [status, applyZoom, computeFitZoom, beginResizeCooldown, setResizingUi])
 
   /* ── preserve the reading position across zoom changes ────────────────── */
   useEffect(() => {
@@ -2434,7 +2492,13 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
             } as CSSProperties
             const lowText = lowTextPages.has(page)
             return (
-              <div className="pdv-pageWrap" key={page} data-pdv-page={page} ref={registerPage}>
+              <div
+                className="pdv-pageWrap"
+                key={page}
+                data-pdv-page={page}
+                ref={registerPage}
+                style={{ height: `${size.height * viewportScale + 18}px` }}
+              >
                 <div className="pdv-page" style={pageStyle}>
                   <div className="pdv-pageLoading" aria-hidden="true">
                     <span className="pdv-pageLoadingSpin" />
