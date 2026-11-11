@@ -38,6 +38,12 @@ export interface AiPanelLabels {
   historyTitle: string
   toolsToggle: string
   toolsHide: string
+  noteHighlight: string
+  noteCommentPlaceholder: string
+  noteAskPlaceholder: string
+  noteAsk: string
+  noteDelete: string
+  noteQuoteHint: string
   taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
 }
 
@@ -95,6 +101,137 @@ function firstLine(text: string): string {
   return value.length > 90 ? `${value.slice(0, 90)}…` : value
 }
 
+interface AnswerNote {
+  id: string
+  quote: string
+  comment: string
+  rowId: string
+  createdAt: string
+}
+
+interface NoteMenu {
+  quote: string
+  rowId: string
+  x: number
+  y: number
+}
+
+function makeNoteId(): string {
+  return `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+/** Locate the first occurrence of `quote` in the rendered answer text. */
+function findQuoteRange(root: HTMLElement, quote: string): Range | null {
+  const needle = quote.trim()
+  if (needle === '') return null
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const nodes: Array<{ node: Text; start: number }> = []
+  let full = ''
+  let current: Node | null = walker.nextNode()
+  while (current !== null) {
+    if (current instanceof Text) {
+      nodes.push({ node: current, start: full.length })
+      full += current.data
+    }
+    current = walker.nextNode()
+  }
+  let index = full.indexOf(needle)
+  if (index < 0) {
+    // Markdown/KaTeX can normalise whitespace; fall back to a whitespace-
+    // tolerant search so a highlight survives a re-render.
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+    const match = new RegExp(escaped).exec(full)
+    if (match === null) return null
+    index = match.index
+  }
+  const end = index + needle.length
+  const locate = (offset: number): { node: Text; offset: number } | null => {
+    for (let i = nodes.length - 1; i >= 0; i -= 1) {
+      const entry = nodes[i]
+      if (entry !== undefined && offset >= entry.start && offset <= entry.start + entry.node.data.length) {
+        return { node: entry.node, offset: offset - entry.start }
+      }
+    }
+    return null
+  }
+  const startPoint = locate(index)
+  const endPoint = locate(end)
+  if (startPoint === null || endPoint === null) return null
+  const range = document.createRange()
+  range.setStart(startPoint.node, startPoint.offset)
+  range.setEnd(endPoint.node, endPoint.offset)
+  return range
+}
+
+interface AnswerNoteCardProps {
+  note: AnswerNote
+  labels: AiPanelLabels
+  disabled: boolean
+  onUpdate: (id: string, patch: Partial<Pick<AnswerNote, 'comment'>>) => void
+  onDelete: (id: string) => void
+  onAsk: (note: AnswerNote, question: string) => void
+}
+
+function AnswerNoteCard(props: AnswerNoteCardProps): ReactElement {
+  const { note, labels, disabled, onUpdate, onDelete, onAsk } = props
+  const [comment, setComment] = useState(note.comment)
+  const [question, setQuestion] = useState('')
+  useEffect(() => setComment(note.comment), [note.comment])
+  return (
+    <div className="pd-ai-note-card" data-ai-note-id={note.id}>
+      <div className="pd-ai-note-quote">
+        <span className="pd-ai-note-mark" aria-hidden="true">“</span>
+        {note.quote}
+      </div>
+      <textarea
+        className="pd-textarea pd-ai-note-comment"
+        rows={2}
+        value={comment}
+        placeholder={labels.noteCommentPlaceholder}
+        aria-label={labels.noteCommentPlaceholder}
+        onChange={(event) => setComment(event.target.value)}
+        onBlur={() => onUpdate(note.id, { comment })}
+      />
+      <div className="pd-ai-note-ask">
+        <input
+          className="pd-input pd-ai-note-ask-input"
+          value={question}
+          placeholder={labels.noteAskPlaceholder}
+          aria-label={labels.noteAskPlaceholder}
+          onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.shiftKey) return
+            event.preventDefault()
+            if (question.trim() === '' || disabled) return
+            onAsk(note, question)
+            setQuestion('')
+          }}
+        />
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={disabled || question.trim() === ''}
+          onClick={() => {
+            onAsk(note, question)
+            setQuestion('')
+          }}
+        >
+          {labels.noteAsk}
+        </Button>
+        <button
+          type="button"
+          className="pd-ai-note-delete"
+          title={labels.noteDelete}
+          aria-label={labels.noteDelete}
+          onClick={() => onDelete(note.id)}
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function AiPanel(props: AiPanelProps) {
   const { ai, history, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
 
@@ -130,6 +267,11 @@ export function AiPanel(props: AiPanelProps) {
   const [follow, setFollow] = useState(true)
   const [hasNew, setHasNew] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const noteScope = props.draftKey ?? props.expectedThreadKey ?? 'default'
+  const noteStoreKey = `paperdesk:ai-notes:${noteScope}`
+  const [notes, setNotes] = useState<AnswerNote[]>([])
+  const [noteMenu, setNoteMenu] = useState<NoteMenu | null>(null)
 
   const rows = snapshot.rows
   const running = snapshot.status === 'running'
@@ -177,6 +319,152 @@ export function AiPanel(props: AiPanelProps) {
       setDraft('')
     }
   }, [draftStoreKey])
+
+  useEffect(() => {
+    setNoteMenu(null)
+    try {
+      const raw = localStorage.getItem(noteStoreKey)
+      if (raw === null) {
+        setNotes([])
+        return
+      }
+      const parsed: unknown = JSON.parse(raw)
+      if (!Array.isArray(parsed)) {
+        setNotes([])
+        return
+      }
+      const next: AnswerNote[] = []
+      for (const value of parsed) {
+        if (value === null || typeof value !== 'object') continue
+        const record = value as Record<string, unknown>
+        if (typeof record['quote'] !== 'string' || record['quote'].trim() === '') continue
+        next.push({
+          id: typeof record['id'] === 'string' ? record['id'] : makeNoteId(),
+          quote: record['quote'],
+          comment: typeof record['comment'] === 'string' ? record['comment'] : '',
+          rowId: typeof record['rowId'] === 'string' ? record['rowId'] : '',
+          createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : new Date().toISOString(),
+        })
+      }
+      setNotes(next.slice(-60))
+    } catch {
+      setNotes([])
+    }
+  }, [noteStoreKey])
+
+  const persistNotes = useCallback((next: AnswerNote[]): void => {
+    setNotes(next)
+    try {
+      localStorage.setItem(noteStoreKey, JSON.stringify(next.slice(-60)))
+    } catch {
+      // Annotation persistence is a convenience; keep the in-memory copy.
+    }
+  }, [noteStoreKey])
+
+  /* Use the CSS Custom Highlight API so highlights survive React re-renders
+     without mutating the rendered Markdown DOM. */
+  useEffect(() => {
+    const registry = (CSS as unknown as { highlights?: { set(name: string, value: unknown): void; delete(name: string): void } }).highlights
+    const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight
+    if (registry === undefined || HighlightCtor === undefined) return
+    const ranges: Range[] = []
+    for (const note of notes) {
+      const rows = panelRef.current?.querySelectorAll<HTMLElement>('[data-ai-row-id]')
+      if (rows === undefined) break
+      let host: HTMLElement | null = null
+      for (const row of rows) {
+        if (note.rowId !== '' && row.dataset['aiRowId'] === note.rowId) {
+          host = row.querySelector<HTMLElement>('.pd-ai-assistant')
+          if (host !== null) break
+        }
+      }
+      if (host === null) {
+        for (const row of rows) {
+          const candidate = row.querySelector<HTMLElement>('.pd-ai-assistant')
+          if (candidate !== null && (candidate.textContent ?? '').includes(note.quote.trim().slice(0, 40))) {
+            host = candidate
+            break
+          }
+        }
+      }
+      if (host === null) continue
+      const range = findQuoteRange(host, note.quote)
+      if (range === null) continue
+      ranges.push(range)
+    }
+    if (ranges.length > 0) {
+      try {
+        registry.set('paperdesk-answer-note', new HighlightCtor(...ranges))
+      } catch {
+        // Browser without the Highlight constructor: comments still work.
+      }
+    }
+    return () => {
+      try { registry.delete('paperdesk-answer-note') } catch {}
+    }
+  }, [notes, visibleRows, history])
+
+  const updateAnswerNote = (id: string, patch: Partial<Pick<AnswerNote, 'comment'>>): void => {
+    persistNotes(notes.map((note) => (note.id === id ? { ...note, ...patch } : note)))
+  }
+
+  const deleteAnswerNote = (id: string): void => {
+    persistNotes(notes.filter((note) => note.id !== id))
+  }
+
+  const createAnswerNote = (): void => {
+    if (noteMenu === null) return
+    const note: AnswerNote = {
+      id: makeNoteId(),
+      quote: noteMenu.quote,
+      comment: '',
+      rowId: noteMenu.rowId,
+      createdAt: new Date().toISOString(),
+    }
+    persistNotes([...notes, note])
+    setNoteMenu(null)
+    window.getSelection()?.removeAllRanges()
+  }
+
+  const handleAnswerMouseUp = (event: React.MouseEvent<HTMLDivElement>): void => {
+    const target = event.target
+    if (target instanceof Element && target.closest('textarea, input, button, .pd-ai-note-card') !== null) return
+    window.setTimeout(() => {
+      const dom = window.getSelection()
+      if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) {
+        setNoteMenu(null)
+        return
+      }
+      const range = dom.getRangeAt(0)
+      const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? (range.startContainer as Element)
+        : range.startContainer.parentElement
+      const host = startElement?.closest<HTMLElement>('.pd-ai-assistant') ?? null
+      const panel = panelRef.current
+      if (host === null || panel === null || !panel.contains(host)) return
+      const quote = dom.toString().trim()
+      if (quote.length < 2) return
+      const row = host.closest<HTMLElement>('[data-ai-row-id]')
+      const rect = range.getBoundingClientRect()
+      const x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 160))
+      const rawY = rect.top >= 44 ? rect.top - 36 : rect.bottom + 6
+      const y = Math.min(Math.max(8, rawY), Math.max(8, window.innerHeight - 40))
+      setNoteMenu({ quote: quote.slice(0, 600), rowId: row?.dataset['aiRowId'] ?? '', x, y })
+    }, 0)
+  }
+
+  const askAboutAnswerNote = (note: AnswerNote, question: string): void => {
+    const text = question.trim()
+    if (text === '' || disabled) return
+    const comment = note.comment.trim()
+    const prompt = [
+      '关于你上一条回答中的这段内容：',
+      `> ${note.quote.replace(/\n+/g, '\n> ')}`,
+      comment !== '' ? `我的评论：${comment}` : '',
+      `我的问题：${text}`,
+    ].filter((line) => line !== '').join('\n\n')
+    void onAsk(prompt)
+  }
 
   /* Auto-follow the stream unless the user scrolled away from the bottom. */
   useEffect(() => {
@@ -261,6 +549,19 @@ export function AiPanel(props: AiPanelProps) {
                 </Button>
               </div>
             ) : null}
+            {notes
+              .filter((note) => note.rowId === row.id || row.text.includes(note.quote))
+              .map((note) => (
+                <AnswerNoteCard
+                  key={note.id}
+                  note={note}
+                  labels={labels}
+                  disabled={disabled}
+                  onUpdate={updateAnswerNote}
+                  onDelete={deleteAnswerNote}
+                  onAsk={askAboutAnswerNote}
+                />
+              ))}
           </div>
         )
       case 'reasoning':
@@ -305,7 +606,14 @@ export function AiPanel(props: AiPanelProps) {
   }
 
   return (
-    <div className="pd-ai" role="region" aria-label={labels.title} style={{ zoom }}>
+    <div
+      ref={panelRef}
+      className="pd-ai"
+      role="region"
+      aria-label={labels.title}
+      style={{ zoom }}
+      onMouseUp={handleAnswerMouseUp}
+    >
       <div className="pd-ai-body">
         <div className="pd-ai-scroll" ref={scrollRef} onScroll={onScroll}>
           {attaching ? (
@@ -342,9 +650,22 @@ export function AiPanel(props: AiPanelProps) {
                     {cleanUserPrompt(message.text)}
                   </div>
                 ) : (
-                  <div key={`history-${index}`} className="pd-ai-row">
+                  <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
                     <div className="pd-ai-assistant">
                       <Markdown markdown={message.text} />
+                      {notes
+                        .filter((note) => note.rowId === `history-${index}` || message.text.includes(note.quote))
+                        .map((note) => (
+                          <AnswerNoteCard
+                            key={note.id}
+                            note={note}
+                            labels={labels}
+                            disabled={disabled}
+                            onUpdate={updateAnswerNote}
+                            onDelete={deleteAnswerNote}
+                            onAsk={askAboutAnswerNote}
+                          />
+                        ))}
                     </div>
                   </div>
                 ),
@@ -357,7 +678,7 @@ export function AiPanel(props: AiPanelProps) {
           ) : null}
 
           {visibleRows.map((row, index) => (
-            <div key={row.id} className="pd-ai-row">
+            <div key={row.id} className="pd-ai-row" data-ai-row-id={row.id}>
               {renderRow(row)}
               {index === lastAssistantIndex && pages.length > 0 ? (
                 <div className="pd-ai-cites" role="group" aria-label={labels.jumpHint}>
@@ -405,6 +726,20 @@ export function AiPanel(props: AiPanelProps) {
           </button>
         ) : null}
       </div>
+
+      {noteMenu !== null ? (
+        <div className="pd-ai-note-menu" style={{ left: noteMenu.x, top: noteMenu.y }}>
+          <button
+            type="button"
+            className="pd-ai-note-menu-btn"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={createAnswerNote}
+          >
+            {labels.noteHighlight}
+          </button>
+          <span className="pd-ai-note-menu-hint">{labels.noteQuoteHint}</span>
+        </div>
+      ) : null}
 
       <div className="pd-ai-foot">
         <div className="pd-ai-actions">

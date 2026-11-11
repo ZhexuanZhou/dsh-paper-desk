@@ -72,7 +72,26 @@ function drawerButtonPressed(drawer: DrawerState, tab: DrawerTab): boolean {
 }
 
 const DRAWER_WIDTH_KEY = 'paperdesk:drawer-width'
+const DRAWER_STATE_KEY = 'paperdesk:drawer-state'
 const DEFAULT_DRAWER_WIDTH = 360
+
+function readDrawerState(): DrawerState {
+  try {
+    const raw = localStorage.getItem(DRAWER_STATE_KEY)
+    if (raw === null) return { open: false, tab: 'annotations' }
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed !== null && typeof parsed === 'object') {
+      const record = parsed as { open?: unknown; tab?: unknown }
+      return {
+        open: record.open === true,
+        tab: record.tab === 'ai' ? 'ai' : 'annotations',
+      }
+    }
+  } catch {
+    // Fall through to the default.
+  }
+  return { open: false, tab: 'annotations' }
+}
 
 function readDrawerWidth(): number {
   try {
@@ -430,8 +449,16 @@ export function ReaderView(props: ReaderViewProps) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
   const [question, setQuestion] = useState('')
-  const [drawer, setDrawer] = useState<DrawerState>({ open: false, tab: 'annotations' })
+  const [drawer, setDrawer] = useState<DrawerState>(() => readDrawerState())
   const [drawerWidth, setDrawerWidth] = useState<number>(() => readDrawerWidth())
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAWER_STATE_KEY, JSON.stringify(drawer))
+    } catch {
+      // State persistence is best-effort.
+    }
+  }, [drawer])
   const [currentPage, setCurrentPage] = useState<number | null>(null)
   const pageRef = useRef<{ paperId: string; page: number | null } | null>(null)
   const pendingPageRef = useRef<{ paperId: string; page: number } | null>(null)
@@ -457,7 +484,6 @@ export function ReaderView(props: ReaderViewProps) {
     setDeleteOpen(false)
     setAskOpen(false)
     setQuestion('')
-    setDrawer({ open: false, tab: 'annotations' })
     if (paperId === null) {
       setCurrentPage(null)
       setFocusTarget(null)
@@ -651,6 +677,12 @@ export function ReaderView(props: ReaderViewProps) {
       noResponse: t('ai.noResponse'),
       toolsToggle: t('ai.toolsToggle'),
       toolsHide: t('ai.toolsHide'),
+      noteHighlight: t('ai.noteHighlight'),
+      noteCommentPlaceholder: t('ai.noteCommentPlaceholder'),
+      noteAskPlaceholder: t('ai.noteAskPlaceholder'),
+      noteAsk: t('ai.noteAsk'),
+      noteDelete: t('ai.noteDelete'),
+      noteQuoteHint: t('ai.noteQuoteHint'),
       historyTitle: t('ai.historyTitle'),
       taskLabels: {
         summary: t('assist.summary'),

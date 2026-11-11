@@ -1253,7 +1253,7 @@ export const CSS = `
   font-size: 11px;
 }
 
-.pd-ai { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.pd-ai { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .pd-ai-tasks {
   display: flex;
   flex-wrap: wrap;
@@ -1287,6 +1287,64 @@ export const CSS = `
   word-break: break-word;
 }
 .pd-ai-assistant { color: ${FG}; font-size: 12.5px; line-height: 1.6; }
+::highlight(paperdesk-answer-note) {
+  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent);
+  color: inherit;
+}
+.pd-ai-note-menu {
+  position: fixed;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 8px;
+  border: 1px solid ${B1};
+  border-radius: 7px;
+  background: ${L1};
+  box-shadow: var(--dsw-shadow-lv1, 0 6px 20px rgba(0,0,0,.16));
+}
+.pd-ai-note-menu-btn {
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent);
+  color: var(--dsw-alias-brand-primary);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.pd-ai-note-menu-btn:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent); }
+.pd-ai-note-menu-hint { color: ${FG_2}; font-size: 10px; white-space: nowrap; }
+.pd-ai-note-card {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-left: 3px solid var(--dsw-alias-brand-primary);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 5%, transparent);
+}
+.pd-ai-note-quote {
+  color: ${FG_2};
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 88px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.pd-ai-note-mark { color: var(--dsw-alias-brand-primary); font-weight: 700; margin-right: 2px; }
+.pd-ai-note-comment { margin-top: 5px; min-height: 42px; font-size: 11px; resize: vertical; }
+.pd-ai-note-ask { display: flex; align-items: center; gap: 4px; margin-top: 5px; }
+.pd-ai-note-ask-input { flex: 1 1 auto; min-width: 0; height: 26px; font-size: 11px; }
+.pd-ai-note-delete {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: ${FG_2};
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pd-ai-note-delete:hover { color: var(--dsw-alias-state-error-primary, #d44); }
 .pd-ai-assistant .pd-md { font-size: 12.5px; }
 .pd-ai-caret {
   display: inline-block;
