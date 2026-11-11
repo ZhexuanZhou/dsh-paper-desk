@@ -191,7 +191,6 @@ export function AiPanel(props: AiPanelProps) {
   const [draft, setDraft] = useState('')
   const draftKey = props.draftKey
   const [sending, setSending] = useState(false)
-  const [composing, setComposing] = useState(false)
   const draftStoreKey = draftKey === null ? null : `paperdesk:ai-draft:${draftKey}`
   const composingRef = useRef(false)
   const [noResponse, setNoResponse] = useState(false)
@@ -867,11 +866,9 @@ export function AiPanel(props: AiPanelProps) {
             }}
             onCompositionStart={() => {
               composingRef.current = true
-              setComposing(true)
             }}
             onCompositionEnd={() => {
               composingRef.current = false
-              setComposing(false)
             }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.shiftKey) return
@@ -893,11 +890,6 @@ export function AiPanel(props: AiPanelProps) {
             {labels.send}
           </Button>
         </div>
-        {composing ? (
-          <div className="pd-ai-ime-hint" role="status">
-            {labels.composingHint}
-          </div>
-        ) : null}
       </div>
     </div>
   )
