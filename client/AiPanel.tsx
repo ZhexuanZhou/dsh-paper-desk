@@ -42,6 +42,10 @@ export interface AiPanelLabels {
   noteCommentPlaceholder: string
   noteAskPlaceholder: string
   noteAsk: string
+  noteSave: string
+  noteCancel: string
+  noteCount: string
+  noteAskAll: string
   noteDelete: string
   noteQuoteHint: string
   taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
@@ -109,11 +113,13 @@ interface AnswerNote {
   createdAt: string
 }
 
-interface NoteMenu {
+interface NoteDraft {
   quote: string
   rowId: string
   x: number
   y: number
+  comment: string
+  noteId: string | null
 }
 
 function makeNoteId(): string {
@@ -163,75 +169,6 @@ function findQuoteRange(root: HTMLElement, quote: string): Range | null {
   return range
 }
 
-interface AnswerNoteCardProps {
-  note: AnswerNote
-  labels: AiPanelLabels
-  disabled: boolean
-  onUpdate: (id: string, patch: Partial<Pick<AnswerNote, 'comment'>>) => void
-  onDelete: (id: string) => void
-  onAsk: (note: AnswerNote, question: string) => void
-}
-
-function AnswerNoteCard(props: AnswerNoteCardProps): ReactElement {
-  const { note, labels, disabled, onUpdate, onDelete, onAsk } = props
-  const [comment, setComment] = useState(note.comment)
-  const [question, setQuestion] = useState('')
-  useEffect(() => setComment(note.comment), [note.comment])
-  return (
-    <div className="pd-ai-note-card" data-ai-note-id={note.id}>
-      <div className="pd-ai-note-quote">
-        <span className="pd-ai-note-mark" aria-hidden="true">“</span>
-        {note.quote}
-      </div>
-      <textarea
-        className="pd-textarea pd-ai-note-comment"
-        rows={2}
-        value={comment}
-        placeholder={labels.noteCommentPlaceholder}
-        aria-label={labels.noteCommentPlaceholder}
-        onChange={(event) => setComment(event.target.value)}
-        onBlur={() => onUpdate(note.id, { comment })}
-      />
-      <div className="pd-ai-note-ask">
-        <input
-          className="pd-input pd-ai-note-ask-input"
-          value={question}
-          placeholder={labels.noteAskPlaceholder}
-          aria-label={labels.noteAskPlaceholder}
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey) return
-            event.preventDefault()
-            if (question.trim() === '' || disabled) return
-            onAsk(note, question)
-            setQuestion('')
-          }}
-        />
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={disabled || question.trim() === ''}
-          onClick={() => {
-            onAsk(note, question)
-            setQuestion('')
-          }}
-        >
-          {labels.noteAsk}
-        </Button>
-        <button
-          type="button"
-          className="pd-ai-note-delete"
-          title={labels.noteDelete}
-          aria-label={labels.noteDelete}
-          onClick={() => onDelete(note.id)}
-        >
-          ×
-        </button>
-      </div>
-    </div>
-  )
-}
-
 export function AiPanel(props: AiPanelProps) {
   const { ai, history, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
 
@@ -271,7 +208,7 @@ export function AiPanel(props: AiPanelProps) {
   const noteScope = props.draftKey ?? props.expectedThreadKey ?? 'default'
   const noteStoreKey = `paperdesk:ai-notes:${noteScope}`
   const [notes, setNotes] = useState<AnswerNote[]>([])
-  const [noteMenu, setNoteMenu] = useState<NoteMenu | null>(null)
+  const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null)
 
   const rows = snapshot.rows
   const running = snapshot.status === 'running'
@@ -321,7 +258,7 @@ export function AiPanel(props: AiPanelProps) {
   }, [draftStoreKey])
 
   useEffect(() => {
-    setNoteMenu(null)
+    setNoteDraft(null)
     try {
       const raw = localStorage.getItem(noteStoreKey)
       if (raw === null) {
@@ -412,29 +349,59 @@ export function AiPanel(props: AiPanelProps) {
     persistNotes(notes.filter((note) => note.id !== id))
   }
 
-  const createAnswerNote = (): void => {
-    if (noteMenu === null) return
-    const note: AnswerNote = {
-      id: makeNoteId(),
-      quote: noteMenu.quote,
-      comment: '',
-      rowId: noteMenu.rowId,
-      createdAt: new Date().toISOString(),
+  const openNoteEditor = (note: AnswerNote): void => {
+    let x = Math.max(8, window.innerWidth / 2 - 130)
+    let y = Math.max(8, window.innerHeight / 2 - 120)
+    const panel = panelRef.current
+    const rows = panel?.querySelectorAll<HTMLElement>('[data-ai-row-id]')
+    if (rows !== undefined) {
+      for (const row of rows) {
+        const host = row.querySelector<HTMLElement>('.pd-ai-assistant')
+        if (host === null) continue
+        const range = findQuoteRange(host, note.quote)
+        if (range === null) continue
+        const rect = range.getBoundingClientRect()
+        x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 280))
+        const rawY = rect.top >= 180 ? rect.top - 168 : rect.bottom + 8
+        y = Math.min(Math.max(8, rawY), Math.max(8, window.innerHeight - 190))
+        break
+      }
     }
-    persistNotes([...notes, note])
-    setNoteMenu(null)
+    setNoteDraft({ quote: note.quote, rowId: note.rowId, x, y, comment: note.comment, noteId: note.id })
+  }
+
+  const saveNoteDraft = (): void => {
+    const draft = noteDraft
+    if (draft === null) return
+    const comment = draft.comment.trim()
+    if (draft.noteId !== null) {
+      updateAnswerNote(draft.noteId, { comment })
+    } else if (comment !== '') {
+      const note: AnswerNote = {
+        id: makeNoteId(),
+        quote: draft.quote,
+        comment,
+        rowId: draft.rowId,
+        createdAt: new Date().toISOString(),
+      }
+      persistNotes([...notes, note])
+    }
+    setNoteDraft(null)
+    window.getSelection()?.removeAllRanges()
+  }
+
+  const deleteNoteDraft = (): void => {
+    if (noteDraft?.noteId !== null && noteDraft?.noteId !== undefined) deleteAnswerNote(noteDraft.noteId)
+    setNoteDraft(null)
     window.getSelection()?.removeAllRanges()
   }
 
   const handleAnswerMouseUp = (event: React.MouseEvent<HTMLDivElement>): void => {
     const target = event.target
-    if (target instanceof Element && target.closest('textarea, input, button, .pd-ai-note-card') !== null) return
+    if (target instanceof Element && target.closest('textarea, input, button, .pd-ai-note-popup, .pd-ai-notes-tray') !== null) return
     window.setTimeout(() => {
       const dom = window.getSelection()
-      if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) {
-        setNoteMenu(null)
-        return
-      }
+      if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) return
       const range = dom.getRangeAt(0)
       const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
         ? (range.startContainer as Element)
@@ -446,24 +413,28 @@ export function AiPanel(props: AiPanelProps) {
       if (quote.length < 2) return
       const row = host.closest<HTMLElement>('[data-ai-row-id]')
       const rect = range.getBoundingClientRect()
-      const x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 160))
-      const rawY = rect.top >= 44 ? rect.top - 36 : rect.bottom + 6
-      const y = Math.min(Math.max(8, rawY), Math.max(8, window.innerHeight - 40))
-      setNoteMenu({ quote: quote.slice(0, 600), rowId: row?.dataset['aiRowId'] ?? '', x, y })
+      const x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 280))
+      const rawY = rect.top >= 180 ? rect.top - 168 : rect.bottom + 8
+      const y = Math.min(Math.max(8, rawY), Math.max(8, window.innerHeight - 190))
+      setNoteDraft({ quote: quote.slice(0, 600), rowId: row?.dataset['aiRowId'] ?? '', x, y, comment: '', noteId: null })
     }, 0)
   }
 
-  const askAboutAnswerNote = (note: AnswerNote, question: string): void => {
-    const text = question.trim()
-    if (text === '' || disabled) return
-    const comment = note.comment.trim()
-    const prompt = [
-      '关于你上一条回答中的这段内容：',
-      `> ${note.quote.replace(/\n+/g, '\n> ')}`,
-      comment !== '' ? `我的评论：${comment}` : '',
-      `我的问题：${text}`,
-    ].filter((line) => line !== '').join('\n\n')
-    void onAsk(prompt)
+  const askWithAllNotes = (): void => {
+    if (disabled) return
+    const withComments = notes.filter((note) => note.comment.trim() !== '')
+    if (withComments.length === 0) return
+    const lines = [
+      `请统一解答我在你上一条回答中做的 ${withComments.length} 条批注。`,
+      '',
+      ...withComments.map((note, index) => [
+        `${index + 1}. 原文：${note.quote.replace(/\n+/g, ' ')}`,
+        `   我的评论/问题：${note.comment.trim()}`,
+      ].join('\n')),
+      '',
+      '请逐条回应，并说明它们之间是否有联系。',
+    ]
+    void onAsk(lines.join('\n'))
   }
 
   /* Auto-follow the stream unless the user scrolled away from the bottom. */
@@ -549,19 +520,6 @@ export function AiPanel(props: AiPanelProps) {
                 </Button>
               </div>
             ) : null}
-            {notes
-              .filter((note) => note.rowId === row.id || row.text.includes(note.quote))
-              .map((note) => (
-                <AnswerNoteCard
-                  key={note.id}
-                  note={note}
-                  labels={labels}
-                  disabled={disabled}
-                  onUpdate={updateAnswerNote}
-                  onDelete={deleteAnswerNote}
-                  onAsk={askAboutAnswerNote}
-                />
-              ))}
           </div>
         )
       case 'reasoning':
@@ -653,19 +611,6 @@ export function AiPanel(props: AiPanelProps) {
                   <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
                     <div className="pd-ai-assistant">
                       <Markdown markdown={message.text} />
-                      {notes
-                        .filter((note) => note.rowId === `history-${index}` || message.text.includes(note.quote))
-                        .map((note) => (
-                          <AnswerNoteCard
-                            key={note.id}
-                            note={note}
-                            labels={labels}
-                            disabled={disabled}
-                            onUpdate={updateAnswerNote}
-                            onDelete={deleteAnswerNote}
-                            onAsk={askAboutAnswerNote}
-                          />
-                        ))}
                     </div>
                   </div>
                 ),
@@ -727,17 +672,67 @@ export function AiPanel(props: AiPanelProps) {
         ) : null}
       </div>
 
-      {noteMenu !== null ? (
-        <div className="pd-ai-note-menu" style={{ left: noteMenu.x, top: noteMenu.y }}>
-          <button
-            type="button"
-            className="pd-ai-note-menu-btn"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={createAnswerNote}
+      {noteDraft !== null ? (
+        <div
+          className="pd-ai-note-popup"
+          style={{ left: noteDraft.x, top: noteDraft.y }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="pd-ai-note-popup-quote">{noteDraft.quote}</div>
+          <textarea
+            autoFocus
+            className="pd-textarea pd-ai-note-popup-comment"
+            rows={3}
+            value={noteDraft.comment}
+            placeholder={labels.noteCommentPlaceholder}
+            aria-label={labels.noteCommentPlaceholder}
+            onChange={(event) => setNoteDraft({ ...noteDraft, comment: event.target.value })}
+          />
+          <div className="pd-ai-note-popup-actions">
+            {noteDraft.noteId !== null ? (
+              <button type="button" className="pd-ai-note-delete" onClick={deleteNoteDraft}>
+                {labels.noteDelete}
+              </button>
+            ) : null}
+            <Button size="sm" variant="ghost" onClick={() => setNoteDraft(null)}>
+              {labels.noteCancel}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={noteDraft.comment.trim() === ''}
+              onClick={saveNoteDraft}
+            >
+              {labels.noteSave}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {notes.length > 0 ? (
+        <div className="pd-ai-notes-tray">
+          <span className="pd-ai-notes-tray-title">{labels.noteCount.replace('{n}', String(notes.length))}</span>
+          <div className="pd-ai-notes-chips">
+            {notes.map((note) => (
+              <button
+                key={note.id}
+                type="button"
+                className="pd-ai-note-chip"
+                title={note.quote}
+                onClick={() => openNoteEditor(note)}
+              >
+                {note.comment.trim() !== '' ? note.comment : note.quote}
+              </button>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled || notes.every((note) => note.comment.trim() === '')}
+            onClick={askWithAllNotes}
           >
-            {labels.noteHighlight}
-          </button>
-          <span className="pd-ai-note-menu-hint">{labels.noteQuoteHint}</span>
+            {labels.noteAskAll}
+          </Button>
         </div>
       ) : null}
 

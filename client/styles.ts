@@ -1345,6 +1345,55 @@ export const CSS = `
   cursor: pointer;
 }
 .pd-ai-note-delete:hover { color: var(--dsw-alias-state-error-primary, #d44); }
+.pd-ai-note-popup {
+  position: fixed;
+  z-index: 30;
+  width: 280px;
+  padding: 9px;
+  border: 1px solid ${B1};
+  border-radius: 9px;
+  background: ${L1};
+  box-shadow: var(--dsw-shadow-lv2, 0 12px 32px rgba(0,0,0,.2));
+}
+.pd-ai-note-popup-quote {
+  max-height: 74px;
+  overflow: auto;
+  color: ${FG_2};
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.pd-ai-note-popup-comment { margin-top: 6px; min-height: 62px; font-size: 11.5px; resize: vertical; }
+.pd-ai-note-popup-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 6px; }
+.pd-ai-note-popup-actions .pd-ai-note-delete { margin-right: auto; font-size: 11px; }
+.pd-ai-notes-tray {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-top: 1px solid ${B1};
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 4%, transparent);
+  min-height: 28px;
+}
+.pd-ai-notes-tray-title { flex: 0 0 auto; color: ${FG_2}; font-size: 10.5px; }
+.pd-ai-notes-chips { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; min-width: 0; overflow-x: auto; }
+.pd-ai-note-chip {
+  flex: 0 0 auto;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent);
+  color: ${FG};
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.pd-ai-note-chip:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .pd-ai-assistant .pd-md { font-size: 12.5px; }
 .pd-ai-caret {
   display: inline-block;
