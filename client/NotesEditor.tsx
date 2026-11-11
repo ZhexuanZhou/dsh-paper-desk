@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { NotesDocument, NotesWriteResult } from '../src/types.js'
 import { IconCheck, IconNote, IconQuote, IconSave, IconWarning } from './icons.js'
 import { errorText, useT } from './i18n.js'
-import { renderMarkdown } from './markdown.js'
+import { renderMarkdownSectioned } from './markdown.js'
 import { Button, Modal, TextInput, Textarea } from './ui.js'
 
 type ToastKind = 'info' | 'success' | 'error' | 'warn'
@@ -233,7 +233,7 @@ export function NotesEditor(props: NotesEditorProps) {
     [t],
   )
 
-  const previewHtml = useMemo(() => (mode === 'preview' ? renderMarkdown(draft) : ''), [draft, mode])
+  const previewHtml = useMemo(() => (mode === 'preview' ? renderMarkdownSectioned(draft) : ''), [draft, mode])
 
   return (
     <div className="pd-notes">

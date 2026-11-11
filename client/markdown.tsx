@@ -117,6 +117,35 @@ function renderMarkdownWithMath(markdown: string): string {
     })
 }
 
+/**
+ * Render a long Markdown document section by section at top-level `##`
+ * headings. A preceding loose list would otherwise make the next heading a
+ * child of its last list item, which visually indents section headings in the
+ * notes preview. Fenced code blocks are never split.
+ */
+export function renderMarkdownSectioned(markdown: string): string {
+  const lines = markdown.split('\n')
+  const chunks: string[] = []
+  let current: string[] = []
+  let fence: string | null = null
+  for (const line of lines) {
+    const trimmed = line.trimStart()
+    const fenceMatch = /^(```|~~~)/.exec(trimmed)
+    if (fenceMatch !== null) {
+      if (fence === null) fence = fenceMatch[1] ?? null
+      else if (fence === fenceMatch[1]) fence = null
+    }
+    if (fence === null && /^##\s+/.test(line) && current.length > 0) {
+      chunks.push(current.join('\n'))
+      current = [line]
+      continue
+    }
+    current.push(line)
+  }
+  if (current.length > 0) chunks.push(current.join('\n'))
+  return chunks.map((chunk) => renderMarkdown(chunk)).join('\n')
+}
+
 /** Render markdown to a safe HTML string (never throws). */
 export function renderMarkdown(markdown: string): string {
   try {
