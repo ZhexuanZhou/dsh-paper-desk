@@ -121,16 +121,6 @@ export function LibraryView(props: LibraryViewProps) {
           <span className="pd-list-count">{t('list.count', { n: count })}</span>
           <div className="pd-list-tools">
             {loading ? <Spinner size={12} label={t('list.loading')} /> : null}
-            <button
-              type="button"
-              className="pd-list-collapse"
-              title={t('list.collapse')}
-              aria-label={t('list.collapse')}
-              onClick={onToggleCollapsed}
-            >
-              <span aria-hidden="true">‹</span>
-              <span className="pd-list-collapse-label">{t('list.collapseShort')}</span>
-            </button>
             <Select
               small
               value={sort}
@@ -285,6 +275,15 @@ export function LibraryView(props: LibraryViewProps) {
           {t('list.importHint')}
         </span>
       </div>
+      <button
+        type="button"
+        className="pd-list-collapse"
+        title={t('list.collapse')}
+        aria-label={t('list.collapse')}
+        onClick={onToggleCollapsed}
+      >
+        ‹
+      </button>
       <div
         className="pd-list-resizer"
         role="separator"
