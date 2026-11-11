@@ -211,18 +211,37 @@ const VIEWER_CSS = `
   overflow-anchor: none;
   background: var(--dsw-alias-bg-layer-2);
 }
-.pdv-scroll::-webkit-scrollbar { width: 14px; height: 14px; }
-.pdv-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent);
-  border: 3px solid transparent;
-  background-clip: content-box;
+.pdv-scrollWrap { position: relative; display: flex; flex: 1 1 auto; min-height: 0; }
+.pdv-scroll,
+.pdv-scroll::-webkit-scrollbar { scrollbar-width: none; }
+.pdv-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.pdv-scrollRail {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  bottom: 4px;
+  z-index: 9;
+  width: 16px;
   border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 7%, transparent);
+  opacity: .8;
+  transition: opacity 120ms ease;
 }
-.pdv-scroll::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 60%, transparent);
+.pdv-scrollRail:hover,
+.pdv-scrollRail[data-dragging='true'] { opacity: 1; }
+.pdv-scrollRail[data-empty='true'] { display: none; }
+.pdv-scrollThumb {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 0;
+  min-height: 48px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 46%, transparent);
+  cursor: grab;
 }
-.pdv-scroll { scrollbar-gutter: stable; }
-.pdv-scroll::-webkit-scrollbar-track { background: transparent; }
+.pdv-scrollThumb:hover { background: color-mix(in srgb, var(--dsw-alias-label-secondary) 68%, transparent); }
+.pdv-scrollRail[data-dragging='true'] .pdv-scrollThumb { cursor: grabbing; }
 .pdv-pages {
   display: flex;
   flex-direction: column;
@@ -853,6 +872,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const scrollIdleTimerRef = useRef<number | null>(null)
   const windowResizingRef = useRef(false)
   const windowResizeTimerRef = useRef<number | null>(null)
+  const scrollRailRef = useRef<HTMLDivElement | null>(null)
+  const scrollThumbRef = useRef<HTMLDivElement | null>(null)
+  const scrollbarSyncFrameRef = useRef<number | null>(null)
   const zoomRef = useRef(1)
   const pageSizesRef = useRef<readonly PageSize[]>([])
   const fitModeRef = useRef(true)
@@ -1461,6 +1483,86 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       windowResizingRef.current = false
     }
   }, [status])
+
+  /* Custom scrollbar: the native overlay scrollbar is tiny on macOS and hard
+     to hit. A fixed-width rail with a minimum-size thumb is precise to drag. */
+  const syncScrollbar = useCallback((): void => {
+    if (scrollbarSyncFrameRef.current !== null) return
+    scrollbarSyncFrameRef.current = window.requestAnimationFrame(() => {
+      scrollbarSyncFrameRef.current = null
+      const scroller = scrollerRef.current
+      const rail = scrollRailRef.current
+      const thumb = scrollThumbRef.current
+      if (scroller === null || rail === null || thumb === null) return
+      const maxScroll = scroller.scrollHeight - scroller.clientHeight
+      if (maxScroll <= 1) {
+        rail.dataset.empty = 'true'
+        return
+      }
+      rail.dataset.empty = 'false'
+      const trackHeight = rail.clientHeight
+      const height = Math.max(48, Math.min(trackHeight, (scroller.clientHeight / scroller.scrollHeight) * trackHeight))
+      thumb.style.height = `${height}px`
+      const y = (scroller.scrollTop / maxScroll) * Math.max(0, trackHeight - height)
+      thumb.style.transform = `translateY(${y}px)`
+    })
+  }, [])
+
+  useEffect(() => {
+    if (status !== 'ready') return
+    const scroller = scrollerRef.current
+    if (scroller === null) return
+    const sync = (): void => syncScrollbar()
+    scroller.addEventListener('scroll', sync, { passive: true })
+    const observer = new ResizeObserver(sync)
+    observer.observe(scroller)
+    window.addEventListener('resize', sync)
+    sync()
+    return () => {
+      scroller.removeEventListener('scroll', sync)
+      observer.disconnect()
+      window.removeEventListener('resize', sync)
+      if (scrollbarSyncFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollbarSyncFrameRef.current)
+        scrollbarSyncFrameRef.current = null
+      }
+    }
+  }, [status, syncScrollbar, pageWindow.start, pageWindow.end, pageSizes, zoom])
+
+  const beginScrollbarDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const scroller = scrollerRef.current
+    const rail = scrollRailRef.current
+    const thumb = scrollThumbRef.current
+    if (scroller === null || rail === null || thumb === null) return
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight
+    if (maxScroll <= 1) return
+    event.preventDefault()
+    const railRect = rail.getBoundingClientRect()
+    const thumbHeight = thumb.getBoundingClientRect().height
+    const target = event.target as Element
+    const draggingThumb = target.closest('.pdv-scrollThumb') !== null
+    let startY = event.clientY
+    let startScroll = scroller.scrollTop
+    if (!draggingThumb) {
+      const ratio = Math.min(1, Math.max(0, (event.clientY - railRect.top - thumbHeight / 2) / Math.max(1, railRect.height - thumbHeight)))
+      scroller.scrollTop = ratio * maxScroll
+      startY = event.clientY
+      startScroll = scroller.scrollTop
+    }
+    rail.dataset.dragging = 'true'
+    const onMove = (moveEvent: PointerEvent): void => {
+      const usable = Math.max(1, railRect.height - thumbHeight)
+      const next = startScroll + ((moveEvent.clientY - startY) / usable) * maxScroll
+      scroller.scrollTop = Math.min(maxScroll, Math.max(0, next))
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      delete rail.dataset.dragging
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   /* After scrolling stops, re-rasterise visible pages at full DPR while the
      low-resolution versions stay visible until each replacement is ready. */
@@ -2309,6 +2411,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         </div>
       ) : null}
 
+      <div className="pdv-scrollWrap">
       <div className="pdv-scroll" ref={scrollerRef} onMouseUp={handleSelectionEnd} onKeyUp={handleSelectionEnd}>
         <div className="pdv-pages">
           {pageWindow.start > 1 ? (
@@ -2360,6 +2463,18 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
             />
           ) : null}
         </div>
+      </div>
+      <div
+        className="pdv-scrollRail"
+        ref={scrollRailRef}
+        data-empty="true"
+        onPointerDown={beginScrollbarDrag}
+        role="scrollbar"
+        aria-orientation="vertical"
+        aria-label={labels.page}
+      >
+        <div className="pdv-scrollThumb" ref={scrollThumbRef} />
+      </div>
       </div>
 
       {selection !== null && !askOpen ? (
