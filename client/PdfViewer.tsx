@@ -102,7 +102,7 @@ const RENDER_MARGIN = '700px 0px'
 const RELEASE_DELAY_MS = 1200
 const PREFETCH_IDLE_TIMEOUT_MS = 900
 /** Only this many pages exist in the DOM around the current page. */
-const PAGE_WINDOW = 5
+const PAGE_WINDOW = 2
 const STYLE_ATTR = 'paper-desk-viewer'
 
 /* ── scoped styles (injected once, removed on unmount) ───────────────────── */
@@ -325,9 +325,10 @@ const VIEWER_CSS = `
   width: 100%;
   padding: 9px ${PAGE_GUTTER}px;
   scroll-margin-top: 10px;
-  content-visibility: auto;
+  content-visibility: hidden;
   contain-intrinsic-size: auto 1200px;
 }
+.pdv-pageWrap[data-near='true'] { content-visibility: visible; }
 .pdv-page {
   position: relative;
   flex: 0 0 auto;
@@ -896,6 +897,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const windowResizeTimerRef = useRef<number | null>(null)
   const resizeCooldownRef = useRef(false)
   const resizeCooldownTimerRef = useRef<number | null>(null)
+  const jumpCooldownRef = useRef(false)
+  const jumpCooldownTimerRef = useRef<number | null>(null)
   const scrollRailRef = useRef<HTMLDivElement | null>(null)
   const scrollThumbRef = useRef<HTMLDivElement | null>(null)
   const scrollGhostRef = useRef<HTMLDivElement | null>(null)
@@ -1227,11 +1230,11 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       window.clearTimeout(upgrade)
       previewUpgradeTimersRef.current.delete(pageNumber)
     }
+    // Do not zero a large canvas backing store synchronously here: releasing
+    // several 2x page canvases at once was a major source of scrollbar-jump
+    // long tasks. The canvas element is removed when its page leaves the
+    // virtual window; until then the previous frame is harmlessly off-screen.
     view.textHost.replaceChildren()
-    view.canvas.width = 0
-    view.canvas.height = 0
-    view.canvas.style.width = ''
-    view.canvas.style.height = ''
   }, [])
 
   const scheduleRelease = useCallback((pageNumber: number) => {
@@ -1262,6 +1265,17 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   )
 
   const renderPage = useCallback(async (pageNumber: number, previewOnly = false): Promise<void> => {
+    // A window/panel resize is in flight: do not start raster work until the
+    // layout has settled. The resize idle effect re-renders visible pages.
+    if (windowResizingRef.current) return
+    const jumpPreview = jumpCooldownRef.current
+    // During a scrollbar jump do not paint any page: the scroll offset moves
+    // instantly, then the target page is painted only after the user actually
+    // interacts again. This keeps release completely free of pdf.js raster work.
+    if (jumpPreview) return
+    // Only pages around the current reading position paint their content.
+    // Far pages keep their reserved height but skip layout/paint entirely.
+    if (Math.abs(pageNumber - currentPageRef.current) > 2) return
     const view = pagesRef.current.get(pageNumber)
     const doc = docRef.current
     const pdfjs = pdfjsRef.current
@@ -1296,7 +1310,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       // the full-resolution pass follows on idle/short delay.
       if (view.previewKey !== key) {
         try {
-          const previewViewport = page.getViewport({ scale: scale * 0.45 })
+          const previewViewport = page.getViewport({ scale: scale * (jumpPreview ? 0.22 : 0.45) })
           canvas.width = Math.max(1, Math.round(previewViewport.width))
           canvas.height = Math.max(1, Math.round(previewViewport.height))
           canvas.style.width = `${viewport.width}px`
@@ -1313,7 +1327,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           view.previewKey = key
           view.pendingKey = undefined
           view.wrap.dataset.rendered = 'true'
-          if (previewOnly) return
+          if (previewOnly || jumpPreview) return
           const timer = window.setTimeout(() => {
             previewUpgradeTimersRef.current.delete(pageNumber)
             void renderPage(pageNumber)
@@ -1491,10 +1505,19 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         updateCurrentPage()
       })
     }
+    const leaveJumpPreview = (): void => {
+      if (!jumpCooldownRef.current) return
+      jumpCooldownRef.current = false
+      setQualityVersion((value) => value + 1)
+    }
     scroller.addEventListener('scroll', onScroll, { passive: true })
+    scroller.addEventListener('wheel', leaveJumpPreview, { passive: true })
+    scroller.addEventListener('pointerdown', leaveJumpPreview, { passive: true })
     updateCurrentPage()
     return () => {
       scroller.removeEventListener('scroll', onScroll)
+      scroller.removeEventListener('wheel', leaveJumpPreview)
+      scroller.removeEventListener('pointerdown', leaveJumpPreview)
       if (frame !== 0) cancelAnimationFrame(frame)
       if (scrollIdleTimerRef.current !== null) {
         window.clearTimeout(scrollIdleTimerRef.current)
@@ -1540,6 +1563,11 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         resizeCooldownTimerRef.current = null
       }
       resizeCooldownRef.current = false
+      if (jumpCooldownTimerRef.current !== null) {
+        window.clearTimeout(jumpCooldownTimerRef.current)
+        jumpCooldownTimerRef.current = null
+      }
+      jumpCooldownRef.current = false
     }
   }, [status, beginResizeCooldown, setResizingUi])
 
@@ -1596,6 +1624,13 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (scroller === null || rail === null || thumb === null) return
     const maxScroll = scroller.scrollHeight - scroller.clientHeight
     if (maxScroll <= 1) return
+    // A new grab cancels the previous release's deferred page paint so it can
+    // never start rasterising in the middle of the next drag.
+    if (jumpCooldownTimerRef.current !== null) {
+      window.clearTimeout(jumpCooldownTimerRef.current)
+      jumpCooldownTimerRef.current = null
+    }
+    jumpCooldownRef.current = true
     event.preventDefault()
     const railRect = rail.getBoundingClientRect()
     const thumbRect = thumb.getBoundingClientRect()
@@ -1646,6 +1681,17 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         return
       }
       // Commit once on release: no per-frame PDF relayout or page rendering.
+      // The jump itself is also expensive on big PDFs, so keep it preview-only
+      // until the target pages have settled.
+      jumpCooldownRef.current = true
+      if (jumpCooldownTimerRef.current !== null) window.clearTimeout(jumpCooldownTimerRef.current)
+      // Let the thumb release finish without any pdf.js work. The target page
+      // then paints once the interaction has fully settled.
+      jumpCooldownTimerRef.current = window.setTimeout(() => {
+        jumpCooldownTimerRef.current = null
+        jumpCooldownRef.current = false
+        setQualityVersion((value) => value + 1)
+      }, 600)
       scroller.scrollTop = Math.min(maxScroll, Math.max(0, targetScroll))
       updateCurrentPage()
       syncScrollbar()
@@ -2545,6 +2591,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
                 className="pdv-pageWrap"
                 key={page}
                 data-pdv-page={page}
+                data-near={Math.abs(page - currentPage) <= 2 ? 'true' : undefined}
                 ref={registerPage}
                 style={{ height: `${size.height * viewportScale + 18}px` }}
               >
