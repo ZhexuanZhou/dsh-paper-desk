@@ -25,6 +25,7 @@ import {
   normalizeDoi,
 } from './metadata.js'
 import type { PdfGuess } from './metadata.js'
+import { autoTags } from './autotag.js'
 import {
   extractNotePreview,
   initialNotesMarkdown,
@@ -561,7 +562,13 @@ export async function createPaper(
       (doi ? `https://doi.org/${doi}` : '') ||
       (arxivId ? `https://arxiv.org/abs/${arxivId}` : '')
     const keywords = stringArray(explicit.keywords)
-    const tags = stringArray(explicit.tags)
+    const explicitTags = stringArray(explicit.tags)
+    // New papers with an abstract get deterministic topic tags unless the
+    // caller supplied tags explicitly. User/AI edits always take precedence.
+    const tags =
+      explicitTags.length > 0
+        ? explicitTags
+        : autoTags({ title, abstract, keywords, venue })
 
     const id = await uniquePaperId(root, title, year, sha)
     const dirRel = paperDirRel(id)

@@ -84,11 +84,18 @@ try {
     enrich: false,
     language: 'zh',
     device: 'smoke',
-    meta: { title: 'PaperDesk smoke test', authors: ['Ada Lovelace'], year: 2026 },
+    meta: {
+      title: 'PaperDesk smoke test',
+      authors: ['Ada Lovelace'],
+      year: 2026,
+      abstract:
+        'Diffusion language models are a new class of generative models. We show that diffusion language models can generate text with fewer sampling steps.',
+    },
   })
   check('paper imported', /^[a-z0-9-]+$/.test(created.id), created.id)
   check('paper deduplicated flag is false', created.duplicated === false)
   check('title kept from explicit meta', created.meta.title === 'PaperDesk smoke test')
+  check('auto tags derived from abstract', created.meta.tags.includes('diffusion-language-model'), created.meta.tags.join(','))
 
   const duplicate = await createPaper(root, {
     sourcePath: pdfPath,
