@@ -9,7 +9,7 @@
  *
  * Contract: DESIGN-VIEWER.md §3.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DEFAULT_KEYMAP,
   KEY_ACTION_LABELS,
@@ -208,6 +208,7 @@ const VIEWER_CSS = `
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  overflow-anchor: none;
   background: var(--dsw-alias-bg-layer-2);
 }
 .pdv-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -2094,6 +2095,28 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     pageOffsetsRef.current = pageLayout.offsets
   }, [pageLayout.offsets])
+
+  // Page sizes arrive in batches while the document loads. If an earlier page
+  // turns out to be taller/shorter, the content below shifts and the scrollbar
+  // visibly jumps. Compensate before paint so the current page stays put.
+  const anchorLayoutRef = useRef(pageLayout)
+  const anchorZoomRef = useRef(zoom)
+  useLayoutEffect(() => {
+    const previous = anchorLayoutRef.current
+    anchorLayoutRef.current = pageLayout
+    if (anchorZoomRef.current !== zoom) {
+      anchorZoomRef.current = zoom
+      return
+    }
+    const page = currentPageRef.current
+    if (page < 1) return
+    const before = previous.offsets[page - 1] ?? 0
+    const after = pageLayout.offsets[page - 1] ?? 0
+    const delta = after - before
+    if (delta === 0) return
+    const scroller = scrollerRef.current
+    if (scroller !== null) scroller.scrollTop += delta
+  }, [pageLayout, zoom])
 
   /* Drop page DOM/refs that fall outside the virtual window. */
   useEffect(() => {
