@@ -47,7 +47,7 @@ const CARD_LIMITS = {
   pages: 20,
   page: 999,
   contextTurns: 12,
-  contextText: 4000,
+  contextText: 8000,
 } as const
 
 const SOURCES: readonly CardSource[] = ['ai', 'user', 'agent']
@@ -220,8 +220,9 @@ function coerceContext(value: unknown): CardContextTurn[] {
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
     const record = entry as Record<string, unknown>
     if (record['role'] !== 'user' && record['role'] !== 'assistant') continue
-    const text = storedText(record['text'], CARD_LIMITS.contextText)
-    if (text === null) continue
+    const rawText = typeof record['text'] === 'string' ? record['text'].trim() : ''
+    if (rawText === '') continue
+    const text = rawText.slice(0, CARD_LIMITS.contextText)
     const id = typeof record['id'] === 'string' && record['id'].length <= MAX_CARD_ID_LENGTH ? record['id'] : undefined
     turns.push({ ...(id !== undefined ? { id } : {}), role: record['role'], text })
   }
@@ -351,8 +352,9 @@ function sanitizeContext(value: unknown): CardContextTurn[] {
     const record = entry as Record<string, unknown>
     const role = record['role']
     if (role !== 'user' && role !== 'assistant') throw fail('card context role must be user or assistant', 400)
-    const text = storedText(record['text'], CARD_LIMITS.contextText)
-    if (text === null) throw fail('card context text is empty or too long', 400)
+    const rawText = typeof record['text'] === 'string' ? record['text'].trim() : ''
+    if (rawText === '') throw fail('card context text is empty or too long', 400)
+    const text = rawText.slice(0, CARD_LIMITS.contextText)
     const id = typeof record['id'] === 'string' && record['id'].length <= MAX_CARD_ID_LENGTH ? record['id'] : undefined
     turns.push({ ...(id !== undefined ? { id } : {}), role, text })
   }

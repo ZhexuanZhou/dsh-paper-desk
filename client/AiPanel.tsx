@@ -249,8 +249,9 @@ export function AiPanel(props: AiPanelProps) {
   const contextForRow = (row: AiRow): CardContextTurn[] => {
     const index = conversationTurns.findIndex((turn) => turn.id === row.id)
     if (index < 0) return []
-    const start = Math.max(0, index - 2)
-    return conversationTurns.slice(start, index + 1).map((turn) => ({ ...turn }))
+    // The card body is the current answer; context is what came before it.
+    const start = Math.max(0, index - 3)
+    return conversationTurns.slice(start, index).map((turn) => ({ ...turn }))
   }
 
   const toolCount = rows.reduce((count, row) => count + (row.kind === 'tool' ? 1 : 0), 0)
@@ -652,7 +653,7 @@ export function AiPanel(props: AiPanelProps) {
                               const row: AiRow = { id: `history-${index}`, kind: 'assistant', text: message.text }
                               const turnIndex = conversationTurns.findIndex((turn) => turn.id === row.id)
                               const defaultContext =
-                                turnIndex < 0 ? [] : conversationTurns.slice(Math.max(0, turnIndex - 2), turnIndex + 1)
+                                turnIndex < 0 ? [] : conversationTurns.slice(Math.max(0, turnIndex - 3), turnIndex)
                               onCreateCard(row, conversationTurns, defaultContext)
                             }}
                           >

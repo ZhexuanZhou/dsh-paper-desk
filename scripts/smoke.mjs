@@ -141,6 +141,13 @@ try {
   })
   check('card context appendable', updatedCard.items[0]?.context?.length === 3)
   check('readCards returns context', (await readCards(root, created.id)).items[0]?.context?.length === 3)
+  const longCard = await addCard(root, created.id, {
+    title: 'Long context card',
+    body: 'Long context should be truncated, not rejected.',
+    context: [{ role: 'assistant', text: 'x'.repeat(9000) }],
+  })
+  const longContext = longCard.items.find((item) => item.title === 'Long context card')?.context?.[0]?.text ?? ''
+  check('long context is truncated', longContext.length === 8000, String(longContext.length))
 
   // Text extraction (pdfjs) — real PDF may take longer.
   const text = await ensureText(root, created.id, {
