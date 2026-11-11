@@ -881,10 +881,18 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
   const scheduleFlush = (): void => {
     if (flushScheduled) return
     flushScheduled = true
-    enqueue(() => {
+    // Streaming deltas arrive far faster than the screen refreshes. Coalescing
+    // them to one paint per frame avoids reparsing the whole Markdown answer for
+    // every token (which made long AI answers feel like the whole plugin froze).
+    const run = (): void => {
       flushScheduled = false
       refreshNow()
-    })
+    }
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(run)
+    } else {
+      window.setTimeout(run, 16)
+    }
   }
 
   const addLocalError = (message: string): void => {

@@ -3,7 +3,7 @@
  * tag filter, sort control, import entry point and drag & drop affordances.
  * Purely presentational — all data and callbacks come from `App`.
  */
-import { useRef } from 'react'
+import { memo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { PaperStatus, PaperSummary } from '../src/types.js'
 import { IconBook, IconImport } from './icons.js'
@@ -44,7 +44,7 @@ export interface LibraryViewProps {
   onRelations: () => void
 }
 
-export function LibraryView(props: LibraryViewProps) {
+function LibraryViewImpl(props: LibraryViewProps) {
   const t = useT()
   const {
     papers,
@@ -84,16 +84,37 @@ export function LibraryView(props: LibraryViewProps) {
   ]
 
   const resizeFrameRef = useRef<number | null>(null)
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const dragWidthRef = useRef(width)
+  const [dragging, setDragging] = useState(false)
 
+  /**
+   * Resize the pane by writing its width directly. Updating App state on every
+   * pointermove re-rendered the whole library + reader (including the PDF
+   * viewer) at 60fps and made dragging feel heavy; React only gets the final
+   * width on pointerup.
+   */
   const beginResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
     event.preventDefault()
+    const element = sectionRef.current
+    if (element === null) return
     const startX = event.clientX
     const startWidth = width
+    dragWidthRef.current = startWidth
+    element.style.width = `${startWidth}px`
+    element.style.flexBasis = `${startWidth}px`
+    setDragging(true)
+
+    const apply = (next: number): void => {
+      dragWidthRef.current = next
+      element.style.width = `${next}px`
+      element.style.flexBasis = `${next}px`
+    }
     const onMove = (moveEvent: PointerEvent): void => {
       if (resizeFrameRef.current !== null) return
       resizeFrameRef.current = window.requestAnimationFrame(() => {
         resizeFrameRef.current = null
-        onWidthChange(Math.min(560, Math.max(240, startWidth + moveEvent.clientX - startX)))
+        apply(Math.min(560, Math.max(240, startWidth + moveEvent.clientX - startX)))
       })
     }
     const onUp = (): void => {
@@ -103,6 +124,8 @@ export function LibraryView(props: LibraryViewProps) {
         window.cancelAnimationFrame(resizeFrameRef.current)
         resizeFrameRef.current = null
       }
+      setDragging(false)
+      onWidthChange(dragWidthRef.current)
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -110,8 +133,9 @@ export function LibraryView(props: LibraryViewProps) {
 
   return (
     <section
+      ref={sectionRef}
       className="pd-pane pd-pane-list"
-      style={collapsed ? { display: 'none' } : { width, flexBasis: width }}
+      style={collapsed ? { display: 'none' } : dragging ? undefined : { width, flexBasis: width }}
       aria-label={t('list.title')}
     >
       <div className="pd-list-head">
@@ -296,3 +320,18 @@ export function LibraryView(props: LibraryViewProps) {
     </section>
   )
 }
+
+/**
+ * Ignore callback identity (App creates a few inline callbacks) but re-render
+ * whenever data, filters or width change. This keeps typing in the global
+ * search box from re-rendering the entire paper list.
+ */
+export const LibraryView = memo(LibraryViewImpl, (prev, next) => {
+  for (const key of Object.keys(prev) as Array<keyof LibraryViewProps>) {
+    const a = prev[key]
+    const b = next[key]
+    if (typeof a === 'function' || typeof b === 'function') continue
+    if (a !== b) return false
+  }
+  return true
+})

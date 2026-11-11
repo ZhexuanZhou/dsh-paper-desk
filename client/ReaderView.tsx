@@ -4,7 +4,7 @@
  * rail, lazy extracted text, the notes editor, the metadata editor and the
  * agent-assist bar. Presentational only — all data and API calls come from App.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AnnotationDocument,
   ChatsDocument,
@@ -387,7 +387,7 @@ function AnnotationRail(props: AnnotationRailProps) {
 
 /* ── reader ────────────────────────────────────────────────────────────── */
 
-export function ReaderView(props: ReaderViewProps) {
+function ReaderViewImpl(props: ReaderViewProps) {
   const t = useT()
   const lang = useLang()
   const {
@@ -773,25 +773,51 @@ export function ReaderView(props: ReaderViewProps) {
     setDrawer({ open: true, tab: drawerTab })
   }
 
+  const drawerElRef = useRef<HTMLElement | null>(null)
+  const drawerDragWidthRef = useRef(drawerWidth)
+  const drawerDragFrameRef = useRef<number | null>(null)
+  const [drawerResizing, setDrawerResizing] = useState(false)
+
+  /**
+   * Same optimization as the paper-list resizer: write the width directly to
+   * the DOM while dragging and commit React state once on pointerup. Updating
+   * ReaderView state per pointermove re-rendered the PDF viewer every frame.
+   */
   const beginDrawerResize = (event: React.PointerEvent<HTMLDivElement>): void => {
     event.preventDefault()
+    const element = drawerElRef.current
+    if (element === null) return
     const startX = event.clientX
     const startWidth = drawerWidth
+    drawerDragWidthRef.current = startWidth
+    element.style.width = `${startWidth}px`
+    setDrawerResizing(true)
+    const apply = (next: number): void => {
+      drawerDragWidthRef.current = next
+      element.style.width = `${next}px`
+    }
     const onMove = (moveEvent: PointerEvent): void => {
-      const next = Math.min(680, Math.max(280, startWidth - (moveEvent.clientX - startX)))
-      setDrawerWidth(next)
+      if (drawerDragFrameRef.current !== null) return
+      drawerDragFrameRef.current = window.requestAnimationFrame(() => {
+        drawerDragFrameRef.current = null
+        apply(Math.min(680, Math.max(280, startWidth - (moveEvent.clientX - startX))))
+      })
     }
     const onUp = (): void => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      setDrawerWidth((current) => {
-        try {
-          localStorage.setItem(DRAWER_WIDTH_KEY, String(current))
-        } catch {
-          // Width persistence is a convenience only.
-        }
-        return current
-      })
+      if (drawerDragFrameRef.current !== null) {
+        window.cancelAnimationFrame(drawerDragFrameRef.current)
+        drawerDragFrameRef.current = null
+      }
+      setDrawerResizing(false)
+      const finalWidth = drawerDragWidthRef.current
+      setDrawerWidth(finalWidth)
+      try {
+        localStorage.setItem(DRAWER_WIDTH_KEY, String(finalWidth))
+      } catch {
+        // Width persistence is a convenience only.
+      }
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -1284,10 +1310,11 @@ export function ReaderView(props: ReaderViewProps) {
                 viewer re-fits via its own ResizeObserver, so opening/closing
                 must not animate width. */}
             <aside
+              ref={drawerElRef}
               className="pd-annot-rail"
               data-open={drawer.open ? 'true' : 'false'}
               data-tab={drawer.tab}
-              style={{ width: drawerWidth }}
+              style={drawerResizing ? undefined : { width: drawerWidth }}
               aria-label={drawer.tab === 'ai' ? t('ai.title') : t('annotations.title')}
             >
               <div
@@ -1645,3 +1672,19 @@ export function ReaderView(props: ReaderViewProps) {
     </section>
   )
 }
+
+/**
+ * ReaderView is the heaviest subtree (PDF viewer + AI thread). App's global
+ * state changes (search text, toasts, list filters) should not re-render it.
+ * Callbacks are ignored for identity; whenever any data prop changes the
+ * component still re-renders normally.
+ */
+export const ReaderView = memo(ReaderViewImpl, (prev, next) => {
+  for (const key of Object.keys(prev) as Array<keyof ReaderViewProps>) {
+    const a = prev[key]
+    const b = next[key]
+    if (typeof a === 'function' || typeof b === 'function') continue
+    if (a !== b) return false
+  }
+  return true
+})
