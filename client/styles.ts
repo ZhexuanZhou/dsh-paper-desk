@@ -1489,7 +1489,19 @@ export const CSS = `
   cursor: pointer;
 }
 .pd-ai-tools-toggle:hover { background: ${L2}; color: ${FG}; }
-.pd-md math { font-size: 1.05em; }
+.pd-md math {
+  font-size: 1.05em;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: middle;
+}
+.pd-md math[display="block"] {
+  display: block;
+  width: 100%;
+  margin: 0.55em 0;
+  padding: 1px 0;
+  overflow-x: auto;
+}
 
 .pd-ai-ime-hint {
   margin-top: 3px;
@@ -1909,8 +1921,25 @@ export const CSS = `
 .pd-md a { color: ${BRAND}; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, ${BRAND} 35%, transparent); }
 .pd-md a:hover { border-bottom-color: ${BRAND}; }
 .pd-md hr { margin: 1em 0; border: 0; border-top: 1px solid ${B1}; }
-.pd-md table { width: 100%; margin: 0.7em 0; border-collapse: collapse; font-size: 11.5px; }
-.pd-md th, .pd-md td { padding: 4px 7px; border: 1px solid ${B1}; text-align: left; vertical-align: top; }
+.pd-md table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.7em 0;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.pd-md th, .pd-md td {
+  min-width: 72px;
+  padding: 4px 7px;
+  border: 1px solid ${B1};
+  text-align: left;
+  vertical-align: top;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
 .pd-md th { background: ${L2}; font-weight: 600; }
 .pd-md img { max-width: 100%; border-radius: 6px; }
 .pd-md input[type="checkbox"] { margin-right: 4px; }
