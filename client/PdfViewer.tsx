@@ -2491,7 +2491,11 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     void renderPage(page)
     scrollPageIntoView(scroller, view.pageEl, 'start', 'auto')
     commitPage(page)
-  }, [focusPage, focusNonce, status, numPages, pageWindow.start, pageWindow.end, renderPage, commitPage])
+    // Deliberately do NOT depend on pageWindow: once the requested page has
+    // been applied, scrolling/prev-next must not snap the reader back to the
+    // page that opened the viewer. A page outside the window is handled by
+    // pendingScrollPageRef, whose own effect waits for the DOM to exist.
+  }, [focusPage, focusNonce, status, numPages, renderPage, commitPage])
 
   /* Scroll to a page that was outside the virtual window once its DOM exists. */
   useEffect(() => {
@@ -3351,7 +3355,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           aria-label={labels.prev}
           title={labels.prev}
           disabled={currentPage <= 1}
-          onClick={() => goToPage(currentPage - 1)}
+          onClick={() => goToPage(currentPageRef.current - 1)}
         >
           <ToolbarIcon name="prev" />
         </button>
@@ -3381,7 +3385,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           aria-label={labels.next}
           title={labels.next}
           disabled={currentPage >= numPages}
-          onClick={() => goToPage(currentPage + 1)}
+          onClick={() => goToPage(currentPageRef.current + 1)}
         >
           <ToolbarIcon name="next" />
         </button>
