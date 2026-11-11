@@ -962,6 +962,64 @@ function currentDpr(): number {
   return Math.max(1, Math.min(MAX_DPR, Number.isFinite(raw) && raw > 0 ? raw : 1))
 }
 
+/**
+ * pdf.js emits one text item per glyph run; a dense page can produce thousands
+ * of them. TextLayer calls canvas.measureText for every item, which made a cold
+ * page spend seconds on the main thread. Merge adjacent items on the same line
+ * and with the same font into one run first: selection text and positions stay
+ * equivalent, while the number of measured spans drops by an order of magnitude.
+ */
+function mergeTextItems(items: readonly unknown[]): unknown[] {
+  const out: Record<string, unknown>[] = []
+  let current: Record<string, unknown> | null = null
+  const flush = (): void => {
+    if (current !== null) out.push(current)
+    current = null
+  }
+  for (const raw of items) {
+    if (raw === null || typeof raw !== 'object') continue
+    const item = raw as Record<string, unknown>
+    if (typeof item.str !== 'string' || item.str.length === 0) continue
+    const transform = Array.isArray(item.transform) ? (item.transform as number[]) : null
+    const x = transform?.[4]
+    const y = transform?.[5]
+    const width = typeof item.width === 'number' ? item.width : 0
+    if (current === null || transform === null || x === undefined || y === undefined) {
+      flush()
+      current = { ...item }
+      if (current !== null) current.width = width
+      continue
+    }
+    const curTransform = Array.isArray(current.transform) ? (current.transform as number[]) : null
+    const curX = curTransform?.[4]
+    const curY = curTransform?.[5]
+    const curWidth = typeof current.width === 'number' ? current.width : 0
+    const sameFont = current.fontName === item.fontName && current.dir === item.dir
+    const sameLine = curY !== undefined && Math.abs(y - curY) < 0.8
+    const gap = curX !== undefined ? x - (curX + curWidth) : Number.POSITIVE_INFINITY
+    const maxGap = Math.max(2, (typeof item.height === 'number' ? item.height : 10) * 1.2)
+    if (sameFont && sameLine && gap <= maxGap) {
+      current.str = `${String(current.str ?? '')}${item.str}`
+      if (curX !== undefined) current.width = x + width - curX
+      current.hasEOL = item.hasEOL
+      if (item.hasEOL === true) flush()
+      continue
+    }
+    flush()
+    current = { ...item }
+    if (current !== null) current.width = width
+    if (item.hasEOL === true) flush()
+  }
+  flush()
+  // TextLayer uses item.width only to set each span's --scale-x, which requires
+  // a canvas measureText call per span and dominated the main thread on dense
+  // pages. The rendered page is already on the canvas; the text layer is an
+  // invisible selection overlay, so zero width lets TextLayer skip measuring
+  // while spans keep their absolute positions and selectable text.
+  for (const item of out) item.width = 0
+  return out
+}
+
 function renderKey(zoom: number, dpr = currentDpr()): string {
   return `${(zoom * CSS_UNITS).toFixed(4)}|${dpr}`
 }
@@ -2014,12 +2072,27 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         container.dataset.pdvPage = String(pageNumber)
         view.textHost.replaceChildren(container)
         try {
-          const source =
-            typeof page.streamTextContent === 'function'
-              ? page.streamTextContent({ includeMarkedContent: true, disableNormalization: true })
-              : await page.getTextContent({ includeMarkedContent: true, disableNormalization: true })
+          // TextLayer.render() is synchronous over every text item. On dense
+          // pages that is several seconds of main-thread work (canvas
+          // measureText per span), which looked like a frozen page after the
+          // bitmap had already painted. Render it in small chunks and yield
+          // between chunks so scrolling/selection stay responsive.
+          const content = (await page.getTextContent({
+            includeMarkedContent: true,
+            disableNormalization: true,
+          })) as { items?: unknown[]; styles?: unknown; lang?: string }
           if (epoch !== epochRef.current || token !== view.token) return
-          const textLayer = new pdfjs.TextLayer({ textContentSource: source, container, viewport })
+          const items = Array.isArray(content.items) ? content.items : []
+          const merged = mergeTextItems(items)
+          const textLayer = new pdfjs.TextLayer({
+            textContentSource: {
+              items: merged,
+              styles: content.styles ?? {},
+              lang: content.lang,
+            },
+            container,
+            viewport,
+          })
           await textLayer.render()
           if (epoch !== epochRef.current || token !== view.token) return
           applyFindHighlights(view.wrap, findQueryRef.current, findActivePageRef.current)
