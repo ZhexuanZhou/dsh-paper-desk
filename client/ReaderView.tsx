@@ -464,7 +464,10 @@ function ReaderViewImpl(props: ReaderViewProps) {
   const drawerElRef = useRef<HTMLElement | null>(null)
   const drawerDragWidthRef = useRef(drawerWidth)
   const drawerDragFrameRef = useRef<number | null>(null)
-  const [drawerResizing, setDrawerResizing] = useState(false)
+
+  useEffect(() => {
+    drawerDragWidthRef.current = drawerWidth
+  }, [drawerWidth])
 
   useEffect(() => {
     try {
@@ -803,7 +806,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
     const startWidth = drawerWidth
     drawerDragWidthRef.current = startWidth
     element.style.width = `${startWidth}px`
-    setDrawerResizing(true)
     const apply = (next: number): void => {
       drawerDragWidthRef.current = next
       element.style.width = `${next}px`
@@ -822,7 +824,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
         window.cancelAnimationFrame(drawerDragFrameRef.current)
         drawerDragFrameRef.current = null
       }
-      setDrawerResizing(false)
       const finalWidth = drawerDragWidthRef.current
       setDrawerWidth(finalWidth)
       try {
@@ -1335,7 +1336,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
               className="pd-annot-rail"
               data-open={drawer.open ? 'true' : 'false'}
               data-tab={drawer.tab}
-              style={drawerResizing ? undefined : { width: drawerWidth }}
+              style={{ width: drawerDragWidthRef.current }}
               aria-label={drawer.tab === 'ai' ? t('ai.title') : t('annotations.title')}
             >
               <div
