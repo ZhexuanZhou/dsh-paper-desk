@@ -64,7 +64,7 @@ type ReaderTab = 'read' | 'text' | 'notes' | 'cards' | 'info'
 
 const READER_STATUSES: readonly PaperStatus[] = ['unread', 'reading', 'read', 'archived']
 
-type DrawerTab = 'annotations' | 'ai' | 'notes'
+type DrawerTab = 'annotations' | 'ai'
 
 interface DrawerState {
   open: boolean
@@ -88,7 +88,8 @@ function readDrawerState(): DrawerState {
       const record = parsed as { open?: unknown; tab?: unknown }
       return {
         open: record.open === true,
-        tab: record.tab === 'notes' ? 'notes' : record.tab === 'ai' ? 'ai' : 'annotations',
+        // Legacy notes drawers now open the assistant; notes have one main tab.
+        tab: record.tab === 'annotations' ? 'annotations' : 'ai',
       }
     }
   } catch {
@@ -813,7 +814,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
   }
 
   const openDrawer = (drawerTab: DrawerTab): void => {
-    if (drawerTab === 'notes') { activateTab('notes'); return }
     setDrawer({ open: true, tab: drawerTab })
   }
 
@@ -1340,7 +1340,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
               data-open={drawer.open ? 'true' : 'false'}
               data-tab={drawer.tab}
               style={{ width: drawerDragWidthRef.current }}
-              aria-label={drawer.tab === 'notes' ? t('reader.tab.notes') : drawer.tab === 'ai' ? t('ai.title') : t('annotations.title')}
+              aria-label={drawer.tab === 'ai' ? t('ai.title') : t('annotations.title')}
             >
               <div
                 className="pd-drawer-resizer"
@@ -1375,7 +1375,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
                   <IconSpark size={12} />
                   {t('ai.title')}
                 </button>
-                <button type="button" role="tab" id="pd-drawer-tab-notes" aria-controls="pd-drawer-panel" className="pd-drawer-tab" data-on={drawer.tab === 'notes' ? 'true' : 'false'} aria-selected={drawer.tab === 'notes'} onClick={() => openDrawer('notes')}>{t('reader.tab.notes')}</button>
                 <span className="pd-drawer-tabs-spacer" />
                 <IconButton label={t('common.close')} onClick={closeDrawer}>
                   <IconClose size={13} />
@@ -1385,11 +1384,9 @@ function ReaderViewImpl(props: ReaderViewProps) {
                 className="pd-drawer-body"
                 id="pd-drawer-panel"
                 role="tabpanel"
-                aria-labelledby={`pd-drawer-tab-${drawer.tab === 'ai' ? 'ai' : drawer.tab === 'notes' ? 'notes' : 'annotations'}`}
+                aria-labelledby={`pd-drawer-tab-${drawer.tab}`}
               >
-                {drawer.tab === 'notes' ? (
-                  <div className="pd-notebook-launch"><Button variant="primary" onClick={() => activateTab('notes')}>{t('notes.openNotebook')}</Button></div>
-                ) : drawer.tab === 'annotations' ? (
+                {drawer.tab === 'annotations' ? (
                   <AnnotationRail
                     items={annotationItems}
                     loading={annotationsLoading}

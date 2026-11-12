@@ -9,7 +9,7 @@
  * `marked` markdown renderer) are bundled into this file.
  */
 import { build } from 'esbuild'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,6 +18,8 @@ const root = path.resolve(here, '..')
 
 /** Package name = module-table handoff id. */
 const ID = 'dsh-paper-desk'
+const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+if (typeof manifest.version !== 'string' || !manifest.version) throw new Error('Package version is missing')
 
 /** Platform seed words + module-table entries the factory may require(). */
 const EXTERNALS = [
@@ -41,6 +43,7 @@ const result = await build({
   platform: 'browser',
   jsx: 'automatic',
   target: ['es2022'],
+  define: { __PAPERDESK_VERSION__: JSON.stringify(manifest.version) },
   external: EXTERNALS,
   write: false,
   logLevel: 'warning',

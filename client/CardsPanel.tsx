@@ -5,7 +5,7 @@
  * chips); `CardsPanel` is the full-page card reading view. Both are
  * presentational — persistence lives in `App`, which owns the `/cards` API.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CardContextTurn, NoteCard } from '../src/types.js'
 import { IconEdit, IconNote, IconPlus, IconTrash } from './icons.js'
 import { Markdown } from './markdown.js'
@@ -312,9 +312,40 @@ export function CardsPanel(props: CardsPanelProps) {
   const [summarizing, setSummarizing] = useState(false)
   const [merging, setMerging] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set<string>())
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const cardRefs = useRef(new Map<string, HTMLLIElement>())
+  const currentId = cards.some((card) => card.id === activeId) ? activeId : cards[0]?.id
+  const trackReadingPosition = (): void => {
+    const scroll = scrollRef.current
+    if (scroll === null) return
+    if (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 2) {
+      setActiveId(cards.at(-1)?.id ?? null)
+      return
+    }
+    const top = scroll.getBoundingClientRect().top + 80
+    let current = cards[0]?.id ?? null
+    for (const card of cards) {
+      const element = cardRefs.current.get(card.id)
+      if (element && element.getBoundingClientRect().top <= top) current = card.id
+    }
+    setActiveId(current)
+  }
 
   return (
     <aside className="pd-cards-rail" aria-label={t('cards.title')}>
+      <nav className="pd-notebook-outline pd-cards-directory" aria-label={t('cards.outline')}>
+        <h3>{t('cards.outline')}</h3>
+        {cards.length === 0 ? <p className="pd-field-hint">{t(loading ? 'cards.loading' : 'cards.empty')}</p> : cards.map((card, index) => (
+          <button key={card.id} type="button" aria-current={currentId === card.id ? 'location' : undefined} onClick={() => {
+            setActiveId(card.id)
+            cardRefs.current.get(card.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+          }}>
+            <span className="pd-card-outline-number">{index + 1}</span><span>{card.title}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="pd-cards-main">
       <div className="pd-cards-head">
         <IconNote size={13} />
         <span>{t('cards.title')}</span>
@@ -359,7 +390,7 @@ export function CardsPanel(props: CardsPanelProps) {
           <IconPlus size={12} />
         </IconButton>
       </div>
-      <div className="pd-cards-scroll">
+      <div className="pd-cards-scroll" ref={scrollRef} onScroll={trackReadingPosition}>
         {loading ? (
           <div className="pd-loading-block">
             <Spinner size={12} label={t('cards.loading')} />
@@ -379,7 +410,10 @@ export function CardsPanel(props: CardsPanelProps) {
         ) : (
           <ul className="pd-card-list">
             {cards.map((card) => (
-              <li key={card.id} className="pd-card-item">
+              <li key={card.id} className="pd-card-item" ref={(element) => {
+                if (element) cardRefs.current.set(card.id, element)
+                else cardRefs.current.delete(card.id)
+              }}>
                 {onMerge !== undefined ? (
                   <label className="pd-card-select" title={t('cards.mergeSelect')}>
                     <input
@@ -446,6 +480,7 @@ export function CardsPanel(props: CardsPanelProps) {
             ))}
           </ul>
         )}
+      </div>
       </div>
     </aside>
   )

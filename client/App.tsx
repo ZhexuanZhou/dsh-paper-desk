@@ -6,6 +6,7 @@
  * (file picker + drag & drop), all API calls (through `client/api.ts`) and the
  * toast stream. Views stay presentational and receive data + callbacks.
  */
+import { CLIENT_VERSION } from './version.js'
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, ReactNode } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -2129,7 +2130,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           <div className="pd-brand-text">
             <div className="pd-brand-title-row">
               <h1 className="pd-brand-title">{t('app.title')}</h1>
-              {status?.version ? <span className="pd-brand-version">v{status.version}</span> : null}
+              <span className="pd-brand-version" title={t('app.versionInfo', { ui: CLIENT_VERSION, host: status?.version ?? '—' })}>v{CLIENT_VERSION}</span>
             </div>
             <span className="pd-brand-sub">{t('app.subtitle')}</span>
           </div>
