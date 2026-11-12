@@ -217,13 +217,13 @@ export const CSS = `
 .pd-list-resizer::after {
   content: '';
   position: absolute;
-  top: 50%;
+  bottom: 34vh;
   left: 50%;
   width: 2px;
   height: 36px;
   border-radius: 999px;
   background: color-mix(in srgb, ${FG} 24%, transparent);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   pointer-events: none;
 }
 .pd-list-resizer:hover { background: color-mix(in srgb, ${FG} 7%, transparent); }
@@ -947,13 +947,13 @@ export const CSS = `
 .pd-drawer-resizer::after {
   content: '';
   position: absolute;
-  top: 50%;
+  bottom: 34vh;
   left: 50%;
   width: 2px;
   height: 36px;
   border-radius: 999px;
   background: color-mix(in srgb, ${FG} 24%, transparent);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   pointer-events: none;
 }
 .pd-drawer-resizer:hover { background: color-mix(in srgb, ${FG} 7%, transparent); }
