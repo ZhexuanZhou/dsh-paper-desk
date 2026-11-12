@@ -65,6 +65,8 @@ export interface PaperSummary {
   hasNotes: boolean
   /** First line of notes.md's summary, trimmed for the list. */
   notePreview: string
+  /** Matching content snippet when this row comes from a search. */
+  searchMatch?: string
   /** True when the PDF file is an iCloud placeholder that is not downloaded. */
   pdfEvicted: boolean
 }
@@ -209,7 +211,7 @@ export interface EnrichResult {
 export interface SearchHit {
   paper: PaperSummary
   /** Which field matched: title | author | abstract | notes | text | tag. */
-  field: 'title' | 'author' | 'abstract' | 'notes' | 'text' | 'tag'
+  field: 'title' | 'author' | 'abstract' | 'notes' | 'text' | 'tag' | 'venue'
   /** Context snippet around the match. */
   snippet: string
   score: number
@@ -518,4 +520,32 @@ export interface ChatsDocument {
 
 export interface NewPaperChat {
   title?: string
+}
+
+export interface ResearchTopic {
+  id: string
+  title: string
+  question: string
+  paperIds: string[]
+  notes: string
+  updatedAt: string
+}
+export interface ResearchSubscription { id: string; query: string; lastChecked: string | null }
+export interface ResearchDocument {
+  schemaVersion: 1
+  topics: ResearchTopic[]
+  subscriptions: ResearchSubscription[]
+}
+export interface ResearchSnapshot { document: ResearchDocument; hash: string }
+
+export interface DiscoveredPaper {
+  arxivId: string
+  title: string
+  authors: string[]
+  abstract: string
+  published: string
+  url: string
+  existingPaperId: string | null
+  /** Title-only matches are warnings, never authoritative identity merges. */
+  possibleDuplicateId: string | null
 }

@@ -14,6 +14,7 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { ensurePaperWorkspace } from './agent.js'
+import type { PageImage } from './pageImages.js'
 
 export type AiRowKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'error' | 'status'
 
@@ -59,7 +60,7 @@ export interface AiThreadController {
   openThread(threadKey: string, options: AiThreadOptions): Promise<void>
   /** Open a paper's thread with the `AI · <paperTitle>` session name. */
   openPaper(paperId: string, options: AiThreadOptions): Promise<void>
-  run(prompt: string): Promise<{ ok: boolean; error?: string }>
+  run(prompt: string, images?: readonly PageImage[]): Promise<{ ok: boolean; error?: string }>
   stop(): Promise<void>
   /** Drop the cached session for a thread and start from an empty thread. */
   resetThread(threadKey?: string): void
@@ -1187,7 +1188,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     await openThread(paperId, { ...options, title })
   }
 
-  const run = async (prompt: string): Promise<{ ok: boolean; error?: string }> => {
+  const run = async (prompt: string, images: readonly PageImage[] = []): Promise<{ ok: boolean; error?: string }> => {
     const text = typeof prompt === 'string' ? prompt.trim() : ''
     if (text === '') return { ok: false, error: 'The prompt is empty.' }
 
@@ -1249,7 +1250,7 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
     try {
       const result: unknown = await send.call(
         current.session,
-        [{ type: 'text', text }],
+        [...images, { type: 'text', text }],
         'queue',
         undefined,
         submission?.requestId,

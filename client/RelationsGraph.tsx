@@ -2337,6 +2337,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
   const discoverRunLockRef = useRef(false)
   const discoverAddLockRef = useRef(false)
   const parsedDiscoverReportRef = useRef('')
+  const pendingDiscoveryIdsRef = useRef<string[] | null>(null)
   const citationLockRef = useRef(false)
 
   const paperById = useMemo(() => new Map(papers.map((paper) => [paper.id, paper])), [papers])
@@ -2602,6 +2603,11 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
     setDiscoverChecked({})
     setDiscoverResults({})
     setDiscoverSummary(null)
+    const analysed = pendingDiscoveryIdsRef.current
+    if (analysed && threadSnapshot.status === 'ready' && !threadSnapshot.rows.some((row) => row.kind === 'error')) {
+      pendingDiscoveryIdsRef.current = null
+      void api.markDiscoveryAnalysed(analysed).then(setDiscoverScope).catch((error: unknown) => setDiscoverError(errorText(error)))
+    }
   }, [
     discoverOpen,
     thread,
@@ -3229,17 +3235,14 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
         })
         const payload = await api.discoverAssist(ids)
         setDiscoverOrder(parsePromptPaperOrder(payload.prompt))
+        pendingDiscoveryIdsRef.current = full ? papers.map((paper) => paper.id) : scope?.newIds ?? []
         const result = await thread.run(payload.prompt)
         if (!result.ok && typeof result.error === 'string' && result.error !== '') {
+          pendingDiscoveryIdsRef.current = null
           setDiscoverError(result.error)
           return
         }
-        // A successful generation means these papers have been considered for
-        // incremental discovery; do not re-send them next time.
-        await api
-          .markDiscoveryAnalysed(full ? papers.map((paper) => paper.id) : scope?.newIds ?? [])
-          .then((next) => setDiscoverScope(next))
-          .catch(() => {})
+        // Mark the scope only when a settled answer arrives, not on submission.
       } catch (error) {
         setDiscoverError(errorText(error) || t('relations.discover.failed'))
       } finally {
@@ -3251,6 +3254,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
 
   const stopDiscovery = (): void => {
     if (thread === null) return
+    pendingDiscoveryIdsRef.current = null
     void thread.stop()
   }
 

@@ -100,17 +100,25 @@ export async function discoveryScope(
   const scope = [...newIds, ...neighborIds]
   // A brand-new paper with no existing edges still needs a bounded context
   // set to compare against. Use recent papers only; never the whole library.
-  if (newIds.length > 0 && scope.length < 2) {
-    for (const paper of papers) {
-      if (scope.includes(paper.id)) continue
-      scope.push(paper.id)
-      if (scope.length >= 12) break
+  if (newIds.length > 0) {
+    const terms = (paper: PaperMeta): Set<string> => new Set(
+      `${paper.title} ${paper.abstract} ${paper.tags.join(' ')}`.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [],
+    )
+    const newTerms = new Set(papers.filter((paper) => newSet.has(paper.id)).flatMap((paper) => [...terms(paper)]))
+    const candidates = papers.filter((paper) => !newSet.has(paper.id)).map((paper) => ({
+      paper,
+      score: [...terms(paper)].filter((term) => newTerms.has(term)).length,
+    })).sort((a, b) => b.score - a.score || b.paper.addedAt.localeCompare(a.paper.addedAt))
+    for (const { paper } of candidates.slice(0, 12)) {
+      if (!scope.includes(paper.id)) scope.push(paper.id)
     }
   }
-  const scopeIds = scope.slice(0, SCOPE_CAP)
+  // Keep space for old-library candidates even when a batch fills the budget.
+  const selectedNew = scope.filter((id) => newSet.has(id)).slice(0, Math.max(1, SCOPE_CAP - Math.min(12, scope.filter((id) => !newSet.has(id)).length)))
+  const scopeIds = [...selectedNew, ...scope.filter((id) => !newSet.has(id))].slice(0, SCOPE_CAP)
   return {
     mode: scopeIds.length === 0 ? 'none' : 'incremental',
-    newIds: newIds.slice(0, SCOPE_CAP),
+    newIds: selectedNew,
     neighborIds,
     scopeIds,
     totalPapers: papers.length,

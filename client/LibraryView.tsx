@@ -327,7 +327,7 @@ function LibraryViewImpl(props: LibraryViewProps) {
                           </span>
                         ) : null}
                       </span>
-                      {paper.notePreview !== '' ? <span className="pd-row-note">{paper.notePreview}</span> : null}
+                      {(paper.searchMatch ?? paper.notePreview) !== '' ? <span className="pd-row-note">{paper.searchMatch ?? paper.notePreview}</span> : null}
                       {paper.tags.length > 0 || paper.pdfEvicted ? (
                         <span className="pd-row-tags">
                           {paper.tags.slice(0, 4).map((tag) => (

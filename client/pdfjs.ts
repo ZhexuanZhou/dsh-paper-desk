@@ -17,7 +17,7 @@ export const PDFJS_BASE = '/api/paper-desk/pdfjs'
 export interface PdfDocumentLike {
   numPages: number
   getPage(page: number): Promise<PdfPageLike>
-  destroy(): Promise<void>
+  destroy?(): Promise<void>
 }
 
 /** Minimal structural type of the parts of `PDFPageProxy` the viewer needs. */
@@ -38,7 +38,7 @@ export interface PdfViewportLike {
 
 /** The subset of the pdf.js module surface this plugin relies on. */
 export interface PdfjsModule {
-  getDocument(params: Record<string, unknown>): { promise: Promise<PdfDocumentLike> }
+  getDocument(params: Record<string, unknown>): { promise: Promise<PdfDocumentLike>; destroy(): Promise<void> }
   GlobalWorkerOptions: { workerSrc: string }
   TextLayer: new (options: Record<string, unknown>) => {
     render(): Promise<void>

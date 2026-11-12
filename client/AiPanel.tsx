@@ -73,6 +73,7 @@ export interface AiPanelProps {
   onCopy: (text: string) => void | Promise<void>
   onOpenInSession: () => void | Promise<void>
   onJumpPage: (page: number) => void
+  onSourcePage?: (page: number) => void
   /** Per-answer 「保存为卡片」 action (omitted → no per-message card button). */
   onCreateCard?: (
     row: AiRow,
@@ -177,7 +178,7 @@ function findQuoteRange(root: HTMLElement, quote: string): Range | null {
 }
 
 export function AiPanel(props: AiPanelProps) {
-  const { ai, history, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onCreateCard } = props
+  const { ai, history, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onSourcePage, onCreateCard } = props
 
   const subscribe = useCallback((listener: () => void) => ai.subscribe(listener), [ai])
   const getSnapshot = useCallback(() => ai.getSnapshot(), [ai])
@@ -222,7 +223,6 @@ export function AiPanel(props: AiPanelProps) {
   const attaching = snapshot.status === 'attaching'
   const disabled = running || attaching || sending
   const answer = threadMatches ? ai.lastAnswer() : null
-  const pages = useMemo(() => collectCitedPages(rows), [rows])
 
   const lastPrompt = useMemo(() => {
     for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -261,13 +261,7 @@ export function AiPanel(props: AiPanelProps) {
     () => (showTools ? rows : rows.filter((row) => row.kind !== 'tool')),
     [rows, showTools],
   )
-  const lastAssistantIndex = useMemo(() => {
-    for (let index = visibleRows.length - 1; index >= 0; index -= 1) {
-      const row = visibleRows[index]
-      if (row !== undefined && row.kind === 'assistant') return index
-    }
-    return -1
-  }, [visibleRows])
+
 
   useEffect(() => {
     return () => {
@@ -569,6 +563,7 @@ export function AiPanel(props: AiPanelProps) {
           <div key={row.id} className="pd-ai-assistant">
             <Markdown markdown={row.text} />
             {row.streaming === true ? <span className="pd-ai-caret" aria-hidden="true" /> : null}
+            {row.streaming !== true ? <div className="pd-ai-row-actions"><Button size="sm" variant="primary" onClick={() => void onSaveToNotes(row.text)}>{labels.saveToNotes}</Button></div> : null}
             {row.streaming !== true && onCreateCard !== undefined ? (
               <div className="pd-ai-row-actions">
                 <Button
@@ -632,6 +627,15 @@ export function AiPanel(props: AiPanelProps) {
       style={{ zoom }}
       onMouseUp={handleAnswerMouseUp}
     >
+      <div className="pd-ai-task-menu">
+        <select className="pd-select" aria-label={labels.title} value="" disabled={disabled || props.busyTask !== null} onChange={(event) => {
+          const task = event.target.value as 'summary' | 'method' | 'critique' | 'related' | 'questions'
+          if (task) void props.onRunTask(task)
+        }}>
+          <option value="">{labels.title}</option>
+          {Object.entries(labels.taskLabels).map(([task, label]) => <option key={task} value={task}>{label}</option>)}
+        </select>
+      </div>
       <div className="pd-ai-body">
         <div className="pd-ai-scroll" ref={scrollRef} onScroll={onScroll}>
           {attaching ? (
@@ -671,6 +675,8 @@ export function AiPanel(props: AiPanelProps) {
                   <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
                     <div className="pd-ai-assistant">
                       <Markdown markdown={message.text} />
+                      <div className="pd-ai-row-actions"><Button size="sm" variant="primary" onClick={() => void onSaveToNotes(message.text)}>{labels.saveToNotes}</Button></div>
+                      <div className="pd-ai-cites">{collectCitedPages([{ id: `history-${index}`, kind: 'assistant', text: message.text }]).map((page) => <button key={page} type="button" className="pd-ai-cite" onClick={() => (onSourcePage ?? onJumpPage)(page)}>{`p.${page}`}</button>)}</div>
                       {onCreateCard !== undefined ? (
                         <div className="pd-ai-row-actions">
                           <Button
@@ -699,17 +705,17 @@ export function AiPanel(props: AiPanelProps) {
             <div className="pd-ai-empty">{labels.emptyHint}</div>
           ) : null}
 
-          {visibleRows.map((row, index) => (
+          {visibleRows.map((row) => (
             <div key={row.id} className="pd-ai-row" data-ai-row-id={row.id}>
               {renderRow(row)}
-              {index === lastAssistantIndex && pages.length > 0 ? (
+              {row.kind === 'assistant' && collectCitedPages([row]).length > 0 ? (
                 <div className="pd-ai-cites" role="group" aria-label={labels.jumpHint}>
-                  {pages.map((page) => (
+                  {collectCitedPages([row]).map((page) => (
                     <button
                       key={`cite-${page}`}
                       type="button"
                       className="pd-ai-cite"
-                      onClick={() => onJumpPage(page)}
+                      onClick={() => (onSourcePage ?? onJumpPage)(page)}
                       title={labels.jumpHint}
                     >
                       {`p.${page}`}

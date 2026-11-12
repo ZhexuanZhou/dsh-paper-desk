@@ -38,6 +38,9 @@ import type {
 import type { SettingsPatch, SettingsPayload } from './api.js'
 import { api } from './api.js'
 import { cleanUserPrompt } from './chatText.js'
+import { renderPageImages } from './pageImages.js'
+import { ResearchView } from './ResearchView.js'
+import { DiscoverView } from './DiscoverView.js'
 import { createAiThread } from './aiSession.js'
 import type { AiRow } from './aiSession.js'
 import { defaultLibraryPath, openHostPath, openSessionInShell, pickLibraryDirectory } from './agent.js'
@@ -58,7 +61,7 @@ import { SyncView } from './SyncView.js'
 import { Button, Modal, Spinner, TextInput, Toast } from './ui.js'
 import type { ToastItem, ToastKind } from './ui.js'
 
-type Nav = 'library' | 'sync' | 'settings'
+type Nav = 'library' | 'sync' | 'settings' | 'research' | 'discover'
 
 type OverlayState =
   | { kind: 'none' }
@@ -263,7 +266,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   })
   const [listCollapsed, setListCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('paperdesk:list-collapsed') === '1'
+      return localStorage.getItem('paperdesk:list-collapsed') !== '0'
     } catch {
       return false
     }
@@ -1291,7 +1294,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         const payload: AssistPayload = await api.assist(paperId, request.task, request.extra, request.context)
         if (selectedIdRef.current !== paperId) return
         if (!(await ensureAiChat(paperId))) return
-        const result = await ai.run(payload.prompt)
+        const pages = request.context?.page ? [request.context.page] : []
+        const images = pages.length ? await renderPageImages(api.pdfUrl(paperId), pages) : []
+        if (selectedIdRef.current !== paperId) return
+        const result = await ai.run(payload.prompt + (images.length ? `\n附图为论文 p.${pages[0]} 原页，请结合图像核对公式和图表。` : ''), images)
         if (!result.ok) {
           pushToast('error', result.error !== undefined && result.error !== '' ? result.error : tRef.current('ai.error'))
         }
@@ -1467,7 +1473,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   /** Follow-up / retry inside the AI panel: send raw text into the same session. */
   const handleAiAsk = useCallback(
-    async (question: string): Promise<boolean> => {
+    async (question: string, pages: readonly number[] = []): Promise<boolean> => {
       const paperId = selectedId
       if (paperId === null) return false
       const text = question.trim()
@@ -1488,7 +1494,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         if (parts.length > 0) parts.push('---')
         parts.push(text)
         const prompt = parts.join('\n\n')
-        const result = await ai.run(prompt)
+        const images = pages.length ? await renderPageImages(api.pdfUrl(paperId), pages) : []
+        if (selectedIdRef.current !== paperId) return false
+        const imageHint = images.length ? `\n\n随附 PDF 原页图片依次为 ${pages.map((page) => `p.${page}`).join('、')}。请结合图片检查公式、图表及上下文；看不清或缺少信息时明确说明，不要猜测。回答标注来源页码。` : ''
+        const result = await ai.run(prompt + imageHint, images)
         if (!result.ok) {
           pushToast('error', result.error !== undefined && result.error !== '' ? result.error : tRef.current('ai.error'))
         }
@@ -2135,7 +2144,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
             value={searchInput}
             placeholder={t('search.placeholder')}
             aria-label={t('search.placeholder')}
-            onChange={(event) => setSearchInput(event.target.value)}
+            onChange={(event) => {
+              setSearchInput(event.target.value)
+              if (event.target.value.trim()) { setListCollapsed(false); if (nav !== 'library') changeNav('library') }
+            }}
           />
           {searchInput !== '' ? (
             <button
@@ -2184,6 +2196,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           >
             {t('app.nav.library')}
           </Button>
+          <Button variant={nav === 'research' ? 'default' : 'ghost'} onClick={() => changeNav('research')}>{t('research.title')}</Button>
+          <Button variant={nav === 'discover' ? 'default' : 'ghost'} onClick={() => changeNav('discover')}>{t('discover.title')}</Button>
           <Button
             variant={nav === 'sync' ? 'default' : 'ghost'}
             icon={<IconSync />}
@@ -2317,6 +2331,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onImport={openImportPicker}
             />
           </>
+        ) : nav === 'research' ? (
+          <ResearchView ctx={ctx} workspacePath={status.settings.libraryPath} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} onDirtyChange={setNotesDirty} registerSave={registerNotesSave} />
+        ) : nav === 'discover' ? (
+          <DiscoverView onImported={() => void loadPapers()} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} />
         ) : nav === 'sync' ? (
           <SyncView
             status={sync}

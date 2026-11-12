@@ -30,13 +30,9 @@ export async function queryPapers(root: string, options: PaperQuery = {}): Promi
   const tag = (options.tag ?? '').trim().toLowerCase()
   let rows = all
   if (query.length > 0) {
-    rows = rows.filter(
-      (paper) =>
-        paper.title.toLowerCase().includes(query) ||
-        paper.authors.some((author) => author.toLowerCase().includes(query)) ||
-        paper.tags.some((value) => value.toLowerCase().includes(query)) ||
-        paper.venue.toLowerCase().includes(query),
-    )
+    // Use the same search contract as the agent, then apply list filters/sort.
+    const matches = new Map((await searchLibrary(root, query, 1000)).map((hit) => [hit.paper.id, hit.snippet]))
+    rows = rows.filter((paper) => matches.has(paper.id)).map((paper) => ({ ...paper, searchMatch: matches.get(paper.id) }))
   }
   if (tag.length > 0) rows = rows.filter((paper) => paper.tags.some((value) => value.toLowerCase() === tag))
   if (options.status !== undefined && options.status !== 'all') {
@@ -101,6 +97,7 @@ export async function searchLibrary(root: string, rawQuery: string, limit = MAX_
     }
 
     if (paper.title.toLowerCase().includes(lower)) offer('title', 6, snippetAround(paper.title, query, 140))
+    if (paper.venue.toLowerCase().includes(lower)) offer('venue', 3, snippetAround(paper.venue, query, 140))
     if (paper.authors.some((author) => author.toLowerCase().includes(lower))) {
       offer('author', 5, snippetAround(paper.authors.join(', '), query, 140))
     }
@@ -138,5 +135,5 @@ export async function searchLibrary(root: string, rawQuery: string, limit = MAX_
   }
 
   hits.sort((a, b) => b.score - a.score || b.paper.updatedAt.localeCompare(a.paper.updatedAt))
-  return hits.slice(0, Math.min(Math.max(limit, 1), MAX_SEARCH_HITS))
+  return hits.slice(0, Math.min(Math.max(limit, 1), 1000))
 }

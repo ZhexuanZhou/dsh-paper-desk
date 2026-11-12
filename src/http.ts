@@ -43,6 +43,8 @@ import {
 import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { importPaperFromUrl } from './urlImport.js'
+import { readResearch, saveTopic, topicPrompt, saveSubscription, updateResearch } from './research.js'
+import { discoverPapers, arxivIdentity } from './feed.js'
 import { createLlmTagger } from './tagging.js'
 import { synthesizeCard, type SynthesizedCard } from './cardsynth.js'
 import { synthesizeNotes } from './notesynth.js'
@@ -471,6 +473,47 @@ async function handle(
     const settings = requireConfigured(config)
     const root = settings.libraryPath
 
+    if (route === 'research') {
+      if (method === 'GET') return json(res, 200, await readResearch(root))
+      if (method === 'POST') return json(res, 200, await saveTopic(root, await readJsonBody(req)))
+      if (method === 'DELETE') {
+        const body = await readJsonBody(req)
+        return json(res, 200, await updateResearch(root, body.baseHash, (doc) => {
+          if (!doc.topics.some((item) => item.id === body.id)) throw new HttpError(404, '专题不存在')
+          doc.topics = doc.topics.filter((item) => item.id !== body.id)
+        }))
+      }
+      return methodNotAllowed(res)
+    }
+    if (route === 'research/prompt' && method === 'POST') {
+      const body = await readJsonBody(req)
+      if (typeof body.id !== 'string' || typeof body.question !== 'string') throw new HttpError(400, '缺少专题或问题')
+      return json(res, 200, { prompt: await topicPrompt(root, body.id, body.question) })
+    }
+    if (route === 'research/subscriptions') {
+      const body = await readJsonBody(req)
+      if (method === 'POST') return json(res, 200, await saveSubscription(root, body))
+      if (method === 'DELETE') return json(res, 200, await updateResearch(root, body.baseHash, (doc) => {
+        doc.subscriptions = doc.subscriptions.filter((item) => item.id !== body.id)
+      }))
+      return methodNotAllowed(res)
+    }
+    if (route === 'research/discover' && method === 'GET') {
+      const rows = await queryPapers(root, { limit: 1000 })
+      const papers = (await Promise.all(rows.map((paper) => readMeta(root, paper.id)))).filter((paper): paper is PaperMeta => paper !== null)
+      const query = q['q'] ?? ''
+      const items = await discoverPapers(query, papers)
+      return json(res, 200, { items, checkedAt: new Date().toISOString() })
+    }
+    if (route === 'research/subscriptions/check' && method === 'POST') {
+      const body = await readJsonBody(req)
+      return json(res, 200, await updateResearch(root, body.baseHash, (doc) => {
+        const subscription = doc.subscriptions.find((item) => item.id === body.id)
+        if (!subscription || typeof body.checkedAt !== 'string' || !Number.isFinite(Date.parse(body.checkedAt))) throw new HttpError(400, '无效的订阅检查时间')
+        subscription.lastChecked = body.checkedAt
+      }))
+    }
+
     if (route === 'papers') {
       if (method === 'GET') {
         const limit = Math.min(Math.max(Number.parseInt(q['limit'] ?? '0', 10) || 200, 1), 1000)
@@ -541,6 +584,15 @@ async function handle(
     if (route === 'papers/url') {
       if (method !== 'POST') return methodNotAllowed(res)
       const body = await readJsonBody(req)
+      const identity = typeof body['url'] === 'string' ? arxivIdentity(body['url']) : null
+      if (identity) {
+        for (const row of await queryPapers(root, { limit: 1000 })) {
+          const meta = await readMeta(root, row.id)
+          if (meta && (arxivIdentity(meta.sourceUrl) === identity || arxivIdentity(meta.url) === identity)) {
+            return json(res, 200, { id: meta.id, meta, duplicated: true })
+          }
+        }
+      }
       const rawUrl = typeof body['url'] === 'string' ? body['url'] : ''
       try {
         const created = await importPaperFromUrl(root, rawUrl, {

@@ -168,7 +168,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
       description:
         "Search the user's PaperDesk library across titles, authors, tags, abstracts, notes and extracted PDF text. Returns matching papers with the field that matched and a context snippet.",
       parameters: {
-        query: { type: 'string', required: true, description: 'Words to search for.' },
+        query: { type: 'string', required: true, description: 'Literal substring, e.g. format term. Pass the text itself without wrapping quotes or search-engine syntax.' },
         limit: { type: 'number', description: 'Maximum hits (default 10, max 30).' },
       },
       output: {

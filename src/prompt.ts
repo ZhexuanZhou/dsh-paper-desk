@@ -83,7 +83,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
       '- 回答时尽量标注页码或图表编号；不确定的内容明确说明是推断。',
       '- 用户可能已在 PDF 上做高亮/划线/提问：先用 `paper_annotations` 读取这些标注（含页码、原文、批注），回答时优先回应用户标记过的内容。',
       '- 论文库里还有用户整理的「笔记卡片」与「论文关联图谱」：需要复用已有结论时先读 `paper_cards`；做跨论文分析或找相关工作时用 `paper_relations` 了解已有关系。',
-      '- 有价值的结论用 `paper_note_append` 追加到对应论文的笔记里（section 可选 summary/points/questions/quotes/thoughts），并在回复中说明已记录。',
+      '- 普通讨论只读。只有用户明确要求保存笔记时，才用 `paper_note_append` 追加，并在回复中说明已记录；不要自行把推断保存成已确认结论。',
       '- 需要新论文入库时用 `paper_add` 传入本机绝对路径；不要直接改写论文库里的文件结构。',
       '- 该目录可能通过网盘同步，不要做批量重命名或移动目录。',
     ].join('\n')
@@ -95,7 +95,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
     '- Cite page numbers or figure/table numbers; mark anything uncertain as inference.',
     '- The user may have highlighted/underlined/asked questions on the PDF: read them with `paper_annotations` (page, quote, comment) and prefer addressing what the user already marked.',
     '- The library also has distilled note cards (`paper_cards`) and a paper relation graph (`paper_relations`): reuse the user\'s earlier conclusions and check existing relations for cross-paper analysis.',
-    '- Persist valuable conclusions with `paper_note_append` (sections: summary/points/questions/quotes/thoughts) and say so in the reply.',
+    '- Ordinary discussion is read-only. Only use `paper_note_append` when the user explicitly asks to save notes; distinguish inferences from verified conclusions.',
     '- Import new papers with `paper_add` and an absolute Host path; do not restructure the library directories.',
     '- The directory may be synced through a cloud drive: avoid bulk renames or moves.',
   ].join('\n')
@@ -179,7 +179,7 @@ export function assistPayload(
         `任务：${task}`,
         instruction,
         '',
-        '阅读顺序建议：先 `paper_info`，再 `paper_text` 读第 1 页（标题/摘要/引言），然后按需读取方法与实验所在页。需要时可以再用 `paper_note_append` 把结论写回笔记。',
+        '阅读顺序建议：先 `paper_info`，再 `paper_text` 读第 1 页（标题/摘要/引言），然后按需读取方法与实验所在页。普通讨论只读，不自动保存笔记，用户会在界面决定是否保存。',
         '输出要求：答案会直接显示在论文阅读器的 AI 侧栏里。请用 Markdown（标题/列表/公式），先给结论；引用原文时标注页码，格式为 p.N（如 p.3）；不要在最终答案里复述工具调用过程。',
         extra.length > 0 ? `补充要求：${extra}` : '',
       ]
@@ -198,7 +198,7 @@ export function assistPayload(
         `Task: ${task}`,
         instruction,
         '',
-        'Suggested reading order: `paper_info`, then `paper_text` for page 1 (title/abstract/intro), then the method and experiment pages as needed. Use `paper_note_append` to persist conclusions.',
+        'Suggested reading order: `paper_info`, then `paper_text` for page 1, then the method and experiment pages as needed. Discussion is read-only; the user decides whether to save notes in the UI.',
         'Output: your answer is rendered in the PaperDesk AI side panel. Use Markdown (headings/lists/equations), lead with the conclusion, cite pages as p.N (e.g. p.3), and keep tool-call narration out of the final answer.',
         extra.length > 0 ? `Additional requirements: ${extra}` : '',
       ]

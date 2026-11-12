@@ -1762,7 +1762,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       docRef.current = null
       pdfjsRef.current = null
       if (task?.destroy !== undefined) void task.destroy().catch(() => undefined)
-      else if (doc !== null) void doc.destroy().catch(() => undefined)
+      else if (doc?.destroy !== undefined) void doc.destroy().catch(() => undefined)
     }
   }, [src, assetBase, attempt])
 

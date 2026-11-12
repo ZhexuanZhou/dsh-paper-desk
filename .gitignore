@@ -9,3 +9,6 @@ paperdesk-demo-library.zip
 
 # npm publish staging
 .publish/
+
+# Local acceptance evidence and isolated profiles may contain credentials.
+.acceptances/
