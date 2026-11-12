@@ -9,25 +9,15 @@ import { IconCheck, IconNote, IconQuote, IconSave, IconWarning } from './icons.j
 import { createAutosaveQueue } from './autosave.js'
 import type { AutosaveQueue } from './autosave.js'
 import { errorText, useT } from './i18n.js'
-import { renderMarkdownSectioned } from './markdown.js'
+import { noteOutline, renderMarkdownSectioned } from './markdown.js'
 import { Button, Modal, TextInput, Textarea } from './ui.js'
 
 type ToastKind = 'info' | 'success' | 'error' | 'warn'
 type ToastPush = (kind: ToastKind, message: string) => void
 
-type SectionKey = 'summary' | 'points' | 'questions' | 'quotes' | 'thoughts' | 'conversation'
-
-const SECTIONS: readonly { key: SectionKey; zh: string; en: string }[] = [
-  { key: 'summary', zh: '摘要', en: 'Summary' },
-  { key: 'points', zh: '要点', en: 'Key points' },
-  { key: 'questions', zh: '疑问', en: 'Open questions' },
-  { key: 'quotes', zh: '引用', en: 'Quotes' },
-  { key: 'thoughts', zh: '我的想法', en: 'My take' },
-  { key: 'conversation', zh: '对话与补充', en: 'Conversation notes' },
-]
-
 export interface NotesEditorProps {
   notes: NotesDocument | null
+  onReadSource: () => void
   disabled?: boolean
   onSave: (markdown: string, baseHash?: string) => Promise<NotesWriteResult>
   onReload: () => Promise<NotesDocument>
@@ -35,16 +25,6 @@ export interface NotesEditorProps {
   onDirtyChange: (dirty: boolean) => void
   registerSave: (save: (() => Promise<boolean>) | null) => void
   onToast: ToastPush
-}
-
-function headingIndex(markdown: string, section: SectionKey): number {
-  const entry = SECTIONS.find((candidate) => candidate.key === section)
-  if (entry === undefined) return -1
-  const zh = markdown.indexOf(`## ${entry.zh}`)
-  const en = markdown.indexOf(`## ${entry.en}`)
-  if (zh < 0) return en
-  if (en < 0) return zh
-  return Math.min(zh, en)
 }
 
 export function NotesEditor(props: NotesEditorProps) {
@@ -57,7 +37,8 @@ export function NotesEditor(props: NotesEditorProps) {
   const [baseHash, setBaseHash] = useState(notes?.hash ?? '')
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState<NotesWriteResult | null>(null)
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit')
+  const [mode, setMode] = useState<'edit' | 'preview'>('preview')
+  const [activeSection, setActiveSection] = useState(0)
   const [appendOpen, setAppendOpen] = useState(false)
   const [appendText, setAppendText] = useState('')
   const [appendPage, setAppendPage] = useState('')
@@ -77,6 +58,8 @@ export function NotesEditor(props: NotesEditorProps) {
   notesRef.current = notes
   savedMarkdownRef.current = savedMarkdown
 
+  const previewRef = useRef<HTMLDivElement | null>(null)
+  const outline = useMemo(() => noteOutline(draft), [draft])
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   /* ── autosave (400 ms debounce, serialized, does not replace explicit save) ── */
@@ -266,22 +249,23 @@ export function NotesEditor(props: NotesEditorProps) {
     }
   }, [onReload, onToast, t])
 
-  const jumpToSection = useCallback((section: SectionKey): void => {
-    const textarea = textareaRef.current
-    if (textarea === null) return
-    const index = headingIndex(draftRef.current, section)
-    if (index < 0) {
-      onToast('info', t('notes.sections'))
+  const jumpToSection = (sectionIndex: number): void => {
+    const section = outline[sectionIndex]
+    if (section === undefined) return
+    setActiveSection(sectionIndex)
+    if (mode === 'preview') {
+      const heading = previewRef.current?.querySelectorAll('.pd-md > h2')[sectionIndex]
+      heading?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       return
     }
+    const textarea = textareaRef.current
+    if (textarea === null) return
     textarea.focus()
-    textarea.setSelectionRange(index, index)
-    const before = draftRef.current.slice(0, index)
-    const line = before.split('\n').length - 1
-    const total = Math.max(draftRef.current.split('\n').length, 1)
-    const viewport = Math.max(textarea.scrollHeight - textarea.clientHeight, 0)
-    textarea.scrollTop = Math.floor((line / total) * viewport)
-  }, [onToast, t])
+    textarea.setSelectionRange(section.offset, section.offset)
+    const line = draft.slice(0, section.offset).split('\n').length - 1
+    const total = Math.max(draft.split('\n').length, 1)
+    textarea.scrollTop = Math.floor((line / total) * textarea.scrollHeight)
+  }
 
   const openAppend = useCallback((): void => {
     if (dirtyRef.current) {
@@ -327,15 +311,17 @@ export function NotesEditor(props: NotesEditorProps) {
     }
   }, [appendPage, appendText, onAppendQuote, onToast, t])
 
-  const sectionOptions = useMemo(
-    () => SECTIONS.map((section) => ({ value: section.key, label: t(`notes.section.${section.key}`) })),
-    [t],
-  )
-
   const previewHtml = useMemo(() => (mode === 'preview' ? renderMarkdownSectioned(draft) : ''), [draft, mode])
 
   return (
-    <div className="pd-notes">
+    <div className="pd-notebook-editor">
+      <nav className="pd-notebook-outline" aria-label={t('notes.outline')}>
+        <h3>{t('notes.outline')}</h3>
+        {outline.length === 0 ? <p className="pd-field-hint">{t('notes.outlineEmpty')}</p> : outline.map((section, index) => (
+          <button key={`${index}-${section.label}`} type="button" aria-current={index === activeSection ? 'location' : undefined} onClick={() => jumpToSection(index)}>{section.label}</button>
+        ))}
+      </nav>
+      <div className="pd-notes" data-mode={mode}>
       {conflict !== null ? (
         <div className="pd-conflict" role="alert">
           <div className="pd-conflict-head">
@@ -358,45 +344,19 @@ export function NotesEditor(props: NotesEditorProps) {
       ) : null}
 
       <div className="pd-notes-toolbar">
-        <Button size="sm" variant={mode === 'edit' ? 'default' : 'ghost'} onClick={() => setMode('edit')}>
-          {t('notes.edit')}
-        </Button>
-        <Button size="sm" variant={mode === 'preview' ? 'default' : 'ghost'} onClick={() => setMode('preview')}>
-          {t('notes.preview')}
-        </Button>
         <span className="pd-notes-toolbar-spacer" />
-        <select
-          className="pd-select pd-select-sm"
-          aria-label={t('notes.sections')}
-          title={t('notes.sections')}
-          value=""
-          onChange={(event) => {
-            const value = event.target.value
-            if (value !== '') jumpToSection(value as SectionKey)
-            event.target.value = ''
-          }}
-        >
-          <option value="">{t('notes.sections')}</option>
-          {sectionOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <Button size="sm" icon={<IconQuote />} onClick={openAppend} disabled={disabled}>
-          {t('notes.appendQuote')}
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          icon={<IconSave />}
-          loading={saving}
-          disabled={disabled || !dirty}
-          onClick={() => void save(false)}
-          title={t('notes.saveShortcut')}
-        >
-          {saving ? t('notes.saving') : t('notes.save')}
-        </Button>
+        {mode === 'preview' ? (
+          <Button variant="primary" icon={<IconNote />} onClick={() => setMode('edit')}>{t('notes.editDocument')}</Button>
+        ) : (
+          <>
+            <Button onClick={() => setMode('preview')}>{t('notes.readPreview')}</Button>
+            <Button variant="primary" icon={<IconSave />} loading={saving} disabled={disabled || !dirty} onClick={() => void save(false)} title={t('notes.saveShortcut')}>
+              {saving ? t('notes.saving') : t('notes.save')}
+            </Button>
+          </>
+        )}
+        <Button onClick={props.onReadSource}>{t('notes.readSource')}</Button>
+        {mode === 'edit' ? <Button size="sm" variant="ghost" icon={<IconQuote />} onClick={openAppend} disabled={disabled}>{t('notes.appendQuote')}</Button> : null}
       </div>
 
       <div className="pd-notes-body">
@@ -423,7 +383,7 @@ export function NotesEditor(props: NotesEditorProps) {
             />
           </div>
         ) : (
-          <div className="pd-notes-preview">
+          <div className="pd-notes-preview" ref={previewRef}>
             {draft.trim() === '' ? (
               <span className="pd-inline-empty">{t('notes.placeholder')}</span>
             ) : (
@@ -449,6 +409,7 @@ export function NotesEditor(props: NotesEditorProps) {
         <span>{t('reader.text.chars', { n: draft.length })}</span>
       </div>
 
+      </div>
       <Modal
         open={appendOpen}
         title={t('notes.appendQuote.title')}

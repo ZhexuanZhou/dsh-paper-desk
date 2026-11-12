@@ -2,12 +2,13 @@
  * Note cards from AI answers (DESIGN-FEATURES §1).
  *
  * `CardEditor` is the create/edit modal (title, Markdown body, tags, page
- * chips); `CardsPanel` is the reader 笔记 tab's right-hand rail. Both are
+ * chips); `CardsPanel` is the full-page card reading view. Both are
  * presentational — persistence lives in `App`, which owns the `/cards` API.
  */
 import { useEffect, useState } from 'react'
 import type { CardContextTurn, NoteCard } from '../src/types.js'
 import { IconEdit, IconNote, IconPlus, IconTrash } from './icons.js'
+import { Markdown } from './markdown.js'
 import { useT } from './i18n.js'
 import { Button, EmptyState, Field, IconButton, Modal, Spinner, Textarea, TextInput } from './ui.js'
 
@@ -44,15 +45,6 @@ export function cardToNotesMarkdown(card: NoteCard): string {
   const date = card.createdAt !== '' ? card.createdAt.slice(0, 10) : ''
   const body = card.body.trim()
   return `### 卡片：${card.title}\n- 来源：${pages} / ${date}\n\n${body}\n`
-}
-
-function excerpt(text: string, cap = 180): string {
-  const plain = text
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/[#>*_`~[\]()!-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return plain.length > cap ? `${plain.slice(0, cap)}…` : plain
 }
 
 function parseTagList(value: string): string[] {
@@ -309,7 +301,7 @@ export interface CardsPanelProps {
   onInsert: (card: NoteCard) => void
   onCopy: (card: NoteCard) => void
   onDelete: (card: NoteCard) => void
-  onJumpPages: (card: NoteCard) => void
+  onJumpPages: (card: NoteCard, page?: number) => void
   onSummarize?: () => Promise<void>
   onMerge?: (cards: readonly NoteCard[]) => Promise<void>
 }
@@ -406,8 +398,8 @@ export function CardsPanel(props: CardsPanelProps) {
                 ) : null}
                 <button type="button" className="pd-card-locate" onClick={() => onEdit(card)} title={t('cards.edit')}>
                   <span className="pd-card-title">{card.title}</span>
-                  <span className="pd-card-excerpt">{excerpt(card.body)}</span>
                 </button>
+                <Markdown markdown={card.body} className="pd-card-body" />
                 {(card.tags.length > 0 || card.pages.length > 0 || (card.context?.length ?? 0) > 0) ? (
                   <div className="pd-card-meta">
                     {(card.context?.length ?? 0) > 0 ? (
@@ -419,7 +411,7 @@ export function CardsPanel(props: CardsPanelProps) {
                         type="button"
                         className="pd-card-page-chip pd-card-page-jump"
                         title={t('cards.jumpPages')}
-                        onClick={() => onJumpPages(card)}
+                        onClick={() => onJumpPages(card, page)}
                       >
                         {`p.${page}`}
                       </button>

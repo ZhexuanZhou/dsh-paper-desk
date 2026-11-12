@@ -2270,6 +2270,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               textLoading={textLoading}
               textError={textError}
               notesDirty={notesDirty}
+              onEnterNotebook={() => setListCollapsed(true)}
               assistBusy={assistBusy}
               annotations={annotations}
               annotationsLoading={annotationsLoading}

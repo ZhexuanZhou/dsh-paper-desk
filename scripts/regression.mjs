@@ -8,7 +8,8 @@ import { build } from 'esbuild'
 import { queryPapers, searchLibrary } from '../lib/search.js'
 import { discoveryScope, markDiscoveryAnalyzed } from '../lib/discovery.js'
 import { readResearch, saveTopic, topicPrompt, saveSubscription, updateResearch } from '../lib/research.js'
-import { arxivIdentity, parseArxivFeed } from '../lib/feed.js'
+import { arxivIdentity, parseArxivFeed, parseOpenAlexFeed } from '../lib/feed.js'
+import { createDiscoveryTransport, retryAfterTime } from '../lib/discoveryTransport.js'
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'paperdesk-regression-'))
 let checks = 0
@@ -162,6 +163,93 @@ try {
   assert.throws(() => parseArxivFeed('<html>not atom</html>', []))
   checks++
 
+  const oaWork = {
+    id: 'https://openalex.org/W123456', display_name: 'Diffusion language models',
+    publication_date: '2026-10-01', doi: 'https://doi.org/10.48550/arxiv.2606.12345',
+    primary_location: { landing_page_url: 'http://arxiv.org/abs/2606.12345v2', source: { display_name: 'arXiv' } },
+    authorships: [{ author: { display_name: 'Author A' } }],
+    abstract_inverted_index: { models: [2], Diffusion: [0], language: [1] },
+  }
+  const oa = parseOpenAlexFeed(JSON.stringify({ results: [oaWork, oaWork] }), [{ ...a, sourceUrl: 'https://arxiv.org/abs/2606.12345v1' }])
+  check('OpenAlex reconstructs ordered abstract', oa[0].abstract, 'Diffusion language models')
+  check('OpenAlex identifies existing arXiv versions', oa[0].existingPaperId, a.id)
+  check('OpenAlex canonical PDF comes from arXiv identity', oa[0].pdfUrl, 'https://arxiv.org/pdf/2606.12345')
+  check('OpenAlex arXiv DOI works without locations', parseOpenAlexFeed(JSON.stringify({ results: [{ ...oaWork, primary_location: null }] }), [])[0].pdfUrl, 'https://arxiv.org/pdf/2606.12345')
+  check('OpenAlex results declare source and deduplicate IDs', [oa.length, oa[0].provider], [1, 'openalex'])
+  const noPdf = parseOpenAlexFeed(JSON.stringify({ results: [{ ...oaWork, doi: 'https://doi.org/10.1000/example', primary_location: { landing_page_url: 'javascript:alert(1)' } }] }), [{ ...a, doi: '10.1000/example' }])[0]
+  check('OpenAlex missing PDFs remain unavailable', noPdf.pdfUrl, null)
+  check('OpenAlex DOI identifies library papers', noPdf.existingPaperId, a.id)
+  check('OpenAlex rejects executable landing URLs', noPdf.url, oaWork.id)
+  const oaTitle = parseOpenAlexFeed(JSON.stringify({ results: [oaWork] }), [{ ...a, title: oaWork.display_name }])[0]
+  check('OpenAlex title alone is a warning', [oaTitle.existingPaperId, oaTitle.possibleDuplicateId], [null, a.id])
+
+  let sourceDoc = await readResearch(root)
+  // Existing schema-1 subscriptions without provider continue to mean arXiv.
+  await writeFile(path.join(root, '.paperdesk/research.json'), JSON.stringify({ ...sourceDoc.document, subscriptions: [{ id: 'sub-legacy', query: 'legacy query', lastChecked: null }] }))
+  sourceDoc = await readResearch(root)
+  await assert.rejects(saveSubscription(root, { query: 'legacy query', baseHash: sourceDoc.hash }), /已订阅/)
+  checks++
+  sourceDoc = await saveSubscription(root, { query: 'legacy query', provider: 'openalex', baseHash: sourceDoc.hash })
+  check('subscriptions distinguish providers and preserve legacy rows', sourceDoc.document.subscriptions.map((item) => item.provider ?? 'arxiv'), ['arxiv', 'openalex'])
+  await assert.rejects(saveSubscription(root, { query: 'query', provider: 'unknown', baseHash: sourceDoc.hash }), /无效/)
+  checks++
+
+  let clock = 10_000
+  let active = 0, maxActive = 0
+  const timings = []
+  let releaseFirst
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve })
+  const network = createDiscoveryTransport({
+    now: () => clock, sleep: async (ms) => { clock += ms }, validate: (_, text) => JSON.parse(text),
+    fetch: async (url) => {
+      active++; maxActive = Math.max(maxActive, active)
+      const timing = { start: clock, end: 0, url: String(url) }; timings.push(timing)
+      if (timings.length === 1) await firstGate
+      clock += 500; timing.end = clock; active--
+      return new Response('{}')
+    },
+  })
+  const requests = [network.get('arxiv', 'one'), network.get('arxiv', 'one'), network.get('arxiv', 'two')]
+  await Promise.resolve()
+  releaseFirst()
+  const answers = await Promise.all(requests)
+  check('discovery single connection and coalesced duplicate requests', [maxActive, timings.length], [1, 2])
+  check('arXiv gap begins after prior response completes', timings[1].start - timings[0].end, 3100)
+  const cached = await network.get('arxiv', 'one')
+  check('successful cache avoids network and preserves fetch time', [timings.length, cached.cacheHit, cached.fetchedAt], [2, true, answers[0].fetchedAt])
+  await network.get('openalex', 'one')
+  check('provider cache and endpoints stay separate', [timings.length, new URL(timings[2].url).hostname], [3, 'api.openalex.org'])
+
+  let rateCalls = 0
+  const cooling = createDiscoveryTransport({
+    now: () => clock, sleep: async (ms) => { clock += ms }, validate: (_, text) => JSON.parse(text),
+    fetch: async (url) => {
+      if (new URL(url).hostname === 'api.openalex.org') return new Response('{}')
+      rateCalls++
+      return rateCalls === 1 ? new Response('Rate exceeded.', { status: 429 }) : new Response('{}')
+    },
+  })
+  let limitedUntil = 0
+  await assert.rejects(cooling.get('arxiv', 'new'), (error) => {
+    limitedUntil = error.retryAt
+    return error.status === 429 && error.code === 'DISCOVERY_RATE_LIMITED' && error.retryAt === clock + 60_000
+  }); checks++
+  await assert.rejects(cooling.get('arxiv', 'different query'), /限制请求/); checks++
+  check('cooldown blocks new arXiv calls across queries', rateCalls, 1)
+  await cooling.get('openalex', 'new')
+  check('arXiv cooldown does not block chosen OpenAlex source', rateCalls, 1)
+  clock = limitedUntil
+  await cooling.get('arxiv', 'new')
+  check('requests recover after cooldown', rateCalls, 2)
+  check('Retry-After seconds honored', retryAfterTime('120', clock), clock + 120_000)
+  check('Retry-After HTTP date honored', retryAfterTime(new Date(clock + 240_000).toUTCString(), clock), Math.floor((clock + 240_000) / 1000) * 1000)
+  check('invalid Retry-After uses bounded default', retryAfterTime('invalid', clock), clock + 60_000)
+  let malformedCalls = 0
+  const malformed = createDiscoveryTransport({ now: () => clock, sleep: async (ms) => { clock += ms }, validate: (_, text) => JSON.parse(text), fetch: async () => { malformedCalls++; return new Response('not JSON') } })
+  await assert.rejects(malformed.get('openalex', 'bad'), /请求失败/)
+  await assert.rejects(malformed.get('openalex', 'bad'), /请求失败/)
+  check('malformed responses never poison success cache', malformedCalls, 2)
+
   // Exercise the actual thread controller's host submission boundary.
   const out = path.join(root, 'ai.mjs')
   await build({
@@ -213,6 +301,20 @@ try {
   await ai.run('Text only')
   check('ordinary questions do not attach images', submitted, [{ type: 'text', text: 'Text only' }])
   ai.dispose()
+
+  const markdownModule = path.join(root, 'markdown.mjs')
+  await build({ entryPoints: ['client/markdown.tsx'], bundle: true, format: 'esm', platform: 'node', outfile: markdownModule })
+  const { noteOutline, renderMarkdownSectioned } = await import(pathToFileURL(markdownModule))
+  const note = '# Title\n\n## Summary\nA paragraph.\n\n```md\n## Not a section\n```\n\n> ## Quoted heading\n\n## Summary\nSecond section.\n'
+  check('note outline excludes code and quoted headings', noteOutline(note).map((item) => item.label), ['Summary', 'Summary'])
+  check('duplicate note headings keep distinct editor positions', noteOutline(note).map((item) => item.offset), [note.indexOf('## Summary'), note.lastIndexOf('## Summary')])
+  check('outline also supports setext level-two headings', noteOutline('Section\n-------\nBody').map((item) => item.label), ['Section'])
+  check('sectioned preview preserves both note sections', (renderMarkdownSectioned(note).match(/<h2>Summary<\/h2>/g) ?? []).length, 2)
+
+  const longNote = '# Notes\n\n## Summary\n\n- Answer\n  - Nested evidence\n\n## Questions\n\n- Follow-up\n\n## My take\nDone'
+  check('outline and preview agree after loose nested lists', noteOutline(longNote).map((item) => item.label), ['Summary', 'Questions', 'My take'])
+  check('outline preserves source offsets after section splitting', noteOutline(longNote).map((item) => item.offset), ['Summary', 'Questions', 'My take'].map((label) => longNote.indexOf(`## ${label}`)))
+  check('long fences protect embedded section-like lines', noteOutline('## First\n\n````md\n```\n## In code\n````\n\n## Last').map((item) => item.label), ['First', 'Last'])
 
   // pdf.js 6 owns destruction on its loading task, not its document proxy.
   const imageModule = path.join(root, 'page-images.mjs')

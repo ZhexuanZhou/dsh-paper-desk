@@ -144,11 +144,13 @@ export async function saveSubscription(
   body: Record<string, unknown>,
 ): Promise<ResearchSnapshot> {
   const query = text(body.query, 300, true).trim()
+  const provider = body.provider ?? 'arxiv'
+  if (provider !== 'arxiv' && provider !== 'openalex') throw Object.assign(new Error('无效的检索来源。'), { status: 400 })
   return updateResearch(root, body.baseHash, (doc) => {
-    if (doc.subscriptions.some((item) => item.query === query))
+    if (doc.subscriptions.some((item) => item.query === query && (item.provider ?? 'arxiv') === provider))
       throw Object.assign(new Error('已订阅此检索。'), { status: 409 })
     if (doc.subscriptions.length >= 50)
       throw Object.assign(new Error('最多保存 50 个订阅。'), { status: 400 })
-    doc.subscriptions.push({ id: `sub-${randomUUID()}`, query, lastChecked: null })
+    doc.subscriptions.push({ id: `sub-${randomUUID()}`, query, provider, lastChecked: null })
   })
 }

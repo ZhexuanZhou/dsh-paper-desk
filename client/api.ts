@@ -39,7 +39,7 @@ import type {
   SyncStatus,
 } from '../src/types.js'
 import type { ResearchSnapshot, ResearchTopic } from '../src/types.js'
-import type { DiscoveredPaper } from '../src/types.js'
+import type { DiscoveryProvider, DiscoveryResult } from '../src/types.js'
 
 export interface DiscoveryScope {
   mode: 'incremental' | 'none'
@@ -166,8 +166,8 @@ export const api = {
   },
   removeTopic(id: string, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research', { method: 'DELETE', body: JSON.stringify({ id, baseHash }) }) },
   topicPrompt(id: string, question: string): Promise<{ prompt: string }> { return requestJson('/research/prompt', { method: 'POST', body: JSON.stringify({ id, question }) }) },
-  discover(q: string): Promise<{ items: DiscoveredPaper[]; checkedAt: string }> { return requestJson(`/research/discover${query({ q })}`) },
-  subscribe(query: string, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research/subscriptions', { method: 'POST', body: JSON.stringify({ query, baseHash }) }) },
+  discover(q: string, provider: DiscoveryProvider = 'arxiv'): Promise<DiscoveryResult> { return requestJson(`/research/discover${query({ q, provider })}`) },
+  subscribe(query: string, baseHash: string, provider: DiscoveryProvider = 'arxiv'): Promise<ResearchSnapshot> { return requestJson('/research/subscriptions', { method: 'POST', body: JSON.stringify({ query, provider, baseHash }) }) },
   unsubscribe(id: string, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research/subscriptions', { method: 'DELETE', body: JSON.stringify({ id, baseHash }) }) },
   checkSubscription(id: string, checkedAt: string, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research/subscriptions/check', { method: 'POST', body: JSON.stringify({ id, checkedAt, baseHash }) }) },
   /** Panel status: configuration, counts, cloud provider. */

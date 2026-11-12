@@ -530,7 +530,8 @@ export interface ResearchTopic {
   notes: string
   updatedAt: string
 }
-export interface ResearchSubscription { id: string; query: string; lastChecked: string | null }
+export type DiscoveryProvider = 'arxiv' | 'openalex'
+export interface ResearchSubscription { id: string; query: string; lastChecked: string | null; provider?: DiscoveryProvider }
 export interface ResearchDocument {
   schemaVersion: 1
   topics: ResearchTopic[]
@@ -539,7 +540,12 @@ export interface ResearchDocument {
 export interface ResearchSnapshot { document: ResearchDocument; hash: string }
 
 export interface DiscoveredPaper {
-  arxivId: string
+  id: string
+  provider: DiscoveryProvider
+  arxivId: string | null
+  doi: string
+  pdfUrl: string | null
+  venue: string
   title: string
   authors: string[]
   abstract: string
@@ -548,4 +554,10 @@ export interface DiscoveredPaper {
   existingPaperId: string | null
   /** Title-only matches are warnings, never authoritative identity merges. */
   possibleDuplicateId: string | null
+}
+export interface DiscoveryResult {
+  items: DiscoveredPaper[]
+  provider: DiscoveryProvider
+  checkedAt: string
+  cacheHit: boolean
 }

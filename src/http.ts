@@ -44,7 +44,8 @@ import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { importPaperFromUrl } from './urlImport.js'
 import { readResearch, saveTopic, topicPrompt, saveSubscription, updateResearch } from './research.js'
-import { discoverPapers, arxivIdentity } from './feed.js'
+import { discoverResults, arxivIdentity } from './feed.js'
+import { DiscoveryServiceError } from './discoveryTransport.js'
 import { createLlmTagger } from './tagging.js'
 import { synthesizeCard, type SynthesizedCard } from './cardsynth.js'
 import { synthesizeNotes } from './notesynth.js'
@@ -105,8 +106,8 @@ class HttpError extends Error {
   }
 }
 
-function json(res: Res, status: number, value: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+function json(res: Res, status: number, value: unknown, headers: Record<string, string> = {}): void {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', ...headers })
   res.end(JSON.stringify(value))
 }
 
@@ -502,8 +503,14 @@ async function handle(
       const rows = await queryPapers(root, { limit: 1000 })
       const papers = (await Promise.all(rows.map((paper) => readMeta(root, paper.id)))).filter((paper): paper is PaperMeta => paper !== null)
       const query = q['q'] ?? ''
-      const items = await discoverPapers(query, papers)
-      return json(res, 200, { items, checkedAt: new Date().toISOString() })
+      const provider = q['provider'] ?? 'arxiv'
+      if (provider !== 'arxiv' && provider !== 'openalex') throw new HttpError(400, '无效的检索来源')
+      try { return json(res, 200, await discoverResults(query, papers, provider)) }
+      catch (error) {
+        if (!(error instanceof DiscoveryServiceError)) throw error
+        const headers: Record<string, string> = error.retryAt ? { 'retry-after': String(Math.max(1, Math.ceil((error.retryAt - Date.now()) / 1000))) } : {}
+        return json(res, error.status, { error: error.message, code: error.code, provider: error.provider, retryAt: error.retryAt }, headers)
+      }
     }
     if (route === 'research/subscriptions/check' && method === 'POST') {
       const body = await readJsonBody(req)

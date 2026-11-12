@@ -50,6 +50,7 @@ import { CardEditor, CardsPanel, suggestCardTitle } from './CardsPanel.js'
 import type { CardDraft } from './CardsPanel.js'
 import { MetaEditor } from './MetaEditor.js'
 import { NotesEditor } from './NotesEditor.js'
+import { NotebookReference } from './NotebookReference.js'
 import { PdfViewer } from './PdfViewer.js'
 import type { PdfSelectionPayload, PdfViewerLabels } from './PdfViewer.js'
 import { Button, EmptyState, IconButton, Menu, Modal, Rating, Spinner, Tabs, Textarea } from './ui.js'
@@ -59,7 +60,7 @@ type ToastPush = (kind: ToastKind, message: string) => void
 
 export type ReaderBusy = 'enrich' | 'bibtex' | 'reveal' | 'delete' | 'download'
 
-type ReaderTab = 'read' | 'text' | 'notes' | 'info'
+type ReaderTab = 'read' | 'text' | 'notes' | 'cards' | 'info'
 
 const READER_STATUSES: readonly PaperStatus[] = ['unread', 'reading', 'read', 'archived']
 
@@ -135,7 +136,7 @@ interface CardEditorState {
   availableTurns?: readonly CardContextTurn[]
 }
 
-const READER_TABS: readonly ReaderTab[] = ['read', 'text', 'notes', 'info']
+const READER_TABS: readonly ReaderTab[] = ['read', 'notes', 'cards', 'text', 'info']
 const ASSIST_TASKS: readonly AssistTask[] = ['summary', 'method', 'critique', 'related']
 
 function tabLabel(t: (key: string) => string, tab: ReaderTab): string {
@@ -146,6 +147,8 @@ function tabLabel(t: (key: string) => string, tab: ReaderTab): string {
       return t('reader.tab.text')
     case 'notes':
       return t('reader.tab.notes')
+    case 'cards':
+      return t('cards.title')
     default:
       return t('reader.tab.info')
   }
@@ -166,6 +169,7 @@ export interface ReaderViewProps {
   annotations: AnnotationDocument | null
   annotationsLoading: boolean
   onRequestText: () => void
+  onEnterNotebook: () => void
   onDirtyChange: (dirty: boolean) => void
   registerNotesSave: (save: (() => Promise<boolean>) | null) => void
   onSaveNotes: (markdown: string, baseHash?: string) => Promise<NotesWriteResult>
@@ -406,6 +410,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
     annotations,
     annotationsLoading,
     onRequestText,
+    onEnterNotebook,
     onDirtyChange,
     registerNotesSave,
     onSaveNotes,
@@ -797,8 +802,18 @@ function ReaderViewImpl(props: ReaderViewProps) {
 
   const meta = detail.meta
 
+  const activateTab = (next: ReaderTab): boolean => {
+    if (tab === 'notes' && next !== 'notes' && notesDirty) {
+      onToast('warn', t('research.saveFirst'))
+      return false
+    }
+    if (next === 'notes' || next === 'cards') onEnterNotebook()
+    setTab(next)
+    return true
+  }
+
   const openDrawer = (drawerTab: DrawerTab): void => {
-    if (notesDirty && drawer.tab === 'notes' && drawerTab !== 'notes') { onToast('warn', t('research.saveFirst')); return }
+    if (drawerTab === 'notes') { activateTab('notes'); return }
     setDrawer({ open: true, tab: drawerTab })
   }
 
@@ -846,25 +861,24 @@ function ReaderViewImpl(props: ReaderViewProps) {
   }
 
   const toggleDrawer = (drawerTab: DrawerTab): void => {
-    if (notesDirty && drawer.tab === 'notes') { onToast('warn', t('research.saveFirst')); return }
     setDrawer((current) =>
       current.open && current.tab === drawerTab ? { ...current, open: false } : { open: true, tab: drawerTab },
     )
   }
 
   const closeDrawer = (): void => {
-    if (notesDirty && drawer.tab === 'notes') { onToast('warn', t('research.saveFirst')); return }
     setDrawer((current) => ({ ...current, open: false }))
   }
 
   const jumpToPage = (page: number): void => {
+    if (!activateTab('read')) return
     setActiveAnnotationId(null)
     setFocusTarget({ page, annotationId: null })
   }
 
   /* Task buttons / chips never navigate away: they open the AI drawer and run. */
   const runTask = (task: AssistTask): void => {
-    setTab('read')
+    if (!activateTab('read')) return
     openDrawer('ai')
     void onAssist(task)
   }
@@ -1039,14 +1053,14 @@ function ReaderViewImpl(props: ReaderViewProps) {
     }
   }
 
-  const jumpToCardPage = (card: NoteCard): void => {
-    const first = card.pages[0]
+  const jumpToCardPage = (card: NoteCard, page?: number): void => {
+    const first = page ?? card.pages[0]
     if (first !== undefined) jumpToPage(first)
   }
 
   return (
     <section className="pd-pane pd-pane-detail" aria-label={meta.title}>
-      <div className="pd-reader">
+      <div className="pd-reader" data-tab={tab}>
         <header className="pd-reader-head">
           <div className="pd-reader-row pd-reader-row-title">
             <h2 className="pd-reader-title" title={meta.title !== '' ? meta.title : meta.id}>
@@ -1071,7 +1085,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
               disabled={!detail.pdfExists || detail.pdfEvicted}
               onClick={() => {
                 if (tab !== 'read') {
-                  setTab('read')
+                  if (!activateTab('read')) return
                   openDrawer('annotations')
                   return
                 }
@@ -1117,7 +1131,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                   id: 'info',
                   label: t('reader.editInfo'),
                   icon: <IconEdit size={13} />,
-                  onSelect: () => setTab('info'),
+                  onSelect: () => activateTab('info'),
                 },
                 {
                   id: 'delete',
@@ -1210,9 +1224,9 @@ function ReaderViewImpl(props: ReaderViewProps) {
             <Tabs
               className="pd-tabs-inline"
               value={tab}
-              onChange={(id) => { if (id === 'notes') { setTab('read'); openDrawer('notes') } else setTab(id as ReaderTab) }}
+              onChange={(id) => { activateTab(id as ReaderTab) }}
               ariaLabel={t('aria.readerTabs')}
-              tabs={READER_TABS.map((id) => ({ id, label: tabLabel(t, id) }))}
+              tabs={READER_TABS.map((id) => ({ id, label: id === 'cards' ? `${tabLabel(t, id)} ${cards?.items.length ?? 0}` : tabLabel(t, id) }))}
             />
             <div className="pd-assist-inline" role="group" aria-label={t('aria.assistBar')} title={t('assist.hint')}>
               <Button
@@ -1221,7 +1235,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                 icon={<IconSpark size={12} />}
                 aria-pressed={drawerButtonPressed(drawer, 'ai')}
                 onClick={() => {
-                  setTab('read')
+                  if (!activateTab('read')) return
                   openDrawer('ai')
                 }}
                 title={t('assist.hint')}
@@ -1262,7 +1276,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                     void createFromSelection(payload)
                   }}
                   onAsk={(payload) => {
-                    setTab('read')
+                    activateTab('read')
                     openDrawer('ai')
                     void onAskAboutSelection({
                       quote: payload.quote,
@@ -1272,7 +1286,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                     })
                   }}
                   onAddToAi={(payload) => {
-                    setTab('read')
+                    activateTab('read')
                     openDrawer('ai')
                     const intro = lang === 'zh'
                       ? `【第 ${payload.page} 页选中内容】\n\n> ${payload.quote}\n\n`
@@ -1374,30 +1388,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                 aria-labelledby={`pd-drawer-tab-${drawer.tab === 'ai' ? 'ai' : drawer.tab === 'notes' ? 'notes' : 'annotations'}`}
               >
                 {drawer.tab === 'notes' ? (
-          <div className="pd-notes-with-cards">
-            <NotesEditor
-              key={meta.id}
-              notes={detail.notes}
-              onSave={onSaveNotes}
-              onReload={onReloadNotes}
-              onAppendQuote={onAppendQuote}
-              onDirtyChange={onDirtyChange}
-              registerSave={registerNotesSave}
-              onToast={onToast}
-            />
-            <CardsPanel
-              cards={cards === null ? [] : cards.items}
-              loading={cardsLoading}
-              onNew={openNewCard}
-              onEdit={openCardEdit}
-              onInsert={(card) => void onInsertCard(card)}
-              onCopy={(card) => void onCopyCard(card)}
-              onDelete={(card) => setPendingCardDelete(card)}
-              onJumpPages={jumpToCardPage}
-              onSummarize={onSummarizeCards}
-              onMerge={onMergeCards}
-            />
-          </div>
+                  <div className="pd-notebook-launch"><Button variant="primary" onClick={() => activateTab('notes')}>{t('notes.openNotebook')}</Button></div>
                 ) : drawer.tab === 'annotations' ? (
                   <AnnotationRail
                     items={annotationItems}
@@ -1461,6 +1452,45 @@ function ReaderViewImpl(props: ReaderViewProps) {
             </aside>
           </div>
         </div>
+
+        {tab === 'notes' ? (
+          <div className="pd-tab-panel pd-notebook-workspace">
+            <NotesEditor
+              key={meta.id}
+              notes={detail.notes}
+              onReadSource={() => jumpToPage(currentPage ?? 1)}
+              onSave={onSaveNotes}
+              onReload={onReloadNotes}
+              onAppendQuote={onAppendQuote}
+              onDirtyChange={onDirtyChange}
+              registerSave={registerNotesSave}
+              onToast={onToast}
+            />
+            <NotebookReference
+              pdfUrl={pdfUrl}
+              available={detail.pdfExists && !detail.pdfEvicted}
+              title={meta.title}
+              pages={collectCitedPages([{ id: 'notes', kind: 'assistant', text: detail.notes?.markdown ?? '' }]).filter((page) => meta.pageCount === null || page <= meta.pageCount)}
+              onJump={jumpToPage}
+            />
+          </div>
+        ) : null}
+        {tab === 'cards' ? (
+          <div className="pd-tab-panel pd-cards-workspace">
+            <CardsPanel
+              cards={cards?.items ?? []}
+              loading={cardsLoading}
+              onNew={openNewCard}
+              onEdit={openCardEdit}
+              onInsert={(card) => void onInsertCard(card)}
+              onCopy={(card) => void onCopyCard(card)}
+              onDelete={(card) => setPendingCardDelete(card)}
+              onJumpPages={jumpToCardPage}
+              onSummarize={onSummarizeCards}
+              onMerge={onMergeCards}
+            />
+          </div>
+        ) : null}
 
         <div className="pd-tab-panel" hidden={tab !== 'text'}>
           {textLoading ? (
@@ -1576,8 +1606,8 @@ function ReaderViewImpl(props: ReaderViewProps) {
               loading={assistBusy === 'questions'}
               onClick={() => {
                 const extra = question.trim()
+                if (!activateTab('read')) return
                 setAskOpen(false)
-                setTab('read')
                 openDrawer('ai')
                 void onAssist('questions', extra === '' ? undefined : extra)
               }}

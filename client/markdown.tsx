@@ -123,27 +123,47 @@ function renderMarkdownWithMath(markdown: string): string {
  * child of its last list item, which visually indents section headings in the
  * notes preview. Fenced code blocks are never split.
  */
-export function renderMarkdownSectioned(markdown: string): string {
-  const lines = markdown.split('\n')
-  const chunks: string[] = []
-  let current: string[] = []
-  let fence: string | null = null
-  for (const line of lines) {
-    const trimmed = line.trimStart()
-    const fenceMatch = /^(```|~~~)/.exec(trimmed)
-    if (fenceMatch !== null) {
-      if (fence === null) fence = fenceMatch[1] ?? null
-      else if (fence === fenceMatch[1]) fence = null
+function markdownSections(markdown: string): { markdown: string; offset: number }[] {
+  const chunks: { markdown: string; offset: number }[] = []
+  let start = 0
+  let offset = 0
+  let fence: { marker: string; length: number } | null = null
+  for (const line of markdown.split('\n')) {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+    if (match) {
+      const delimiter = match[1] ?? ''
+      if (fence === null) fence = { marker: delimiter[0] ?? '', length: delimiter.length }
+      else if (delimiter[0] === fence.marker && delimiter.length >= fence.length && !match[2]?.trim()) fence = null
     }
-    if (fence === null && /^##\s+/.test(line) && current.length > 0) {
-      chunks.push(current.join('\n'))
-      current = [line]
-      continue
+    if (fence === null && /^##\s+/.test(line) && offset > start) {
+      chunks.push({ markdown: markdown.slice(start, offset), offset: start })
+      start = offset
     }
-    current.push(line)
+    offset += line.length + 1
   }
-  if (current.length > 0) chunks.push(current.join('\n'))
-  return chunks.map((chunk) => renderMarkdown(chunk)).join('\n')
+  if (start < markdown.length) chunks.push({ markdown: markdown.slice(start), offset: start })
+  return chunks
+}
+
+export function renderMarkdownSectioned(markdown: string): string {
+  return markdownSections(markdown).map((chunk) => renderMarkdown(chunk.markdown)).join('\n')
+}
+
+/** Use the same section boundaries as the preview, including notes after loose lists. */
+export function noteOutline(markdown: string): { label: string; offset: number }[] {
+  const result: { label: string; offset: number }[] = []
+  for (const chunk of markdownSections(markdown)) {
+    let cursor = 0
+    for (const token of marked.lexer(chunk.markdown)) {
+      const offset = chunk.markdown.indexOf(token.raw, cursor)
+      if (offset < 0) continue
+      cursor = offset + token.raw.length
+      if (token.type === 'heading' && token.depth === 2) {
+        result.push({ label: token.text, offset: chunk.offset + offset })
+      }
+    }
+  }
+  return result
 }
 
 /** Render markdown to a safe HTML string (never throws). */
