@@ -11,7 +11,7 @@ import type { AiRow, AiThreadController } from './aiSession.js'
 import type { CardContextTurn } from '../src/types.js'
 import { cleanUserPrompt } from './chatText.js'
 import { Markdown } from './markdown.js'
-import { Button, Spinner } from './ui.js'
+import { Button, Menu, Spinner } from './ui.js'
 
 /** Every string the panel renders (owned by i18n, zh + en). */
 export interface AiPanelLabels {
@@ -23,6 +23,7 @@ export interface AiPanelLabels {
   send: string
   placeholder: string
   saveToNotes: string
+  saveAnswer: string
   copy: string
   openInSession: string
   retry: string
@@ -550,6 +551,20 @@ export function AiPanel(props: AiPanelProps) {
     void onAsk(prompt)
   }
 
+  const saveActions = (row: AiRow): ReactElement => (
+    <div className="pd-ai-row-actions">
+      <Menu
+        className="pd-ai-save-menu"
+        label={labels.saveAnswer}
+        triggerLabel={labels.saveAnswer}
+        items={[
+          { id: 'notes', label: labels.saveToNotes, onSelect: () => void onSaveToNotes(row.text) },
+          ...(onCreateCard ? [{ id: 'card', label: labels.createCard, onSelect: () => onCreateCard(row, conversationTurns, contextForRow(row)) }] : []),
+        ]}
+      />
+    </div>
+  )
+
   const renderRow = (row: AiRow): ReactElement => {
     switch (row.kind) {
       case 'user':
@@ -563,18 +578,7 @@ export function AiPanel(props: AiPanelProps) {
           <div key={row.id} className="pd-ai-assistant">
             <Markdown markdown={row.text} />
             {row.streaming === true ? <span className="pd-ai-caret" aria-hidden="true" /> : null}
-            {row.streaming !== true ? <div className="pd-ai-row-actions"><Button size="sm" variant="primary" onClick={() => void onSaveToNotes(row.text)}>{labels.saveToNotes}</Button></div> : null}
-            {row.streaming !== true && onCreateCard !== undefined ? (
-              <div className="pd-ai-row-actions">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onCreateCard(row, conversationTurns, contextForRow(row))}
-                >
-                  {labels.createCard}
-                </Button>
-              </div>
-            ) : null}
+            {row.streaming !== true ? saveActions(row) : null}
           </div>
         )
       case 'reasoning':
@@ -675,25 +679,8 @@ export function AiPanel(props: AiPanelProps) {
                   <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
                     <div className="pd-ai-assistant">
                       <Markdown markdown={message.text} />
-                      <div className="pd-ai-row-actions"><Button size="sm" variant="primary" onClick={() => void onSaveToNotes(message.text)}>{labels.saveToNotes}</Button></div>
+                      {saveActions({ id: `history-${index}`, kind: 'assistant', text: message.text })}
                       <div className="pd-ai-cites">{collectCitedPages([{ id: `history-${index}`, kind: 'assistant', text: message.text }]).map((page) => <button key={page} type="button" className="pd-ai-cite" onClick={() => (onSourcePage ?? onJumpPage)(page)}>{`p.${page}`}</button>)}</div>
-                      {onCreateCard !== undefined ? (
-                        <div className="pd-ai-row-actions">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              const row: AiRow = { id: `history-${index}`, kind: 'assistant', text: message.text }
-                              const turnIndex = conversationTurns.findIndex((turn) => turn.id === row.id)
-                              const defaultContext =
-                                turnIndex < 0 ? [] : conversationTurns.slice(Math.max(0, turnIndex - 3), turnIndex)
-                              onCreateCard(row, conversationTurns, defaultContext)
-                            }}
-                          >
-                            {labels.createCard}
-                          </Button>
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 ),

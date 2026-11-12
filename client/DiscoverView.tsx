@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ResearchSnapshot } from '../src/types.js'
 import type { DiscoveredPaper } from '../src/types.js'
 import { api } from './api.js'
 import { useT, errorText } from './i18n.js'
-import { Button } from './ui.js'
+import { Button, Spinner } from './ui.js'
+import { FeatureLoadState } from './FeatureLoadState.js'
 
 export function DiscoverView({
   onImported,
@@ -21,6 +22,8 @@ export function DiscoverView({
   const [checkedAt, setCheckedAt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState<unknown>(null)
+  const [retrySearch, setRetrySearch] = useState<{ query: string; id: string | null } | null>(null)
   const [notice, setNotice] = useState('')
   const request = useRef(0)
   useEffect(() => {
@@ -31,19 +34,23 @@ export function DiscoverView({
     )
       setSubscriptionId(null)
   }, [snapshot, subscriptionId])
+  const reload = useCallback(async () => {
+    setLoadError(null)
+    try { setSnapshot(await api.research()) }
+    catch (err) { setLoadError(err) }
+  }, [])
   useEffect(() => {
-    void api
-      .research()
-      .then(setSnapshot)
-      .catch((err: unknown) => setError(errorText(err)))
+    void reload()
     return () => {
       request.current += 1
     }
-  }, [])
+  }, [reload])
   const search = async (value: string, id: string | null = null): Promise<void> => {
+    if (!value.trim()) return
     const token = ++request.current
     setBusy(true)
     setError('')
+    setRetrySearch(null)
     setNotice('')
     setQuery(value)
     setSubscriptionId(id)
@@ -55,7 +62,10 @@ export function DiscoverView({
       setMatched(value)
       setCheckedAt(result.checkedAt)
     } catch (err) {
-      if (token === request.current) setError(errorText(err))
+      if (token === request.current) {
+        setError(errorText(err))
+        setRetrySearch({ query: value, id })
+      }
     } finally {
       if (token === request.current) setBusy(false)
     }
@@ -63,6 +73,7 @@ export function DiscoverView({
   const mutate = async (operation: () => Promise<ResearchSnapshot>): Promise<void> => {
     setBusy(true)
     setError('')
+    setRetrySearch(null)
     try {
       setSnapshot(await operation())
       setNotice(t('discover.saved'))
@@ -73,14 +84,17 @@ export function DiscoverView({
     }
   }
   const lastChecked = snapshot?.document.subscriptions.find((item) => item.id === subscriptionId)?.lastChecked
+  if (!snapshot || loadError !== null) return <FeatureLoadState error={loadError} onRetry={() => void reload()} />
+  const alreadySubscribed = snapshot.document.subscriptions.some((item) => item.query === query.trim())
   return (
     <section className="pd-discover-layout">
       <aside className="pd-research-list">
         <h2>{t('discover.subscriptions')}</h2>
         <p className="pd-field-hint">{t('discover.subscriptionHint')}</p>
+        {snapshot.document.subscriptions.length === 0 ? <p className="pd-sidebar-empty">{t('discover.noSubscriptions')}</p> : null}
         {snapshot?.document.subscriptions.map((item) => (
           <div className="pd-subscription" key={item.id}>
-            <button className="pd-topic-row" disabled={busy} onClick={() => void search(item.query, item.id)}>
+            <button className="pd-topic-row" data-selected={subscriptionId === item.id} disabled={busy} onClick={() => void search(item.query, item.id)}>
               {item.query}
               <small>
                 {item.lastChecked ? new Date(item.lastChecked).toLocaleString() : t('discover.unchecked')}
@@ -97,8 +111,8 @@ export function DiscoverView({
         ))}
       </aside>
       <section className="pd-discover-main" aria-label={t('discover.title')}>
-        <h2>{t('discover.title')}</h2>
-        <p>{t('discover.hint')}</p>
+        <header className="pd-section-head"><div><h2>{t('discover.title')}</h2><p className="pd-field-hint">{t('discover.intro')}</p></div><span className="pd-provider-label">arXiv</span></header>
+        <label className="pd-search-label" htmlFor="pd-discover-query">{t('discover.queryLabel')}</label>
         <form
           className="pd-discover-search"
           onSubmit={(event) => {
@@ -107,6 +121,7 @@ export function DiscoverView({
           }}
         >
           <input
+            id="pd-discover-query"
             className="pd-input"
             aria-label={t('discover.query')}
             placeholder={t('discover.query')}
@@ -117,25 +132,31 @@ export function DiscoverView({
           <Button type="submit" variant="primary" loading={busy} disabled={!query.trim()}>
             {t('discover.search')}
           </Button>
-          <Button
-            disabled={busy || !query.trim() || !snapshot}
-            onClick={() => snapshot && void mutate(() => api.subscribe(query, snapshot.hash))}
-          >
-            {t('discover.subscribe')}
-          </Button>
         </form>
+        {query.trim() ? (
+          <div className="pd-discover-save-search">
+            <p>{t('discover.saveHint', { query: query.trim() })}</p>
+            <Button
+              disabled={busy || alreadySubscribed}
+              onClick={() => void mutate(() => api.subscribe(query.trim(), snapshot.hash))}
+            >
+              {t(alreadySubscribed ? 'discover.subscribed' : 'discover.subscribe')}
+            </Button>
+          </div>
+        ) : null}
+        <details className="pd-discover-syntax"><summary>{t('discover.advanced')}</summary><p className="pd-field-hint">{t('discover.hint')}</p></details>
         {error ? (
           <p role="alert" className="pd-field-error">
             {error}
-            <Button disabled={busy} onClick={() => void search(query, subscriptionId)}>
+            {retrySearch ? <Button disabled={busy} onClick={() => void search(retrySearch.query, retrySearch.id)}>
               {t('discover.retry')}
-            </Button>
+            </Button> : null}
           </p>
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
-        {items ? (
-          <p className="pd-field-hint">{t('discover.matches', { n: items.length, query: matched })}</p>
-        ) : null}
+        {busy && items === null ? <p role="status" className="pd-feature-status"><Spinner />{t('discover.searching')}</p> : null}
+        {!busy && items === null && !error ? <section className="pd-feature-empty"><h3>{t('discover.startTitle')}</h3><p>{t('discover.startHint')}</p><div className="pd-example-queries">{['retrieval augmented generation', 'diffusion language model'].map((example) => <Button key={example} onClick={() => setQuery(example)}>{example}</Button>)}</div></section> : null}
+        {items ? <p className="pd-field-hint">{t('discover.matches', { n: items.length, query: matched })}</p> : null}
         {items?.length === 0 ? <p>{t('discover.empty')}</p> : null}
         {items?.map((item) => (
           <article key={item.arxivId} className="pd-discovered-paper">
@@ -161,6 +182,7 @@ export function DiscoverView({
                 }
                 setBusy(true)
                 setError('')
+                setRetrySearch(null)
                 void api
                   .importUrl(item.url)
                   .then((result) => {

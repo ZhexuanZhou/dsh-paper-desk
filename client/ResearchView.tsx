@@ -7,6 +7,7 @@ import { createAiThread } from './aiSession.js'
 import { Markdown } from './markdown.js'
 import { useT, errorText } from './i18n.js'
 import { Button, Modal } from './ui.js'
+import { FeatureLoadState } from './FeatureLoadState.js'
 
 export function ResearchView({
   ctx,
@@ -32,6 +33,7 @@ export function ResearchView({
   const [search, setSearch] = useState('')
   const [ask, setAsk] = useState('')
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState<unknown>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -60,6 +62,7 @@ export function ResearchView({
     setNotice('')
   }
   const reload = useCallback(async () => {
+    setLoadError(null)
     try {
       const [next, list] = await Promise.all([api.research(), api.papers({ limit: 1000 })])
       setSnapshot(next)
@@ -67,7 +70,7 @@ export function ResearchView({
       setError('')
       return next
     } catch (err) {
-      setError(errorText(err))
+      setLoadError(err)
       return null
     }
   }, [])
@@ -135,11 +138,14 @@ export function ResearchView({
     }
     select(value)
   }
+  if (!snapshot || loadError !== null) return <FeatureLoadState error={loadError} onRetry={() => void reload()} />
   return (
-    <section className="pd-research-layout">
+    <section className="pd-research-layout" data-phase={topic ? 'saved' : 'new'}>
       <aside className="pd-research-list">
         <h2>{t('research.title')}</h2>
+        <p className="pd-field-hint">{t('research.intro')}</p>
         <Button onClick={() => choose(null)}>{t('research.new')}</Button>
+        {snapshot.document.topics.length === 0 ? <p className="pd-sidebar-empty">{t('research.noTopics')}</p> : null}
         {snapshot?.document.topics.map((item) => (
           <button
             className="pd-topic-row"
@@ -166,19 +172,25 @@ export function ResearchView({
         </Button>
       </aside>
       <div className="pd-research-editor">
-        <h2>{topic ? t('research.edit') : t('research.new')}</h2>
+        <header className="pd-section-head">
+          <div><h2>{topic ? topic.title : t('research.new')}</h2><p className="pd-field-hint">{t(topic ? 'research.editHint' : 'research.createHint')}</p></div>
+          <Button variant="primary" loading={busy} disabled={!title.trim() || !question.trim()} onClick={() => void save()}>{t('research.save')}</Button>
+        </header>
         {error ? (
           <p role="alert" className="pd-field-error">
             {error}
           </p>
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
+        <section className="pd-topic-definition">
+        <h3>{t('research.stepQuestion')}</h3>
         <label>
           {t('research.name')}
           <input
             className="pd-input"
             value={title}
             maxLength={200}
+            placeholder={t('research.namePlaceholder')}
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
@@ -188,12 +200,14 @@ export function ResearchView({
             className="pd-input"
             value={question}
             maxLength={4000}
+            placeholder={t('research.questionPlaceholder')}
             onChange={(event) => setQuestion(event.target.value)}
           />
         </label>
+        </section>
         <fieldset>
           <legend>
-            {t('research.sources')} · {ids.length}/30
+            {t('research.stepSources')} · {ids.length}/30
           </legend>
           <p className="pd-field-hint">{t('research.contextHint')}</p>
           <input
@@ -223,7 +237,7 @@ export function ResearchView({
                         )
                       }
                     />
-                    {paper.title}
+                    <span>{paper.title}<small>{paper.authors.slice(0, 2).join(', ')}{paper.year ? ` · ${paper.year}` : ''}</small></span>
                   </label>
                   <Button
                     size="sm"
@@ -238,7 +252,10 @@ export function ResearchView({
                 </div>
               ))}
           </div>
+          {papers.length === 0 ? <p className="pd-field-hint">{t('research.noPapers')}</p> : null}
         </fieldset>
+        <details className="pd-topic-notes-section">
+        <summary>{t('research.notesOptional')}{notes.trim() ? ` · ${t('research.hasNotes')}` : ''}</summary>
         <label>
           {t('research.notes')}
           <textarea
@@ -248,15 +265,9 @@ export function ResearchView({
             onChange={(event) => setNotes(event.target.value)}
           />
         </label>
+        </details>
         <div className="pd-research-actions">
-          <Button
-            variant="primary"
-            loading={busy}
-            disabled={!snapshot || !title.trim() || !question.trim()}
-            onClick={() => void save()}
-          >
-            {t('research.save')}
-          </Button>
+          {!topic ? <p className="pd-field-hint">{t('research.afterSave')}</p> : null}
           {topic ? (
             <Button variant="ghost" onClick={() => setDeleting(true)}>
               {t('research.delete')}
@@ -265,12 +276,13 @@ export function ResearchView({
           {dirty ? <Button onClick={() => select(topic)}>{t('research.discard')}</Button> : null}
         </div>
       </div>
-      <aside className="pd-topic-discussion">
+      {topic ? <aside className="pd-topic-discussion">
         <h3>{t('research.discuss')}</h3>
-        <p className="pd-field-hint">{t('research.discussHint')}</p>
+        <p className="pd-field-hint">{dirty ? t('research.saveFirst') : !ids.length ? t('research.chooseSources') : t('research.discussHint')}</p>
         {state.threadKey === topic?.id && state.error ? <p role="alert" className="pd-field-error">{state.error}</p> : null}
         {state.threadKey === topic?.id && (state.status === 'attaching' || state.status === 'running') ? <p role="status">{t(state.status === 'attaching' ? 'ai.attaching' : 'ai.thinking')}</p> : null}
         <div className="pd-topic-chat">
+          {state.threadKey !== topic.id || state.rows.length === 0 ? <p className="pd-discussion-empty">{t('research.discussionEmpty')}</p> : null}
           {state.threadKey === topic?.id
             ? state.rows
                 .filter((row) => row.kind === 'assistant' || row.kind === 'error')
@@ -286,6 +298,7 @@ export function ResearchView({
           aria-label={t('research.ask')}
           placeholder={t('research.ask')}
           value={ask}
+          disabled={dirty || !ids.length || state.status === 'running'}
           onChange={(event) => setAsk(event.target.value)}
         />
         <Button
@@ -305,7 +318,7 @@ export function ResearchView({
         >
           {t('research.keepAnswer')}
         </Button>
-      </aside>
+      </aside> : null}
       <Modal
         open={deleting}
         title={t('research.delete')}

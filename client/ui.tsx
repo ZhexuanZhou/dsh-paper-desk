@@ -315,10 +315,12 @@ export interface MenuProps {
   icon?: ReactNode
   disabled?: boolean
   className?: string
+  /** A visible text trigger when an icon alone would hide the action. */
+  triggerLabel?: string
 }
 
 /** One icon-only trigger with a keyboard/click-away-dismissed item menu. */
-export function Menu({ label, items, icon, disabled = false, className }: MenuProps) {
+export function Menu({ label, items, icon, disabled = false, className, triggerLabel }: MenuProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -350,7 +352,7 @@ export function Menu({ label, items, icon, disabled = false, className }: MenuPr
       <button
         ref={triggerRef}
         type="button"
-        className="pd-btn pd-btn-icon"
+        className={triggerLabel ? 'pd-btn pd-btn-sm' : 'pd-btn pd-btn-icon'}
         data-active={open ? 'true' : 'false'}
         aria-label={label}
         title={label}
@@ -359,6 +361,7 @@ export function Menu({ label, items, icon, disabled = false, className }: MenuPr
         disabled={disabled}
         onClick={() => setOpen((previous) => !previous)}
       >
+        {triggerLabel ? <span>{triggerLabel}</span> : null}
         {icon ?? <IconMore />}
       </button>
       {open ? (

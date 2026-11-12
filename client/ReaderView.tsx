@@ -697,6 +697,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
       send: t('ai.send'),
       placeholder: t('ai.placeholder'),
       saveToNotes: t('ai.saveToNotes'),
+      saveAnswer: t('ai.saveAnswer'),
       copy: t('ai.copy'),
       openInSession: t('ai.openInSession'),
       retry: t('ai.retry'),

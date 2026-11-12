@@ -127,6 +127,47 @@ const readingCss = `
 .pd-discovered-paper a { color: inherit; }
 .pd-discovered-paper .pd-btn { flex: 0 0 auto; }
 .pd-subscription { border-bottom: 1px solid var(--dsw-alias-border-l1); padding-bottom: 8px; }
+.pd-feature-state { align-self: flex-start; width: min(100%, 640px); margin: 48px auto; padding: 32px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-base); }
+.pd-feature-state h2 { margin: 0 0 12px; font-size: 21px; }
+.pd-feature-state p { font-size: 14px; line-height: 1.8; }
+.pd-feature-state details { margin-top: 20px; font-size: 13px; overflow-wrap: anywhere; }
+.pd-section-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+.pd-section-head h2 { margin: 0 0 6px; }
+.pd-section-head p { margin: 0; font-size: 13px; }
+.pd-section-head > div { flex: 1 1 280px; min-width: 0; }
+.pd-sidebar-empty { margin: 24px 0; font-size: 13px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
+.pd-research-layout[data-phase='new'] .pd-research-editor { max-width: 900px; padding-left: 20px; }
+.pd-topic-definition { margin-bottom: 24px; }
+.pd-topic-definition h3 { margin: 0 0 16px; font-size: 15px; font-weight: 600; }
+.pd-topic-definition label, .pd-topic-notes-section label { display: grid; gap: 8px; margin-bottom: 16px; font-size: 13px; }
+.pd-topic-definition textarea { min-height: 88px; }
+.pd-research-editor legend { padding: 0 6px; font-size: 15px; font-weight: 600; }
+.pd-topic-papers { max-height: 260px; }
+.pd-topic-papers label { align-items: flex-start; }
+.pd-topic-papers small { display: block; margin-top: 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.pd-topic-papers input[type='checkbox'] { flex: 0 0 auto; margin-top: 4px; accent-color: var(--pd-accent); }
+.pd-topic-notes-section { margin: 24px 0; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 16px; }
+.pd-topic-notes-section summary { cursor: pointer; font-size: 14px; }
+.pd-topic-notes-section label { margin-top: 16px; }
+.pd-research-editor textarea.pd-topic-notes { min-height: 140px; }
+.pd-research-actions { flex-wrap: wrap; align-items: center; }
+.pd-discussion-empty { padding: 24px 0; color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 1.8; }
+.pd-discover-main { max-width: 1100px; padding-right: 12px; }
+.pd-search-label { display: block; font-size: 13px; font-weight: 600; }
+.pd-discover-search { margin: 8px 0 12px; }
+.pd-discover-syntax { margin-bottom: 24px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.pd-discover-syntax summary { cursor: pointer; }
+.pd-provider-label { font-size: 13px; color: var(--pd-accent); padding: 4px 9px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; }
+.pd-feature-empty { margin-top: 32px; border: 1px dashed var(--dsw-alias-border-l1); border-radius: 10px; padding: 28px; }
+.pd-feature-empty h3 { margin: 0 0 8px; font-size: 18px; }
+.pd-feature-empty p { max-width: 64ch; font-size: 14px; color: var(--dsw-alias-label-secondary); }
+.pd-example-queries { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.pd-feature-status { display: flex; align-items: center; gap: 8px; padding: 24px 0; font-size: 14px; }
+.pd-discover-save-search { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.pd-discover-save-search p { flex: 1 1 260px; min-width: 0; margin: 0; font-size: 13px; overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); }
+.pd-ai-row-actions .pd-btn { min-height: 28px; padding: 4px 9px; font-size: 12px; }
+.pd-ai-row-actions .pd-btn-primary { color: ${PRIMARY_FG}; }
+.pd-ai-save-menu .pd-menu-panel { top: auto; bottom: calc(100% + 5px); left: 0; right: auto; }
 @container pd (max-width: 1150px) { .pd-topbar { gap: 12px; padding: 8px 16px; } .pd-body { padding: 12px 16px 16px; gap: 12px; } .pd-top-actions .pd-btn-label { font-size: 12px; } .pd-topic-discussion { flex-basis: 300px; min-width: 240px; padding-left: 12px; } .pd-research-list { flex-basis: 160px; } }
 @container pd (max-width: 800px) { .pd-research-layout { flex-wrap: wrap; overflow: auto; } .pd-research-editor { flex: 1 1 60%; overflow: visible; } .pd-topic-discussion { flex: 1 1 100%; min-height: 400px; } .pd-research-list { flex-basis: 145px; } .pd-discover-search { flex-wrap: wrap; } .pd-discovered-paper { flex-direction: column; gap: 10px; } .pd-reader-title { font-size: 18px; } }
 `
