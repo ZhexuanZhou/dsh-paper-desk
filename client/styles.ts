@@ -1803,17 +1803,36 @@ export const CSS = `
 }
 .pd-ai-tools-toggle:hover { background: ${L2}; color: ${FG}; }
 .pd-md math {
-  font-size: 1.05em;
-  max-width: 100%;
-  overflow-x: auto;
-  vertical-align: middle;
+  font-family: math, 'STIX Two Math', 'Cambria Math', serif;
+  font-size: 1em;
+  font-weight: normal;
+  font-style: normal;
+  letter-spacing: normal;
+  word-spacing: normal;
+  max-width: none;
+  overflow: visible;
 }
-.pd-md math[display="block"] {
-  display: block;
-  width: 100%;
-  margin: 0.55em 0;
-  padding: 1px 0;
+.pd-md .pd-math-inline {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
   overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 3px;
+}
+.pd-md .pd-math-block, .pd-md .pd-math-display {
+  display: block;
+  max-width: 100%;
+  margin: 1em 0;
+  padding: 4px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.pd-md .pd-math-block > math, .pd-md .pd-math-display > math {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
 }
 
 .pd-ai-ime-hint {

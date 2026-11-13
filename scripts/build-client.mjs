@@ -60,10 +60,9 @@ const wrapped = [
   '\t\tvar module = { exports: {} };',
   '\t\tvar exports = module.exports;',
   '\t\tObject.defineProperty(exports, Symbol.toStringTag, { value: "Module" });',
-  code
-    .split('\n')
-    .map((line) => `\t\t${line}`)
-    .join('\n'),
+  // Preserve the emitted bytes. Indenting lines also changes multiline
+  // template literals (including Marked's newline delimiters and grammar).
+  code,
   '\t\treturn module.exports;',
   '\t}',
   '});',

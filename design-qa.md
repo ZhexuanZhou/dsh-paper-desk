@@ -68,3 +68,12 @@ final result: passed
 差异与边界：after保留55px宿主收起侧栏，PDF缩放/实际回答与设计示意内容不同。页码引用按现协议在回答尾部分组并标“引用页面”，没有段落级来源映射，不伪造inline引用。字号与内容长度因真实回答不同，不声称像素一致。派生并排及focuscrop仅用于对照，原图保留。
 
 最终client `047d3607da376c83e97c0f90db5f2fd4dab90d5412d743d405afefad2f3f97b6`；早期0109真实模型/管理证据、b6c8卡片与响应式证据未受后续仅空态disabled/aria-pressed变化影响，保留各自provenance。native已刷新确认v0.4.6（后台缓存v0.4.5），未写真实数据。
+
+
+## 2026-11-13 · 0.4.7 公式与Markdown层级
+
+final result: passed
+
+沿用用户选1的阅读视觉语言，本轮局部修复无需新设计稿。原用户截图、真实0.4.6 before与0.4.7 after（同1701×913）逐项亲检；派生focus对比 `original-before-after.jpg` 保留原截图字节。末节H2从累积120px缩进恢复正文基线，全部标题无LI祖先，列表正常一层；两处s>1为MathML，tildeQ无灰滚动条。人工边界稿在助读/卡片/笔记均真实渲染，代码美元符保留，400px长公式仅自身水平滚动，后续正文基线正常。未发现未解决P0/P1/P2。
+
+client SHA256 `ebe3a393a090d60c1401bca785b00f3d7051790042a1cc6d3e8a53f1d4f133bc`；原生已刷新v0.4.7，原会话只读验证；真实chats.json哈希不变。私有原稿、对话、截图位于round `20261113-followup-0.4.7`，不得提交。

@@ -25,3 +25,8 @@ LLM流的`finish.reason`可能为error或aborted，不能把它们当正常结�
 ## 0.4.6 助读响应式与验收冻结
 
 小屏overlay不能继承PDF read-shell的320px高度；真实600px检查发现composer挤占后回答只剩约35px。应给overlay独立viewport高度并亲检回答可读空间。变更验收期间build/watch会自动将插件返回Harness壳；源码和bundle需冻结到runner完成，失败locator后先fresh确认自己页面，不能据此误称用户切走。多字段草稿/附件状态用函数式更新，复测移除附件后编辑草稿不应写回旧附件。真实图片问答证据需同时检查session中的image block与实际provider/model，不能只以模型说看过图为证明。
+
+
+## 0.4.7 构建产物必须与源码语义一致
+
+源码直接render正确不能代表发布bundle正确。真实DOM显示H2被多层LI包裹并累计120px缩进，而源码Marked无此嵌套。根因是build-client对完整esbuild输出逐行加缩进，改写模板字符串中换行，使Marked内部join/split规则变成换行加制表符。嵌入bundle必须保留code字节语义，并用实际lib factory与源码对同一真实原稿比较。数学应交给Marked扩展，避免全局占位替换破坏代码/列表；比较运算符和代码内美元符需同时验证。MathML accent几何略超本体可由外层padding容纳，普通inline本体不应自带overflowauto滚动条；长公式滚动放外层并验证后续正文位置。
