@@ -436,9 +436,10 @@ export interface ModalProps {
   footer?: ReactNode
   onClose: () => void
   wide?: boolean
+  className?: string
 }
 
-export function Modal({ open, title, description, children, footer, onClose, wide = false }: ModalProps) {
+export function Modal({ open, title, description, children, footer, onClose, wide = false, className }: ModalProps) {
   const t = useT()
   const panelRef = useRef<HTMLDivElement | null>(null)
   const closeRef = useRef(onClose)
@@ -474,7 +475,7 @@ export function Modal({ open, title, description, children, footer, onClose, wid
     >
       <div
         ref={panelRef}
-        className={classes('pd-modal', wide && 'pd-modal-wide')}
+        className={classes('pd-modal', wide && 'pd-modal-wide', className)}
         role="dialog"
         aria-modal="true"
         aria-label={title}

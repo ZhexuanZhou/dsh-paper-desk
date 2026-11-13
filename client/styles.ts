@@ -37,6 +37,7 @@ const RING = `0 0 0 3px color-mix(in srgb, ${BRAND} 22%, transparent)`
 
 import { relationsCss } from './RelationsGraph.js'
 import { compareCss } from './CompareView.js'
+import { aiReadingCss } from './aiReadingStyles.js'
 
 
 const readingCss = `
@@ -2311,7 +2312,7 @@ export const CSS = `
 }
 ` +
   relationsCss +
-  compareCss + readingCss
+  compareCss + readingCss + aiReadingCss
 
 /** Value of the injected `<style data-plugin-css="...">` attribute. */
 export const STYLE_ATTR = 'paper-desk'

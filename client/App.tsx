@@ -1330,24 +1330,29 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     async (request: {
       task: AssistTask
       extra?: string
+      pages?: readonly number[]
       context?: { quote?: string; page?: number; question?: string }
-    }): Promise<void> => {
+    }): Promise<boolean> => {
       const paperId = selectedId
-      if (paperId === null) return
+      if (paperId === null) return false
+      const requestedChatId = activeChatIdRef.current
       setAssistBusy(request.task)
       try {
         const payload: AssistPayload = await api.assist(paperId, request.task, request.extra, request.context)
-        if (selectedIdRef.current !== paperId) return
-        if (!(await ensureAiChat(paperId))) return
-        const pages = request.context?.page ? [request.context.page] : []
+        if (selectedIdRef.current !== paperId || activeChatIdRef.current !== requestedChatId) return false
+        if (!(await ensureAiChat(paperId))) return false
+        const requestedThread = ai.getSnapshot().threadKey
+        const pages = request.pages ?? (request.context?.page ? [request.context.page] : [])
         const images = pages.length ? await renderPageImages(api.pdfUrl(paperId), pages) : []
-        if (selectedIdRef.current !== paperId) return
-        const result = await ai.run(payload.prompt + (images.length ? `\n附图为论文 p.${pages[0]} 原页，请结合图像核对公式和图表。` : ''), images)
+        if (selectedIdRef.current !== paperId || ai.getSnapshot().threadKey !== requestedThread) return false
+        const result = await ai.run(payload.prompt + (images.length ? `\n附图为论文 ${pages.map((page) => `p.${page}`).join('、')} 原页，请结合图像核对公式和图表。` : ''), images)
         if (!result.ok) {
           pushToast('error', result.error !== undefined && result.error !== '' ? result.error : tRef.current('ai.error'))
         }
+        return result.ok
       } catch (error) {
         reportError(error, 'assist.failed')
+        return false
       } finally {
         setAssistBusy(null)
       }
@@ -1356,8 +1361,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   )
 
   const handleAssist = useCallback(
-    async (task: AssistTask, extra?: string): Promise<void> => {
-      await launchAssist({ task, extra })
+    async (task: AssistTask, extra?: string, pages?: readonly number[]): Promise<boolean> => {
+      return launchAssist({ task, extra, pages })
     },
     [launchAssist],
   )
@@ -1524,6 +1529,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       const text = question.trim()
       if (text === '') return false
       if (!(await ensureAiChat(paperId))) return false
+      const requestedThread = ai.getSnapshot().threadKey
       try {
         const emptyThread = ai.getSnapshot().rows.length === 0
         const title = detail?.meta.title ?? paperId
@@ -1540,7 +1546,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         parts.push(text)
         const prompt = parts.join('\n\n')
         const images = pages.length ? await renderPageImages(api.pdfUrl(paperId), pages) : []
-        if (selectedIdRef.current !== paperId) return false
+        if (selectedIdRef.current !== paperId || ai.getSnapshot().threadKey !== requestedThread) return false
         const imageHint = images.length ? `\n\n随附 PDF 原页图片依次为 ${pages.map((page) => `p.${page}`).join('、')}。请结合图片检查公式、图表及上下文；看不清或缺少信息时明确说明，不要猜测。回答标注来源页码。` : ''
         const result = await ai.run(prompt + imageHint, images)
         if (!result.ok) {

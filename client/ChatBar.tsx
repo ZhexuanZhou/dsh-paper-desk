@@ -6,8 +6,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { PaperChat } from '../src/types.js'
-import { IconButton } from './ui.js'
-import { IconCheck, IconClose, IconEdit, IconPlus, IconTrash } from './icons.js'
+import { IconButton, Menu } from './ui.js'
+import type { MenuItemDef } from './ui.js'
+import { IconCheck, IconClose, IconEdit, IconTrash } from './icons.js'
 
 export interface ChatBarLabels {
   title: string
@@ -18,6 +19,7 @@ export interface ChatBarLabels {
   removeConfirm: string
   removeCancel: string
   empty: string
+  more: string
 }
 
 export interface ChatBarProps {
@@ -28,6 +30,7 @@ export interface ChatBarProps {
   onCreate: () => void
   onRename: (chatId: string, title: string) => void
   onRemove: (chatId: string) => void
+  extraActions?: readonly MenuItemDef[]
 }
 
 function shortTitle(chat: PaperChat): string {
@@ -49,7 +52,6 @@ export function ChatBar(props: ChatBarProps): ReactElement {
 
   return (
     <div className="pd-chat-bar">
-      <span className="pd-chat-bar-label">{labels.title}</span>
       {renaming && active !== null ? (
         <>
           <input
@@ -99,24 +101,19 @@ export function ChatBar(props: ChatBarProps): ReactElement {
             ))}
           </select>
           <IconButton label={labels.create} onClick={props.onCreate}>
-            <IconPlus size={13} />
+            <IconEdit size={16} />
           </IconButton>
-          {active !== null ? (
-            <>
-              <IconButton
-                label={labels.rename}
-                onClick={() => {
-                  setRenaming(true)
-                  setDraft(active.title)
-                }}
-              >
-                <IconEdit size={13} />
-              </IconButton>
-              <IconButton label={labels.remove} onClick={() => setConfirming(true)}>
-                <IconTrash size={13} />
-              </IconButton>
-            </>
-          ) : null}
+          <Menu
+            label={labels.more}
+            className="pd-chat-more"
+            items={[
+              ...(active === null ? [] : [
+                { id: 'rename', label: labels.rename, icon: <IconEdit size={14} />, onSelect: () => { setRenaming(true); setDraft(active.title) } },
+                { id: 'delete', label: labels.remove, icon: <IconTrash size={14} />, danger: true, onSelect: () => setConfirming(true) },
+              ]),
+              ...(props.extraActions ?? []),
+            ]}
+          />
         </>
       )}
       {confirming && active !== null ? (

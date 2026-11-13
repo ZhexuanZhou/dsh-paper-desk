@@ -1,6 +1,6 @@
 {
   "name": "dsh-paper-desk",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "PaperDesk: a Mendeley-style paper library for DeepSeek Harness — import PDFs, keep notes and highlights, ask the agent to explain papers, and sync the library folder through your cloud drive.",
   "type": "module",
   "license": "MIT",
@@ -42,7 +42,8 @@
     "test:pdf-links": "node scripts/test-pdf-links.mjs",
     "test:import-metadata": "node scripts/test-import-metadata.mjs",
     "test:ui-state": "node scripts/test-ui-state.mjs",
-    "test:pdf-highlights": "node scripts/test-pdf-highlights.mjs"
+    "test:pdf-highlights": "node scripts/test-pdf-highlights.mjs",
+    "test:ai-composer": "node scripts/test-ai-composer.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",

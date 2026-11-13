@@ -4,19 +4,40 @@
  * `useSyncExternalStore` and forwards every action to the coordinator in App.
  * DESIGN-AI.md §2.3.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { ReactElement } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import type { AssistTask } from '../src/types.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
 import type { CardContextTurn } from '../src/types.js'
 import { cleanUserPrompt } from './chatText.js'
 import { Markdown } from './markdown.js'
-import { Button, Menu, Spinner } from './ui.js'
+import { Button, IconButton, Menu, Spinner } from './ui.js'
+import type { MenuItemDef } from './ui.js'
+import { IconClose, IconCopy, IconNote, IconPlus, IconSpark } from './icons.js'
+import { clearAcceptedDraft, parseImagePages, QUICK_TASKS, readComposerOptions, writeComposerOptions } from './aiComposer.js'
+import type { ComposerOptions, QuickTask } from './aiComposer.js'
 
 /** Every string the panel renders (owned by i18n, zh + en). */
 export interface AiPanelLabels {
   title: string
   emptyHint: string
+  emptyTitle: string
+  you: string
+  quickTasks: string
+  freeQuestion: string
+  smallerText: string
+  largerText: string
+  citedPages: string
+  sendHint: string
+  notesSummary: string
+  imageAttach: string
+  imagePages: string
+  imageHint: string
+  imageInvalid: string
+  imageChip: string
+  imageRemove: string
+  imageEdit: string
+  apply: string
   thinking: string
   attaching: string
   stop: string
@@ -61,13 +82,18 @@ export interface AiPanelProps {
   draftKey: string | null
   /** External composer prefill (e.g. a PDF selection); `token` forces re-apply. */
   prefill?: { text: string; token: number }
+  onConsumePrefill?: () => void
   /** Persisted transcript shown while the DSH session is empty (e.g. deleted). */
   history: readonly { role: 'user' | 'assistant'; text: string }[]
   busyTask: AssistTask | null
   labels: AiPanelLabels
-  onRunTask: (task: AssistTask, extra?: string) => void | Promise<void>
+  onRunTask: (task: AssistTask, extra?: string, pages?: readonly number[]) => boolean | Promise<boolean>
+  renderConversationBar?: (actions: readonly MenuItemDef[]) => ReactNode
+  currentPage?: number
+  pageCount?: number | null
+  imagesAvailable?: boolean
   /** Resolves true when the prompt was accepted by the session. */
-  onAsk: (question: string) => boolean | Promise<boolean>
+  onAsk: (question: string, pages?: readonly number[]) => boolean | Promise<boolean>
   onStop: () => void | Promise<void>
   onReset: () => void | Promise<void>
   onSaveToNotes: (text: string) => void | Promise<void>
@@ -196,6 +222,12 @@ export function AiPanel(props: AiPanelProps) {
   const draftKey = props.draftKey
   const [sending, setSending] = useState(false)
   const draftStoreKey = draftKey === null ? null : `paperdesk:ai-draft:${draftKey}`
+  const scopeRef = useRef(draftStoreKey)
+  scopeRef.current = draftStoreKey
+  const [options, setOptions] = useState<ComposerOptions>({ task: null, pages: [] })
+  const [editingPages, setEditingPages] = useState(false)
+  const [pageInput, setPageInput] = useState('')
+  const [pageError, setPageError] = useState(false)
   const composingRef = useRef(false)
   const [noResponse, setNoResponse] = useState(false)
   const [showTools, setShowTools] = useState(false)
@@ -223,7 +255,6 @@ export function AiPanel(props: AiPanelProps) {
   const running = snapshot.status === 'running'
   const attaching = snapshot.status === 'attaching'
   const disabled = running || attaching || sending
-  const answer = threadMatches ? ai.lastAnswer() : null
 
   const lastPrompt = useMemo(() => {
     for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -257,6 +288,14 @@ export function AiPanel(props: AiPanelProps) {
     return conversationTurns.slice(start, index).map((turn) => ({ ...turn }))
   }
 
+  const changeZoom = (delta: number): void => {
+    setZoom((current) => {
+      const next = Math.min(1.4, Math.max(0.85, Math.round((current + delta) * 100) / 100))
+      try { localStorage.setItem('paperdesk:ai-zoom', String(next)) } catch {}
+      return next
+    })
+  }
+
   const toolCount = rows.reduce((count, row) => count + (row.kind === 'tool' ? 1 : 0), 0)
   const visibleRows = useMemo(
     () => (showTools ? rows : rows.filter((row) => row.kind !== 'tool')),
@@ -270,18 +309,48 @@ export function AiPanel(props: AiPanelProps) {
     }
   }, [])
 
-  useEffect(() => {
-    if (draftStoreKey === null) {
-      setDraft('')
-      return
-    }
+  useLayoutEffect(() => {
+    setEditingPages(false)
+    setPageError(false)
+    setNoResponse(false)
+    if (watchdogRef.current !== null) clearTimeout(watchdogRef.current)
     try {
-      const stored = localStorage.getItem(draftStoreKey)
-      setDraft(stored ?? '')
+      setDraft(draftStoreKey === null ? '' : localStorage.getItem(draftStoreKey) ?? '')
+      setOptions(readComposerOptions(localStorage, draftStoreKey, props.pageCount ?? null))
     } catch {
       setDraft('')
+      setOptions({ task: null, pages: [] })
     }
-  }, [draftStoreKey])
+  }, [draftStoreKey, props.pageCount])
+
+  const updateOptions = (change: (previous: ComposerOptions) => ComposerOptions): void => {
+    if (scopeRef.current !== draftStoreKey) return
+    setOptions((previous) => {
+      const next = change(previous)
+      try { writeComposerOptions(localStorage, draftStoreKey, next) } catch {}
+      return next
+    })
+  }
+
+  const editPages = (): void => {
+    setPageInput(options.pages.length ? options.pages.join(', ') : String(props.currentPage ?? 1))
+    setPageError(false)
+    setEditingPages(true)
+  }
+
+  const applyPages = (): void => {
+    const pages = parseImagePages(pageInput, props.currentPage ?? 1, props.pageCount ?? null)
+    if (pages === null) { setPageError(true); return }
+    updateOptions((previous) => ({ ...previous, pages }))
+    setPageError(false)
+    setEditingPages(false)
+    inputRef.current?.focus()
+  }
+
+  const chooseTask = (task: QuickTask): void => {
+    updateOptions((previous) => ({ ...previous, task }))
+    inputRef.current?.focus()
+  }
 
   /* Prefill the composer from an external selection (token changes each time,
      so selecting the same passage twice still re-applies). */
@@ -298,6 +367,7 @@ export function AiPanel(props: AiPanelProps) {
         // Draft persistence is a convenience only.
       }
     }
+    props.onConsumePrefill?.()
     window.requestAnimationFrame(() => {
       const element = inputRef.current
       if (element === null) return
@@ -460,6 +530,9 @@ export function AiPanel(props: AiPanelProps) {
       const host = startElement?.closest<HTMLElement>('.pd-ai-assistant') ?? null
       const panel = panelRef.current
       if (host === null || panel === null || !panel.contains(host)) return
+      const endElement = range.endContainer.nodeType === Node.ELEMENT_NODE
+        ? range.endContainer as Element : range.endContainer.parentElement
+      if (endElement?.closest('.pd-ai-assistant') !== host) return
       const quote = dom.toString().trim()
       if (quote.length < 2) return
       const row = host.closest<HTMLElement>('[data-ai-row-id]')
@@ -520,24 +593,32 @@ export function AiPanel(props: AiPanelProps) {
 
   const send = async (): Promise<void> => {
     const text = draft.trim()
-    if (text === '' || disabled) return
+    if ((text === '' && options.task === null) || disabled || editingPages || pageError) return
+    const sentScope = draftStoreKey
+    const sentDraft = draft
+    const sentOptions = options
+    if (options.pages.length && (props.imagesAvailable === false || parseImagePages(options.pages.join(','), 1, props.pageCount ?? null) === null)) { setPageError(true); return }
     setFollow(true)
     setSending(true)
     setNoResponse(false)
     if (watchdogRef.current !== null) clearTimeout(watchdogRef.current)
     try {
-      const accepted = await onAsk(text)
+      const accepted = options.task === null
+        ? await onAsk(text, options.pages)
+        : await props.onRunTask(options.task, text || undefined, options.pages)
       // Keep the question in the box when the session refused it, so the
       // failure is visible and the user can retry instead of losing the text.
       if (accepted) {
-        setDraft('')
-        if (draftStoreKey !== null) {
-          try { localStorage.removeItem(draftStoreKey) } catch {}
+        try { clearAcceptedDraft(localStorage, sentScope, sentDraft, sentOptions) } catch {}
+        if (scopeRef.current === sentScope) {
+          setDraft('')
+          setOptions({ task: null, pages: [] })
+          setPageError(false)
         }
         const baseline = ai.getSnapshot().rows.length
         watchdogRef.current = setTimeout(() => {
           const snapshot = ai.getSnapshot()
-          if (snapshot.rows.length <= baseline && snapshot.status !== 'running') setNoResponse(true)
+          if (scopeRef.current === sentScope && snapshot.rows.length <= baseline && snapshot.status !== 'running') setNoResponse(true)
         }, 12000)
       }
     } finally {
@@ -553,6 +634,7 @@ export function AiPanel(props: AiPanelProps) {
 
   const saveActions = (row: AiRow): ReactElement => (
     <div className="pd-ai-row-actions">
+      <Button size="sm" variant="ghost" icon={<IconCopy size={14} />} onClick={() => void onCopy(row.text)}>{labels.copy}</Button>
       <Menu
         className="pd-ai-save-menu"
         label={labels.saveAnswer}
@@ -565,11 +647,28 @@ export function AiPanel(props: AiPanelProps) {
     </div>
   )
 
+  const renderCitations = (row: AiRow): ReactElement | null => {
+    const pages = collectCitedPages([row])
+    if (!pages.length) return null
+    return (
+      <div className="pd-ai-cites" role="group" aria-label={labels.jumpHint}>
+        <span>{labels.citedPages}</span>
+        {pages.map((page) => (
+          <button key={page} type="button" className="pd-ai-cite"
+            onClick={() => (onSourcePage ?? onJumpPage)(page)} title={labels.jumpHint}>
+            {`p.${page}`}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   const renderRow = (row: AiRow): ReactElement => {
     switch (row.kind) {
       case 'user':
         return (
           <div key={row.id} className="pd-ai-user">
+            <span className="pd-ai-user-label">{labels.you}</span>
             {cleanUserPrompt(row.text)}
           </div>
         )
@@ -578,7 +677,6 @@ export function AiPanel(props: AiPanelProps) {
           <div key={row.id} className="pd-ai-assistant">
             <Markdown markdown={row.text} />
             {row.streaming === true ? <span className="pd-ai-caret" aria-hidden="true" /> : null}
-            {row.streaming !== true ? saveActions(row) : null}
           </div>
         )
       case 'reasoning':
@@ -628,18 +726,14 @@ export function AiPanel(props: AiPanelProps) {
       className="pd-ai"
       role="region"
       aria-label={labels.title}
-      style={{ zoom }}
+      style={{ '--pd-ai-font-scale': zoom } as CSSProperties}
       onMouseUp={handleAnswerMouseUp}
     >
-      <div className="pd-ai-task-menu">
-        <select className="pd-select" aria-label={labels.title} value="" disabled={disabled || props.busyTask !== null} onChange={(event) => {
-          const task = event.target.value as 'summary' | 'method' | 'critique' | 'related' | 'questions'
-          if (task) void props.onRunTask(task)
-        }}>
-          <option value="">{labels.title}</option>
-          {Object.entries(labels.taskLabels).map(([task, label]) => <option key={task} value={task}>{label}</option>)}
-        </select>
-      </div>
+      {props.renderConversationBar?.([
+        { id: 'smaller', label: labels.smallerText, disabled: zoom <= 0.85, onSelect: () => changeZoom(-0.05) },
+        { id: 'larger', label: labels.largerText, disabled: zoom >= 1.4, onSelect: () => changeZoom(0.05) },
+        { id: 'session', label: labels.openInSession, disabled: snapshot.sessionId === null, onSelect: () => void onOpenInSession() },
+      ])}
       <div className="pd-ai-body">
         <div className="pd-ai-scroll" ref={scrollRef} onScroll={onScroll}>
           {attaching ? (
@@ -673,15 +767,16 @@ export function AiPanel(props: AiPanelProps) {
               {history.map((message, index) =>
                 message.role === 'user' ? (
                   <div key={`history-${index}`} className="pd-ai-user">
+                    <span className="pd-ai-user-label">{labels.you}</span>
                     {cleanUserPrompt(message.text)}
                   </div>
                 ) : (
                   <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
                     <div className="pd-ai-assistant">
                       <Markdown markdown={message.text} />
-                      {saveActions({ id: `history-${index}`, kind: 'assistant', text: message.text })}
-                      <div className="pd-ai-cites">{collectCitedPages([{ id: `history-${index}`, kind: 'assistant', text: message.text }]).map((page) => <button key={page} type="button" className="pd-ai-cite" onClick={() => (onSourcePage ?? onJumpPage)(page)}>{`p.${page}`}</button>)}</div>
                     </div>
+                    {renderCitations({ id: `history-${index}`, kind: 'assistant', text: message.text })}
+                    {saveActions({ id: `history-${index}`, kind: 'assistant', text: message.text })}
                   </div>
                 ),
               )}
@@ -689,27 +784,21 @@ export function AiPanel(props: AiPanelProps) {
           ) : null}
 
           {rows.length === 0 && history.length === 0 && !attaching && snapshot.status !== 'error' ? (
-            <div className="pd-ai-empty">{labels.emptyHint}</div>
+            <div className="pd-ai-empty">
+              <IconSpark size={24} />
+              <h3>{labels.emptyTitle}</h3>
+              <p>{labels.emptyHint}</p>
+              <div className="pd-ai-starters">
+                {(['summary', 'method', 'questions'] as const).map((task) => <Button key={task} size="sm" disabled={disabled} aria-pressed={options.task === task} onClick={() => chooseTask(task)}>{labels.taskLabels[task]}</Button>)}
+              </div>
+            </div>
           ) : null}
 
           {visibleRows.map((row) => (
             <div key={row.id} className="pd-ai-row" data-ai-row-id={row.id}>
               {renderRow(row)}
-              {row.kind === 'assistant' && collectCitedPages([row]).length > 0 ? (
-                <div className="pd-ai-cites" role="group" aria-label={labels.jumpHint}>
-                  {collectCitedPages([row]).map((page) => (
-                    <button
-                      key={`cite-${page}`}
-                      type="button"
-                      className="pd-ai-cite"
-                      onClick={() => (onSourcePage ?? onJumpPage)(page)}
-                      title={labels.jumpHint}
-                    >
-                      {`p.${page}`}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+              {row.kind === 'assistant' ? renderCitations(row) : null}
+              {row.kind === 'assistant' && row.streaming !== true ? saveActions(row) : null}
             </div>
           ))}
 
@@ -728,6 +817,35 @@ export function AiPanel(props: AiPanelProps) {
               <span>{labels.thinking}</span>
             </div>
           ) : null}
+          {notes.length > 0 ? (
+            <details className="pd-ai-notes-tray">
+              <summary><IconNote size={15} />{labels.notesSummary.replace('{n}', String(notes.length))}</summary>
+              <div className="pd-ai-notes-content">
+              <div className="pd-ai-notes-chips">
+                {notes.map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    className="pd-ai-note-chip"
+                    title={note.quote}
+                    onClick={() => openNoteEditor(note)}
+                  >
+                    {note.comment.trim() !== '' ? note.comment : note.quote}
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={disabled || notes.every((note) => note.comment.trim() === '')}
+                onClick={askWithAllNotes}
+              >
+                {labels.noteAskAll}
+              </Button>
+              </div>
+            </details>
+          ) : null}
+
         </div>
 
         {!follow ? (
@@ -779,92 +897,18 @@ export function AiPanel(props: AiPanelProps) {
         </div>
       ) : null}
 
-      {notes.length > 0 ? (
-        <div className="pd-ai-notes-tray">
-          <span className="pd-ai-notes-tray-title">{labels.noteCount.replace('{n}', String(notes.length))}</span>
-          <div className="pd-ai-notes-chips">
-            {notes.map((note) => (
-              <button
-                key={note.id}
-                type="button"
-                className="pd-ai-note-chip"
-                title={note.quote}
-                onClick={() => openNoteEditor(note)}
-              >
-                {note.comment.trim() !== '' ? note.comment : note.quote}
-              </button>
-            ))}
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={disabled || notes.every((note) => note.comment.trim() === '')}
-            onClick={askWithAllNotes}
-          >
-            {labels.noteAskAll}
-          </Button>
-        </div>
-      ) : null}
-
       <div className="pd-ai-foot">
-        <div className="pd-ai-actions">
-          <button
-            type="button"
-            className="pd-btn pd-btn-sm pd-btn-ghost"
-            aria-label="Smaller text"
-            title="Smaller text"
-            onClick={() => {
-              setZoom((current) => {
-                const next = Math.max(0.85, Math.round((current - 0.05) * 100) / 100)
-                try { localStorage.setItem('paperdesk:ai-zoom', String(next)) } catch {}
-                return next
-              })
-            }}
-          >
-            A−
-          </button>
-          <button
-            type="button"
-            className="pd-btn pd-btn-sm pd-btn-ghost"
-            aria-label="Larger text"
-            title="Larger text"
-            onClick={() => {
-              setZoom((current) => {
-                const next = Math.min(1.4, Math.round((current + 0.05) * 100) / 100)
-                try { localStorage.setItem('paperdesk:ai-zoom', String(next)) } catch {}
-                return next
-              })
-            }}
-          >
-            A+
-          </button>
-          <Button size="sm" variant="ghost" onClick={() => void onReset()} title={labels.newThreadHint}>
-            {labels.newThread}
-          </Button>
-          {running ? (
-            <Button size="sm" variant="ghost" onClick={() => void onStop()}>
-              {labels.stop}
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={answer === null || answer.trim() === ''}
-            onClick={() => {
-              if (answer !== null && answer.trim() !== '') void onCopy(answer)
-            }}
-          >
-            {labels.copy}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={snapshot.sessionId === null}
-            onClick={() => void onOpenInSession()}
-          >
-            {labels.openInSession}
-          </Button>
-        </div>
+        {options.pages.length > 0 ? <div className="pd-ai-attachments">
+          {options.pages.map((page) => <span className="pd-ai-page-chip" key={page}>
+            <button type="button" onClick={editPages} disabled={disabled} aria-label={`${labels.imageEdit} p.${page}`}>{labels.imageChip} · p.{page}</button>
+            <IconButton label={`${labels.imageRemove} p.${page}`} disabled={disabled} onClick={() => { updateOptions((previous) => ({ ...previous, pages: previous.pages.filter((value) => value !== page) })); setPageError(false) }}><IconClose size={12} /></IconButton>
+          </span>)}
+        </div> : null}
+        {editingPages ? <div className="pd-ai-page-editor">
+          <label>{labels.imagePages}<input className="pd-input" autoFocus value={pageInput} disabled={disabled} onChange={(event) => { setPageInput(event.target.value); setPageError(false) }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); applyPages() } if (event.key === 'Escape') { event.stopPropagation(); setEditingPages(false); setPageError(false) } }} aria-invalid={pageError} /></label>
+          <div className="pd-ai-page-editor-actions"><span>{labels.imageHint}</span><Button size="sm" variant="ghost" onClick={() => { setEditingPages(false); setPageError(false) }}>{labels.noteCancel}</Button><Button size="sm" onClick={applyPages}>{labels.apply}</Button></div>
+        </div> : null}
+        {pageError ? <p className="pd-ai-page-error" role="alert">{labels.imageInvalid}</p> : null}
         <div className="pd-ai-inputRow">
           <textarea
             ref={inputRef}
@@ -903,14 +947,18 @@ export function AiPanel(props: AiPanelProps) {
               void send()
             }}
           />
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={disabled || draft.trim() === ''}
-            onClick={() => void send()}
-          >
-            {labels.send}
-          </Button>
+        </div>
+        <div className="pd-ai-compose-actions">
+          <IconButton label={labels.imageAttach} disabled={disabled || props.imagesAvailable === false} onClick={editPages}><IconPlus size={17} /></IconButton>
+          <select className="pd-ai-task-select" aria-label={labels.quickTasks} value={options.task ?? ''} disabled={disabled} onChange={(event) => {
+            const task = event.target.value as QuickTask
+            updateOptions((previous) => ({ ...previous, task: QUICK_TASKS.includes(task) ? task : null }))
+          }}>
+            <option value="">{labels.freeQuestion}</option>
+            {QUICK_TASKS.map((task) => <option key={task} value={task}>{labels.taskLabels[task]}</option>)}
+          </select>
+          <span className="pd-ai-send-hint">{labels.sendHint}</span>
+          {running || sending ? <Button size="sm" variant="ghost" disabled={sending && !running} onClick={() => void onStop()}>{labels.stop}</Button> : <Button size="sm" variant="primary" disabled={disabled || editingPages || pageError || (draft.trim() === '' && options.task === null)} onClick={() => void send()}>{labels.send}</Button>}
         </div>
       </div>
     </div>

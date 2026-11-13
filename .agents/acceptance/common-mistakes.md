@@ -20,3 +20,8 @@ LLM流的`finish.reason`可能为error或aborted，不能把它们当正常结�
 ## PDF文字层语言与真实选区（0.4.5）
 
 仅保留PDF item.width仍不足：实际MiTA中pdfjs测量canvas.lang为空串，而文字层继承宿主zh-CN，导致sans-serif的Latin度量不同。DOM实测首行481.61px，修复语言一致后432.801px。TextLayer需与pdfjs canvas使用相同content.lang（缺失显式空串阻断继承），并用真实Range/鼠标选区检查跨字体、部分span端点；不能只靠几何单测。旧注记颜色应整组统一透明度，避免父子rect重叠加深。用户删除的记录不可为验收恢复真实库；历史真实读取转录必须注明provenance且只在隔离库重放。
+
+
+## 0.4.6 助读响应式与验收冻结
+
+小屏overlay不能继承PDF read-shell的320px高度；真实600px检查发现composer挤占后回答只剩约35px。应给overlay独立viewport高度并亲检回答可读空间。变更验收期间build/watch会自动将插件返回Harness壳；源码和bundle需冻结到runner完成，失败locator后先fresh确认自己页面，不能据此误称用户切走。多字段草稿/附件状态用函数式更新，复测移除附件后编辑草稿不应写回旧附件。真实图片问答证据需同时检查session中的image block与实际provider/model，不能只以模型说看过图为证明。

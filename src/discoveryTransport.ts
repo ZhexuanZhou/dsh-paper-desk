@@ -78,7 +78,7 @@ export function createDiscoveryTransport(options: {
         try {
           const response = await request(url, {
             signal: AbortSignal.timeout(20_000),
-            headers: { 'User-Agent': 'PaperDesk/0.4.5 (https://github.com/ZhexuanZhou/dsh-paper-desk)', accept: provider === 'arxiv' ? 'application/atom+xml' : 'application/json' },
+            headers: { 'User-Agent': 'PaperDesk/0.4.6 (https://github.com/ZhexuanZhou/dsh-paper-desk)', accept: provider === 'arxiv' ? 'application/atom+xml' : 'application/json' },
           })
           if (response.status === 429 || response.status === 503) {
             state.retryAt = retryAfterTime(response.headers.get('retry-after'), now())

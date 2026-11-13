@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CardContextTurn, NoteCard } from '../src/types.js'
 import { IconEdit, IconNote, IconPlus, IconTrash } from './icons.js'
 import { Markdown } from './markdown.js'
+import { cleanUserPrompt } from './chatText.js'
 import { useT } from './i18n.js'
 import { Button, EmptyState, Field, IconButton, Modal, Spinner, Textarea, TextInput } from './ui.js'
 
@@ -98,8 +99,12 @@ export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthe
   const [context, setContext] = useState<CardContextTurn[]>([])
   const [showContext, setShowContext] = useState(false)
   const [synthesizing, setSynthesizing] = useState(false)
+  const [preview, setPreview] = useState(true)
+  const [showMetadata, setShowMetadata] = useState(false)
+  const generationRef = useRef(0)
 
   useEffect(() => {
+    generationRef.current++
     if (!open) return
     setTitle(initial?.title ?? '')
     setBody(initial?.body ?? '')
@@ -107,8 +112,11 @@ export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthe
     setPages(normalizePages(initial?.pages ?? []))
     setPageInput('')
     setContext([...(initial?.context ?? [])])
-    setShowContext((initial?.context?.length ?? 0) > 0)
+    setShowContext(false)
+    setShowMetadata(false)
+    setPreview(Boolean(initial?.body.trim()))
     setSynthesizing(false)
+    return () => { generationRef.current++ }
   }, [open, initial])
 
   const contextKey = (turn: CardContextTurn): string => turn.id ?? `${turn.role}:${turn.text.slice(0, 120)}`
@@ -127,22 +135,24 @@ export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthe
     if (onSynthesize === undefined || synthesizing) return
     const turns = context.length > 0 ? context : [...(availableTurns ?? [])]
     if (turns.length === 0) return
+    const generation = generationRef.current
     setSynthesizing(true)
     try {
       const draft = await onSynthesize(turns)
-      if (draft !== null) {
+      if (draft !== null && generationRef.current === generation) {
         setTitle(draft.title)
         setBody(draft.body)
         setTagsText(draft.tags.join(', '))
         setPages(normalizePages(draft.pages))
-        setShowContext(true)
+        setShowContext(false)
+        setPreview(true)
       }
     } finally {
-      setSynthesizing(false)
+      if (generationRef.current === generation) setSynthesizing(false)
     }
   }
 
-  const canSave = title.trim() !== '' && body.trim() !== '' && !busy
+  const canSave = title.trim() !== '' && body.trim() !== '' && !busy && !synthesizing
 
   const addPage = (): void => {
     const page = Number.parseInt(pageInput, 10)
@@ -169,9 +179,10 @@ export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthe
     <Modal
       open={open}
       wide
-      title={mode === 'create' ? t('cards.editorCreate') : t('cards.editorEdit')}
+      className="pd-card-editor"
+      title={mode === 'edit' ? t('cards.editorEdit') : initial?.body.trim() ? t('cards.createFromAnswer') : t('cards.create')}
       description={t('cards.editorHint')}
-      onClose={onClose}
+      onClose={() => { if (!busy) onClose() }}
       footer={
         <>
           {mode === 'edit' && onDelete !== undefined ? (
@@ -195,59 +206,39 @@ export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthe
           maxLength={200}
           placeholder={t('cards.titlePlaceholder')}
           onChange={(event) => setTitle(event.target.value)}
-          disabled={busy}
+          disabled={busy || synthesizing}
+          className="pd-card-editor-title"
         />
       </Field>
-      <Field label={t('cards.bodyLabel')} htmlFor="pd-card-body">
-        <Textarea
+      <section className="pd-card-editor-content" aria-label={t('cards.content')}>
+        <div className="pd-card-editor-toolbar">
+          <h3>{t('cards.content')}</h3>
+          <div className="pd-card-editor-modes" role="group" aria-label={t('cards.contentMode')}>
+            <Button size="sm" variant="ghost" aria-pressed={preview} onClick={() => setPreview(true)}>{t('cards.preview')}</Button>
+            <Button size="sm" variant="ghost" aria-pressed={!preview} onClick={() => setPreview(false)}>{t('cards.edit')}</Button>
+          </div>
+        </div>
+        {preview ? <div className="pd-card-editor-preview">
+          {body.trim() ? <Markdown markdown={body} /> : <p className="pd-card-editor-empty">{t('cards.previewEmpty')}</p>}
+        </div> : <Textarea
           value={body}
           onChange={setBody}
-          rows={10}
+          rows={14}
           placeholder={t('cards.bodyPlaceholder')}
           ariaLabel={t('cards.bodyLabel')}
-        />
-      </Field>
-      {(availableTurns !== undefined && availableTurns.length > 0) || context.length > 0 ? (
-        <div className="pd-card-context">
-          <div className="pd-card-context-head">
-            <button type="button" className="pd-card-context-toggle" onClick={() => setShowContext((value) => !value)}>
-              {showContext ? '▾' : '▸'} {t('cards.contextLabel')} · {context.length}
-            </button>
-            {onSynthesize !== undefined ? (
-              <Button size="sm" variant="ghost" loading={synthesizing} disabled={busy || context.length === 0} onClick={() => void synthesize()}>
-                {t('cards.synthesize')}
-              </Button>
-            ) : null}
-          </div>
-          {showContext ? (
-            <div className="pd-card-context-list">
-              {(availableTurns !== undefined && availableTurns.length > 0 ? availableTurns : context).map((turn, index) => {
-                const key = contextKey(turn)
-                return (
-                  <label key={`${key}-${index}`} className="pd-card-context-turn">
-                    <input
-                      type="checkbox"
-                      checked={selectedKeys.has(key)}
-                      onChange={() => toggleTurn(turn)}
-                      disabled={busy || synthesizing}
-                    />
-                    <span className="pd-card-context-role">{turn.role === 'user' ? t('cards.contextUser') : t('cards.contextAssistant')}</span>
-                    <span className="pd-card-context-text">{turn.text}</span>
-                  </label>
-                )
-              })}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+          disabled={busy || synthesizing}
+          className="pd-card-editor-source"
+        />}
+      </section>
+      <div className="pd-card-editor-source-pages">
+        <span>{t('cards.pagesLabel')}</span>
+        {pages.length ? pages.map((page) => <span className="pd-card-page-chip" key={page}>{`p.${page}`}</span>) : <span>{t('cards.noPages')}</span>}
+      </div>
+      <button type="button" className="pd-card-editor-disclosure" aria-expanded={showMetadata} onClick={() => setShowMetadata((value) => !value)}>{t('cards.metadata')}</button>
+      {showMetadata ? <div className="pd-card-editor-metadata">
       <Field label={t('cards.tagsLabel')} hint={t('cards.tagsHint')} htmlFor="pd-card-tags">
-        <TextInput
-          id="pd-card-tags"
-          value={tagsText}
-          placeholder={t('cards.tagsPlaceholder')}
-          onChange={(event) => setTagsText(event.target.value)}
-          disabled={busy}
-        />
+        <TextInput id="pd-card-tags" value={tagsText} placeholder={t('cards.tagsPlaceholder')}
+          onChange={(event) => setTagsText(event.target.value)} disabled={busy || synthesizing} />
       </Field>
       <Field label={t('cards.pagesLabel')} hint={t('cards.pagesHint')}>
         <div className="pd-card-pages">
@@ -287,6 +278,43 @@ export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthe
           </span>
         </div>
       </Field>
+      </div> : null}
+      {(availableTurns !== undefined && availableTurns.length > 0) || context.length > 0 ? (
+        <div className="pd-card-context">
+          <div className="pd-card-context-head">
+            <button type="button" className="pd-card-context-toggle" aria-expanded={showContext} onClick={() => setShowContext((value) => !value)}>
+              {t('cards.contextSelected', { n: context.length })}
+            </button>
+          </div>
+          {showContext ? (
+            <div className="pd-card-context-expanded">
+              <p>{t('cards.contextHint')}</p>
+            {onSynthesize !== undefined ? (
+              <Button size="sm" variant="ghost" loading={synthesizing} disabled={busy || context.length === 0} onClick={() => void synthesize()}>
+                {t('cards.synthesize')}
+              </Button>
+            ) : null}
+              <div className="pd-card-context-list">
+              {(availableTurns !== undefined && availableTurns.length > 0 ? availableTurns : context).map((turn, index) => {
+                const key = contextKey(turn)
+                return (
+                  <label key={`${key}-${index}`} className="pd-card-context-turn">
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(key)}
+                      onChange={() => toggleTurn(turn)}
+                      disabled={busy || synthesizing}
+                    />
+                    <span className="pd-card-context-role">{turn.role === 'user' ? t('cards.contextUser') : t('cards.contextAssistant')}</span>
+                    <span className="pd-card-context-text">{turn.role === 'user' ? cleanUserPrompt(turn.text) : turn.text}</span>
+                  </label>
+                )
+              })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </Modal>
   )
 }

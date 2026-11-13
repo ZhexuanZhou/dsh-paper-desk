@@ -5,6 +5,7 @@
  * agent-assist bar. Presentational only — all data and API calls come from App.
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type {
   AnnotationDocument,
   ChatsDocument,
@@ -77,7 +78,7 @@ function drawerButtonPressed(drawer: DrawerState, tab: DrawerTab): boolean {
 
 const DRAWER_WIDTH_KEY = 'paperdesk:drawer-width'
 const DRAWER_STATE_KEY = 'paperdesk:drawer-state'
-const DEFAULT_DRAWER_WIDTH = 420
+const DEFAULT_DRAWER_WIDTH = 560
 
 function readDrawerState(): DrawerState {
   try {
@@ -183,7 +184,7 @@ export interface ReaderViewProps {
   onReveal: () => Promise<void>
   onDelete: () => Promise<void>
   onDownloadPdf: () => Promise<void>
-  onAssist: (task: AssistTask, extra?: string) => Promise<void>
+  onAssist: (task: AssistTask, extra?: string, pages?: readonly number[]) => Promise<boolean>
   onCreateAnnotation: (input: NewAnnotation) => Promise<string | null>
   onUpdateAnnotation: (annotationId: string, patch: AnnotationPatch) => Promise<void>
   onDeleteAnnotation: (annotationId: string, options?: { undoable?: boolean }) => Promise<void>
@@ -468,7 +469,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
   const [askOpen, setAskOpen] = useState(false)
   const [question, setQuestion] = useState('')
   const [drawer, setDrawer] = useState<DrawerState>(() => readDrawerState())
-  const [aiPrefill, setAiPrefill] = useState<{ text: string; token: number } | null>(null)
+  const [aiPrefill, setAiPrefill] = useState<{ text: string; token: number; scope: string | null } | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number>(() => readDrawerWidth())
   const drawerElRef = useRef<HTMLElement | null>(null)
   const drawerDragWidthRef = useRef(drawerWidth)
@@ -486,8 +487,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
     }
   }, [drawer])
   const [currentPage, setCurrentPage] = useState<number | null>(null)
-  const [attachPage, setAttachPage] = useState(false)
-  const [imagePages, setImagePages] = useState('')
   const [sourcePage, setSourcePage] = useState<number | null>(null)
   const pageRef = useRef<{ paperId: string; page: number | null } | null>(null)
   const pendingPageRef = useRef<{ paperId: string; page: number } | null>(null)
@@ -511,8 +510,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
   useEffect(() => {
     setTab('read')
     setSourcePage(null)
-    setAttachPage(false)
-    setImagePages('')
     setDeleteOpen(false)
     setAskOpen(false)
     setQuestion('')
@@ -699,6 +696,23 @@ function ReaderViewImpl(props: ReaderViewProps) {
     () => ({
       title: t('ai.title'),
       emptyHint: t('ai.emptyHint'),
+      emptyTitle: t('ai.emptyTitle'),
+      you: t('ai.you'),
+      quickTasks: t('ai.quickTasks'),
+      freeQuestion: t('ai.freeQuestion'),
+      smallerText: t('ai.smallerText'),
+      largerText: t('ai.largerText'),
+      citedPages: t('ai.citedPages'),
+      sendHint: t('ai.sendHint'),
+      notesSummary: t('ai.notesSummary'),
+      imageAttach: t('image.attach'),
+      imagePages: t('image.pages'),
+      imageHint: t('image.pagesHint'),
+      imageInvalid: t('image.invalid'),
+      imageChip: t('image.chip'),
+      imageRemove: t('image.remove'),
+      imageEdit: t('image.edit'),
+      apply: t('image.apply'),
       thinking: t('ai.thinking'),
       attaching: t('ai.attaching'),
       stop: t('ai.stop'),
@@ -746,6 +760,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
   const chatBarLabels = useMemo<ChatBarLabels>(
     () => ({
       title: t('chat.title'),
+      more: t('chat.more'),
       create: t('chat.create'),
       rename: t('chat.rename'),
       renamePlaceholder: t('chat.renamePlaceholder'),
@@ -831,10 +846,10 @@ function ReaderViewImpl(props: ReaderViewProps) {
     const startX = event.clientX
     const startWidth = drawerWidth
     drawerDragWidthRef.current = startWidth
-    element.style.width = `${startWidth}px`
+    element.style.setProperty('--pd-drawer-width', `${startWidth}px`)
     const apply = (next: number): void => {
       drawerDragWidthRef.current = next
-      element.style.width = `${next}px`
+      element.style.setProperty('--pd-drawer-width', `${next}px`)
     }
     const onMove = (moveEvent: PointerEvent): void => {
       if (drawerDragFrameRef.current !== null) return
@@ -879,10 +894,10 @@ function ReaderViewImpl(props: ReaderViewProps) {
   }
 
   /* Task buttons / chips never navigate away: they open the AI drawer and run. */
-  const runTask = (task: AssistTask): void => {
-    if (!activateTab('read')) return
+  const runTask = async (task: AssistTask, extra?: string, pages?: readonly number[]): Promise<boolean> => {
+    if (!activateTab('read')) return false
     openDrawer('ai')
-    void onAssist(task)
+    return onAssist(task, extra, pages)
   }
 
   const cachedPages = text === null ? [] : text.pages.filter((page) => page.text.trim() !== '')
@@ -1293,7 +1308,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                     const intro = lang === 'zh'
                       ? `【第 ${payload.page} 页选中内容】\n\n> ${payload.quote}\n\n`
                       : `[Selected on page ${payload.page}]\n\n> ${payload.quote}\n\n`
-                    setAiPrefill({ text: intro, token: Date.now() })
+                    setAiPrefill({ text: intro, token: Date.now(), scope: aiDraftKey })
                   }}
                   onFocusAnnotation={(id) => {
                     setActiveAnnotationId(id)
@@ -1341,7 +1356,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
               className="pd-annot-rail"
               data-open={drawer.open ? 'true' : 'false'}
               data-tab={drawer.tab}
-              style={{ width: drawerDragWidthRef.current }}
+              style={{ '--pd-drawer-width': `${drawerDragWidthRef.current}px` } as CSSProperties}
               aria-label={drawer.tab === 'ai' ? t('ai.title') : t('annotations.title')}
             >
               <div
@@ -1408,34 +1423,30 @@ function ReaderViewImpl(props: ReaderViewProps) {
                   />
                 ) : (
                   <>
-                  <ChatBar
-                    chats={chats?.items ?? []}
-                    activeId={activeChatId}
-                    labels={chatBarLabels}
-                    onSelect={onSelectChat}
-                    onCreate={onCreateChat}
-                    onRename={onRenameChat}
-                    onRemove={onRemoveChat}
-                  />
-                  <div className="pd-image-context">
-                    <label><input type="checkbox" checked={attachPage} onChange={(event) => setAttachPage(event.target.checked)} /> {t('image.attach')}</label>
-                    {attachPage ? <input className="pd-input" value={imagePages} onChange={(event) => setImagePages(event.target.value)} placeholder={String(currentPage ?? 1)} aria-label={t('image.pages')} /> : null}
-                    <span>{attachPage ? t('image.pagesHint') : t('image.textOnly')}</span>
-                  </div>
                   <AiPanel
+                    renderConversationBar={(actions) => <ChatBar
+                      chats={chats?.items ?? []}
+                      activeId={activeChatId}
+                      labels={chatBarLabels}
+                      onSelect={onSelectChat}
+                      onCreate={onCreateChat}
+                      onRename={onRenameChat}
+                      onRemove={onRemoveChat}
+                      extraActions={actions}
+                    />}
                     ai={ai}
                     expectedThreadKey={aiThreadKey}
                     draftKey={aiDraftKey}
-                    prefill={aiPrefill ?? undefined}
+                    prefill={aiPrefill?.scope === aiDraftKey ? aiPrefill : undefined}
+                    onConsumePrefill={() => setAiPrefill(null)}
                     history={activeChat?.messages ?? []}
                     busyTask={assistBusy}
                     labels={aiLabels}
-                    onRunTask={(task) => runTask(task)}
-                    onAsk={(text) => {
-                      const pages = attachPage ? (imagePages.trim() ? imagePages.split(/[,，\s]+/).filter(Boolean).map(Number) : [currentPage ?? 1]) : []
-                      if (attachPage && (pages.length < 1 || pages.length > 3 || pages.some((page) => !Number.isInteger(page) || page < 1 || page > (meta.pageCount ?? Infinity)))) { onToast('error', t('image.invalid')); return false }
-                      return onAiAsk(text, pages)
-                    }}
+                    currentPage={currentPage ?? 1}
+                    pageCount={meta.pageCount}
+                    imagesAvailable={detail.pdfExists && !detail.pdfEvicted}
+                    onRunTask={runTask}
+                    onAsk={onAiAsk}
                     onReset={() => void onAiReset()}
                     onStop={() => void onAiStop()}
                     onSaveToNotes={(text) => void onAiSaveToNotes(text)}

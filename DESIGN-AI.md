@@ -1,5 +1,28 @@
 # PaperDesk in-panel AI assistant (design + contract)
 
+## Current UI: v0.4.6
+
+The accepted visual target is the first AI reading design selected on 2026-11-13.
+The current interaction rules below supersede the original UX sketch in §1;
+the session, transcript, and persistence contracts remain in place.
+
+- One conversation bar contains the current chat, new chat, and an overflow menu.
+  Rename, delete, answer font size, and the full-session escape hatch live there.
+- The reading area uses editorial Markdown spacing. Each completed answer owns
+  its copy button and one save menu. Answer comments are collapsed by default.
+  Cited pages remain grouped after the answer: the current transcript does not
+  provide paragraph-level citation locations.
+- One composer contains the draft, task selection, and removable page-image
+  attachments. Choosing a task prepares it; Send runs it with optional additional
+  questions and the selected page images. Pages are explicit, validated, and
+  stored with each chat's draft. A successful submission consumes the draft;
+  a failed submission retains it. A late result must not clear a newer draft.
+- The desktop drawer is resizable; small screens use a full-height overlay.
+  The card editor follows the same paper-like reading style: preview existing
+  content first, optionally edit Markdown, keep tags/context secondary, and keep
+  Save/Cancel visible. Saving a card and regenerating its content are separate
+  explicit actions. Private acceptance artifacts stay under `.acceptances/`.
+
 Goal: the reader's 总结 / 方法精读 / 审阅 / 相关工作 / 提问 buttons must run the agent
 **inside the PaperDesk panel**. No navigation to another session, no copy-paste.
 The panel streams the answer next to the PDF, keeps the conversation per paper, and
