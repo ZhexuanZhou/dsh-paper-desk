@@ -46,3 +46,12 @@ final result: passed
 新增媒体由acceptance_resume唯一亲检，无未决P0/P1/P2；不提交private截图/PDF/日志。
 
 final result: passed
+
+
+## 2026-11-13 · 0.4.5 PDF高亮
+
+final result: passed
+
+来源：用户0.4.4批注截图（红框仅需求标注），与0.4.5真实UI after逐项亲检。构建SHA256 `93131893094b29bf00fcef7ba14859a76be82c647153e66a28fbe15667aebeab`。旧7rect历史记录仅隔离重放，100/51/156%颜色统一、终点止于斜体N，原记录hash不变。真实新三行选区保存4rect；另一段部分span端点保存1rect；刷新80/125%无越界或颜色加深。native v0.4.5临时选择准确，未保存，真实空annotations及PDF/notes哈希不变。before/after视口与缩放不同，比较语义边界，不声称像素一致。
+
+私有证据位于 `.acceptances/standalone-paperdesk-redesign/20261113-followup-0.4.5/`，不提交原PDF/截图。未发现未解决P0/P1/P2。

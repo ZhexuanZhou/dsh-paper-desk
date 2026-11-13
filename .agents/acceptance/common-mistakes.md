@@ -15,3 +15,8 @@ LLM流的`finish.reason`可能为error或aborted，不能把它们当正常结�
 恢复论文ID时先恢复再默认选首篇。失效ID应安全回退，避免继续加载其批注/对话/卡片导致重复404；临时网络失败不能清掉用户记忆。
 
 私密日志、凭据、原PDF和用户内容截图只留本地验收目录，不提交到项目。
+
+
+## PDF文字层语言与真实选区（0.4.5）
+
+仅保留PDF item.width仍不足：实际MiTA中pdfjs测量canvas.lang为空串，而文字层继承宿主zh-CN，导致sans-serif的Latin度量不同。DOM实测首行481.61px，修复语言一致后432.801px。TextLayer需与pdfjs canvas使用相同content.lang（缺失显式空串阻断继承），并用真实Range/鼠标选区检查跨字体、部分span端点；不能只靠几何单测。旧注记颜色应整组统一透明度，避免父子rect重叠加深。用户删除的记录不可为验收恢复真实库；历史真实读取转录必须注明provenance且只在隔离库重放。

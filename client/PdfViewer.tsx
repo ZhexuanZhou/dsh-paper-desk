@@ -10,6 +10,7 @@
  * Contract: DESIGN-VIEWER.md §3.
  */
 import { normaliseLinkRect } from './pdfLinkGeometry.js'
+import { mergeTextItems, rangeTextRects, quoteTextRects } from './pdfTextSelection.js'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DEFAULT_KEYMAP,
@@ -441,10 +442,9 @@ const VIEWER_CSS = `
   pointer-events: auto;
   cursor: pointer;
 }
-.pdv-mark-highlight {
-  background: color-mix(in srgb, var(--pdv-annot-color) 35%, transparent);
-  mix-blend-mode: multiply;
-}
+.pdv-mark-highlight { background: transparent; }
+.pdv-highlightFillGroup { position: absolute; inset: 0; opacity: .35; mix-blend-mode: multiply; pointer-events: none; user-select: none; }
+.pdv-highlightFill { position: absolute; background: var(--pdv-annot-color); border-radius: 2px; }
 .pdv-mark-underline { border-bottom: 2px solid var(--pdv-annot-color); }
 .pdv-annotMarker {
   position: absolute;
@@ -660,10 +660,7 @@ const VIEWER_CSS = `
 .pdv-root[data-paper='dark'] .pdv-page { background: #14161a; box-shadow: 0 1px 2px #0008, 0 8px 24px #0006; }
 .pdv-root[data-paper='dark'] .pdv-canvas { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.95); }
 .pdv-root[data-paper='dark'] .pdv-pageLoading { background: #14161a; color: var(--dsw-alias-label-secondary); }
-.pdv-root[data-paper='dark'] .pdv-mark-highlight {
-  background: color-mix(in srgb, var(--pdv-annot-color) 62%, transparent);
-  mix-blend-mode: screen;
-}
+.pdv-root[data-paper='dark'] .pdv-highlightFillGroup { opacity: .62; mix-blend-mode: screen; }
 .pdv-root[data-paper='dark'] .pdv-lowText { background: #1c1f24; border-color: #3a3f46; }
 
 /* ── floating selection toolbar ────────────────────────────────────────── */
@@ -959,63 +956,6 @@ function currentDpr(): number {
   return Math.max(1, Math.min(MAX_DPR, Number.isFinite(raw) && raw > 0 ? raw : 1))
 }
 
-/**
- * pdf.js emits one text item per glyph run; a dense page can produce thousands
- * of them. TextLayer calls canvas.measureText for every item, which made a cold
- * page spend seconds on the main thread. Merge adjacent items on the same line
- * and with the same font into one run first: selection text and positions stay
- * equivalent, while the number of measured spans drops by an order of magnitude.
- */
-function mergeTextItems(items: readonly unknown[]): unknown[] {
-  const out: Record<string, unknown>[] = []
-  let current: Record<string, unknown> | null = null
-  const flush = (): void => {
-    if (current !== null) out.push(current)
-    current = null
-  }
-  for (const raw of items) {
-    if (raw === null || typeof raw !== 'object') continue
-    const item = raw as Record<string, unknown>
-    if (typeof item.str !== 'string' || item.str.length === 0) continue
-    const transform = Array.isArray(item.transform) ? (item.transform as number[]) : null
-    const x = transform?.[4]
-    const y = transform?.[5]
-    const width = typeof item.width === 'number' ? item.width : 0
-    if (current === null || transform === null || x === undefined || y === undefined) {
-      flush()
-      current = { ...item }
-      if (current !== null) current.width = width
-      continue
-    }
-    const curTransform = Array.isArray(current.transform) ? (current.transform as number[]) : null
-    const curX = curTransform?.[4]
-    const curY = curTransform?.[5]
-    const curWidth = typeof current.width === 'number' ? current.width : 0
-    const sameFont = current.fontName === item.fontName && current.dir === item.dir
-    const sameLine = curY !== undefined && Math.abs(y - curY) < 0.8
-    const gap = curX !== undefined ? x - (curX + curWidth) : Number.POSITIVE_INFINITY
-    const maxGap = Math.max(2, (typeof item.height === 'number' ? item.height : 10) * 1.2)
-    if (sameFont && sameLine && gap <= maxGap) {
-      current.str = `${String(current.str ?? '')}${item.str}`
-      if (curX !== undefined) current.width = x + width - curX
-      current.hasEOL = item.hasEOL
-      if (item.hasEOL === true) flush()
-      continue
-    }
-    flush()
-    current = { ...item }
-    if (current !== null) current.width = width
-    if (item.hasEOL === true) flush()
-  }
-  flush()
-  // TextLayer uses item.width only to set each span's --scale-x, which requires
-  // a canvas measureText call per span and dominated the main thread on dense
-  // pages. The rendered page is already on the canvas; the text layer is an
-  // invisible selection overlay, so zero width lets TextLayer skip measuring
-  // while spans keep their absolute positions and selectable text.
-  for (const item of out) item.width = 0
-  return out
-}
 
 function renderKey(zoom: number, dpr = currentDpr()): string {
   return `${(zoom * CSS_UNITS).toFixed(4)}|${dpr}`
@@ -1325,6 +1265,7 @@ function renderAnnotationNodes(
   labels: PdfViewerLabels,
   flashId: string | null,
   onFocus: ((id: string) => void) | undefined,
+  resolvedRects: ReadonlyMap<string, readonly AnnotationRect[]>,
 ): ReactElement[] {
   const nodes: ReactElement[] = []
   for (const item of items) {
@@ -1375,7 +1316,14 @@ function renderAnnotationNodes(
       )
       continue
     }
-    item.rects.forEach((rect, rectIndex) => {
+    const rects = resolvedRects.get(item.id) ?? item.rects
+    if (item.kind === 'highlight') {
+      // Composite each annotation once: overlapping fragments must not darken it.
+      nodes.push(<div key={`${item.id}:fill`} className="pdv-highlightFillGroup" data-highlight-fill={item.id} aria-hidden="true" style={{ '--pdv-annot-color': color } as CSSProperties}>
+        {rects.map((rect, index) => <span key={index} className="pdv-highlightFill" style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.w * 100}%`, height: `${rect.h * 100}%` }} />)}
+      </div>)
+    }
+    rects.forEach((rect, rectIndex) => {
       const style = {
         left: `${rect.x * 100}%`,
         top: `${rect.y * 100}%`,
@@ -1494,6 +1442,35 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const [paperTone, setPaperTone] = useState<'light' | 'dark'>(() => loadStoredTone())
   const [highlightColor, setHighlightColor] = useState<AnnotationColor>(() => loadStoredHighlightColor())
   const [pageLinks, setPageLinks] = useState<ReadonlyMap<number, PageLink[]>>(() => new Map<number, PageLink[]>())
+  const [resolvedRects, setResolvedRects] = useState<ReadonlyMap<string, readonly AnnotationRect[]>>(() => new Map())
+  const annotationsRef = useRef(annotations)
+  annotationsRef.current = annotations
+  const refreshHighlightRects = useCallback((): void => {
+    const items = annotationsRef.current ?? []
+    const calculated = new Map<string, readonly AnnotationRect[] | null>()
+    for (const [page, view] of pagesRef.current) {
+      const layer = view.textHost.querySelector<HTMLElement>('.textLayer')
+      const bounds = view.pageEl.getBoundingClientRect()
+      if (!layer?.textContent || bounds.width <= 0 || bounds.height <= 0) continue
+      for (const item of items) {
+        if (item.page !== page || (item.kind !== 'highlight' && item.kind !== 'underline')) continue
+        calculated.set(item.id, item.quote && item.quote.length < MAX_QUOTE ? quoteTextRects(layer, bounds, item.quote) : null)
+      }
+    }
+    setResolvedRects((previous) => {
+      const next = new Map(previous)
+      const live = new Set(items.map((item) => item.id))
+      for (const id of next.keys()) if (!live.has(id)) next.delete(id)
+      for (const [id, rects] of calculated) { if (rects) next.set(id, rects); else next.delete(id) }
+      const same = next.size === previous.size && [...next].every(([id, rects]) => {
+        const before = previous.get(id)
+        return before?.length === rects.length && rects.every((rect, index) => (['x', 'y', 'w', 'h'] as const).every((key) => Math.abs(rect[key] - before[index]![key]) < 1e-7))
+      })
+      return same ? previous : next
+    })
+  }, [])
+  useEffect(refreshHighlightRects, [annotations, refreshHighlightRects])
+
   const visualModeRef = useRef(false)
   visualModeRef.current = visualMode
   const keymapRef = useRef<KeyMap>(keymap)
@@ -1585,6 +1562,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     setOutlineLoaded(false)
     setOutlineOpen(false)
     setPageLinks(new Map<number, PageLink[]>())
+    setResolvedRects(new Map())
     setFindOpen(false)
     setFindQuery('')
     setFindMatches([])
@@ -2042,13 +2020,17 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           // TextLayer.render() is synchronous over every text item. On dense
           // pages that is several seconds of main-thread work (canvas
           // measureText per span), which looked like a frozen page after the
-          // bitmap had already painted. Render it in small chunks and yield
-          // between chunks so scrolling/selection stay responsive.
+          // bitmap had already painted. Merge safe touching runs, then let
+          // pdf.js retain width calibration for accurate text selection.
           const content = (await page.getTextContent({
             includeMarkedContent: true,
             disableNormalization: true,
           })) as { items?: unknown[]; styles?: unknown; lang?: string }
           if (epoch !== epochRef.current || token !== view.token) return
+          // Match TextLayer's measurement canvas language, including explicit
+          // unknown language. Inheriting the host's zh-CN can choose different
+          // generic-font metrics from canvas.lang="" and stretch the selection.
+          container.lang = content.lang ?? ''
           const items = Array.isArray(content.items) ? content.items : []
           const merged = mergeTextItems(items)
           const textLayer = new pdfjs.TextLayer({
@@ -2062,6 +2044,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           })
           await textLayer.render()
           if (epoch !== epochRef.current || token !== view.token) return
+          refreshHighlightRects()
           applyFindHighlights(view.wrap, findQueryRef.current, findActivePageRef.current)
           const hasText = (container.textContent ?? '').trim().length > 0
           setLowTextPages((previous) => {
@@ -2605,26 +2588,18 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (pageRect.width <= 0 || pageRect.height <= 0) return null
     const rootRect = root.getBoundingClientRect()
 
-    const rects: AnnotationRect[] = []
-    let anchorRect: DOMRect | null = null
-    const rawRects = range.getClientRects()
-    for (let index = 0; index < rawRects.length && rects.length < MAX_RECTS; index += 1) {
-      const raw = rawRects[index]
-      if (raw === undefined || raw.width < 0.5 || raw.height < 0.5) continue
-      const left = Math.max(raw.left, pageRect.left)
-      const top = Math.max(raw.top, pageRect.top)
-      const right = Math.min(raw.right, pageRect.right)
-      const bottom = Math.min(raw.bottom, pageRect.bottom)
-      if (right - left < 0.5 || bottom - top < 0.5) continue
-      rects.push({
-        x: clamp01((left - pageRect.left) / pageRect.width),
-        y: clamp01((top - pageRect.top) / pageRect.height),
-        w: clamp01((right - left) / pageRect.width),
-        h: clamp01((bottom - top) / pageRect.height),
-      })
-      if (anchorRect === null) anchorRect = raw
+    const endNode = range.endContainer
+    const endElement = endNode.nodeType === Node.ELEMENT_NODE ? endNode as Element : endNode.parentElement
+    if (endElement?.closest('.textLayer') !== textLayer) return null
+    const rects = rangeTextRects(range, textLayer, pageRect)
+    if (!rects.length || rects.length > MAX_RECTS) return null
+    const first = rects[0]!
+    const anchorRect = {
+      left: pageRect.left + first.x * pageRect.width,
+      top: pageRect.top + first.y * pageRect.height,
+      width: first.w * pageRect.width,
+      bottom: pageRect.top + (first.y + first.h) * pageRect.height,
     }
-    if (rects.length === 0 || anchorRect === null) return null
     const quote = normaliseQuote(domSelection.toString())
     if (quote.length === 0) return null
 
@@ -3611,6 +3586,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
                       labels,
                       flashId,
                       onFocusAnnotationRef.current,
+                      resolvedRects,
                     )}
                   </div>
                   <div className="pdv-linkLayer">
