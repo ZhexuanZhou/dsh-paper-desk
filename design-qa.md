@@ -77,3 +77,12 @@ final result: passed
 沿用用户选1的阅读视觉语言，本轮局部修复无需新设计稿。原用户截图、真实0.4.6 before与0.4.7 after（同1701×913）逐项亲检；派生focus对比 `original-before-after.jpg` 保留原截图字节。末节H2从累积120px缩进恢复正文基线，全部标题无LI祖先，列表正常一层；两处s>1为MathML，tildeQ无灰滚动条。人工边界稿在助读/卡片/笔记均真实渲染，代码美元符保留，400px长公式仅自身水平滚动，后续正文基线正常。未发现未解决P0/P1/P2。
 
 client SHA256 `ebe3a393a090d60c1401bca785b00f3d7051790042a1cc6d3e8a53f1d4f133bc`；原生已刷新v0.4.7，原会话只读验证；真实chats.json哈希不变。私有原稿、对话、截图位于round `20261113-followup-0.4.7`，不得提交。
+
+
+## 2026-11-13 · 0.4.7 公共文档截图
+
+final result: passed（公共截图与隐私gate；产品功能复用上一轮0.4.7验收）
+
+7张新版真实UI截图已由唯一媒体owner逐张亲检：library、PDF+AI与p1附件、整页notes、cards目录、cardeditor预览、research专题、discovery初始态。仅独立公开合成demo副本；手写示例对话/笔记/卡片明确演示，非真实模型证据；没有新模型或检索请求。
+
+viewport1720×1080，截图API clip{x:280,y:0,width:1440,height:1080}直接输出原始JPEG，未重编码、不改像素内容。整个Harness侧栏及Chrome栏排除，无用户姓名头像、业务会话、本地路径或鉴权URL。逐图SHA/隐私判定见私有round `20261113-docs-screenshots-0.4.7/results/public-screenshots-manifest.json`，主agent统一引用并淘汰旧图。截图候选本身可公开；私有profile/fixture路径不提交。

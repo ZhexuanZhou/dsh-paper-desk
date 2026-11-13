@@ -21,11 +21,9 @@ PaperDesk 是 DeepSeek Harness 的论文库插件。导入 PDF，在同一工作
 | 对比与图谱 | 对比 2–6 篇论文，保存对比报告；管理引用、相关、方法、对比等论文关系。 |
 | 本地管理 | 阅读状态、评分、标签、BibTeX 导出、文件定位、冲突副本和中英文界面。 |
 
-下面的截图用于展示主要功能，部分来自较早版本；当前入口与交互以本文说明为准。
+以下截图均为 **0.4.7 实际界面**，使用公开合成演示库。问答和卡片内容为手写演示，不是模型生成结果或真实研究结论。
 
-![论文库与阅读器](docs/screenshots/library.png)
-
-![PDF 高亮与批注](docs/screenshots/annotations.png)
+![0.4.7 论文库与 PDF 阅读](docs/screenshots/v0.4.7/library.jpg)
 
 ## 0.4.7 的主要变化
 
@@ -55,6 +53,16 @@ npm run build
 dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 ```
 
+### 从 GitHub Release 安装
+
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。命令行维护的 profile 可直接安装本版包：
+
+```sh
+dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.4.7/dsh-paper-desk-0.4.7.tgz
+```
+
+Release 同时提供合成演示库和 SHA-256 校验文件。
+
 ### 从 npm 安装
 
 公开包名为 `@zhe_xuan/dsh-paper-desk`：
@@ -75,6 +83,8 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 ## AI 助读
 
 在阅读器中打开 **AI 助读**，即可一边看 PDF，一边讨论当前论文。
+
+![0.4.7 AI 助读与原页图片附件](docs/screenshots/v0.4.7/ai-reading.jpg)
 
 - **提问**：在输入框直接输入问题，点击发送。Enter 发送，Shift+Enter 换行；输入法选词期间 Enter 用于完成选词。
 - **快捷任务**：选择总结、方法精读、审阅、相关工作或提问任务，可补充具体要求，再点击发送。选择任务本身不会立即执行。
@@ -111,13 +121,19 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 “笔记”页默认显示排版后的 Markdown：分节目录用于定位，正文旁可核对引用原页。支持编辑、自动保存和 `Cmd/Ctrl+S`；保存冲突会提示处理，不覆盖其他设备的修改。
 
+![0.4.7 整页笔记与分节目录](docs/screenshots/v0.4.7/notes.jpg)
+
 ### 从回答保存卡片
 
 在回答下方选择 **保存 → 保存为卡片**。已有内容默认显示正文预览，可切换编辑；标题可修改，标签、来源页码和上下文按需展开。
 
+![0.4.7 保存卡片与正文预览](docs/screenshots/v0.4.7/card-editor.jpg)
+
 “根据对话生成”是独立操作，会依据所选上下文重新整理标题和正文；直接保存卡片不会额外调用模型。
 
 保存后，在独立“卡片”页按目录阅读全文，或编辑、核对页码、复制、插入笔记和删除。卡片保存在 `cards.json`，不会自动写入论文笔记。
+
+![0.4.7 卡片目录与完整正文](docs/screenshots/v0.4.7/cards.jpg)
 
 ## 研究专题与文献发现
 
@@ -125,9 +141,13 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 新建专题按“研究问题 → 参考论文 → 保存”组织。保存后围绕所选论文讨论，专题笔记可以后续补充。
 
+![0.4.7 研究专题与参考论文](docs/screenshots/v0.4.7/research.jpg)
+
 讨论参考所选论文已有的摘要、笔记、卡片和已保存对比；正文通过 `paper_text` 按需读取，节选不等同于全文证据。回答只有明确加入专题笔记并保存后才写入。
 
 ### 文献发现
+
+![0.4.7 文献发现与来源选择](docs/screenshots/v0.4.7/discovery.jpg)
 
 - arXiv 按提交时间排序，OpenAlex 按相关度排序，每次最多返回 20 篇。
 - 检索词可保存为带来源的订阅，通过手动刷新检查更新；当前没有后台定时轮询或任意 RSS URL 接入。
