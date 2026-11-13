@@ -1,7 +1,7 @@
 {
   "name": "dsh-paper-desk",
   "version": "0.4.7",
-  "description": "PaperDesk: a Mendeley-style paper library for DeepSeek Harness — import PDFs, keep notes and highlights, ask the agent to explain papers, and sync the library folder through your cloud drive.",
+  "description": "PaperDesk: a paper-management and AI reading plugin for DeepSeek Harness — import PDFs, annotate, organize notes, discuss papers, and sync your library through a cloud drive.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -76,7 +76,6 @@
     "dsh-plugin",
     "deepseek-harness",
     "papers",
-    "mendeley",
     "reference-manager",
     "pdf",
     "notes",

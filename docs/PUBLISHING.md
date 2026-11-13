@@ -1,13 +1,12 @@
 # 发布 PaperDesk（npm + DSH 社区市场）
 
 PaperDesk 是标准 DSH 插件包：`package.json` 里有 `dsh.bundle`（`cordis.patch.yml`）与
-`dsh.client`，Code 已预构建进 `lib/`。发布分三步：**打 tag 发 Release → 发 npm → 向
-awesome-dsh-plugin 提交一个条目**。市场（dshmarket）从该列表同步，条目合并后 1 天左右自动出现。
+`dsh.client`，运行构建后产物位于 `lib/`。**Git tag、GitHub Release、npm 发布和市场收录是独立操作**；创建 tag 不会自动发布 npm 包。市场通过 awesome-dsh-plugin 的条目关联插件。
 
 本文所有命令都在仓库根目录执行：
 
 ```sh
-cd /Users/zhexuansoffice/Developments/dsh_plugins/dsh-paper-desk
+cd /path/to/dsh-paper-desk
 ```
 
 ## 0. 发布前检查
@@ -74,7 +73,7 @@ npm view @zhe_xuan/dsh-paper-desk version
 ```
 
 - 发布前需要 token：npm 网页登录 token 不能发布（会报 2FA 403），要到
-  <https://www.npmjs.com/settings/zhe_xuan/tokens> 建 **Granular token → Permissions 选
+  自己的 npm 账户设置中建 **Granular token → Permissions 选
   `Read and write (publish and stage)` → Packages `All packages` → 勾 Bypass 2FA**，
   或 **Classic Token → Automation**，然后：
   ```sh
@@ -98,8 +97,8 @@ url: https://github.com/ZhexuanZhou/dsh-paper-desk
 name: ZhexuanZhou/dsh-paper-desk
 category: tools
 description:
-  en: Mendeley-style paper library for DeepSeek Harness — import PDFs, read them in-app with highlights, notes and questions, generate note cards from AI answers, compare 2–6 papers, build a typed relation graph, and sync the library folder through any cloud drive.
-  zh: 给 DeepSeek Harness 的 Mendeley 式论文库——导入 PDF、在面板内阅读并做高亮/划线/笔记/提问、把 AI 回答生成笔记卡片、对比 2–6 篇论文、建立带类型的论文关联图谱，并把库目录交给云盘同步。
+  en: Paper management and AI reading for DeepSeek Harness — import PDFs, read them in-app with highlights, notes and questions, generate note cards from AI answers, compare 2–6 papers, build a typed relation graph, and sync the library folder through any cloud drive.
+  zh: 给 DeepSeek Harness 的论文管理与 AI 助读插件——导入 PDF、在面板内阅读并做高亮/划线/笔记/提问、把 AI 回答生成笔记卡片、对比 2–6 篇论文、建立带类型的论文关联图谱，并把库目录交给云盘同步。
 icon: https://raw.githubusercontent.com/ZhexuanZhou/dsh-paper-desk/main/assets/icon-180.png
 # 可选：npm 发布前的预构建安装包（Release 里的 tgz，tag 钉死不随发版 404）
 tarball: https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.3.0/dsh-paper-desk-0.3.0.tgz
@@ -117,7 +116,7 @@ tarball: https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.3.0/
 |---|---|
 | `package.json` 声明 `dsh.bundle`（不是只有 `dsh.client`） | ✅ `dsh.bundle.patch = ./cordis.patch.yml` |
 | 仓库有真实可用代码 | ✅ |
-| 仓库创建满 **1 天** | ⏳ 本仓库 2026-11-06 才创建，需等到创建满 1 天后再提 PR（CI 自动检查，提前提会被拒） |
+| 仓库创建时间 | 按市场当前准入规则核对。 |
 | 仓库加 `dsh-plugin` topic | ⬜ 执行：`gh repo edit ZhexuanZhou/dsh-paper-desk --add-topic dsh-plugin` |
 | 只新增自己的条目、最多 3 条 | ✅ PR 只加 1 个文件 |
 | 描述准确、无营销词 | ✅ 提 PR 前再对一次代码 |
@@ -148,7 +147,7 @@ dsh plugin --profile web add dsh-paper-desk
 
 ## 6. 安全与隐私（提 PR 时会被看到）
 
-- 插件只读写用户选择的论文库目录（默认 `~/Documents/PaperDesk`），不做网络回传。
+- 论文库保存在用户选择的本地目录中；联网请求与发送内容见 README 的“数据、同步与隐私”。
 - Crossref 只在 `enrich` 开启时请求公开元数据；AI 能力走 DSH 自己的会话，不额外拿密钥。
 - 云盘同步由用户自己的网盘客户端完成，插件只写普通文件（原子写 + 冲突副本）。
 

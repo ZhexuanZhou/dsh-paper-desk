@@ -1,10 +1,9 @@
 /**
  * Debounced autosave queue for the notes editor.
  *
- * Modelled on Agentero's `autosave-queue.ts` (400 ms debounce, one serialized
- * write chain per editor, dedupe against the last persisted text). Unlike the
- * reference this queue has no path: the editor always writes "its own" draft
- * through the App callback, so the queue only needs to serialize and dedupe.
+ * Uses a 400 ms debounce and one serialized write chain per editor, with
+ * deduplication against the last persisted text. The editor owns its target
+ * and passes writes through the App callback.
  *
  * Failure semantics: the editor keeps the draft in React state; the queue only
  * reports the error (toast). It deliberately does NOT re-arm the failed text:

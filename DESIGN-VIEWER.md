@@ -1,7 +1,7 @@
 # PaperDesk in-app PDF viewer + annotations — contract
 
 Replaces the native browser PDF `<iframe>` in the 阅读 tab with a themed in-app
-viewer built on **pdf.js**, and adds Mendeley-style annotations
+viewer built on **pdf.js**, and adds text-layer annotations
 (highlight / underline / note / question) that work on top of the PDF text layer.
 
 Everything here is additional to `DESIGN.md`. Read `src/types.ts`

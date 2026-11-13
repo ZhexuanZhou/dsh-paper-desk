@@ -1,5 +1,5 @@
 /**
- * PaperDesk Host half: a Mendeley-style paper library that lives in a plain,
+ * PaperDesk Host half: a directory-based paper library that lives in a plain,
  * cloud-syncable directory. Mounts the workbench HTTP API, registers the
  * `paper_*` agent tools and adds a short system-prompt section describing the
  * library. All state lives in the library directory; this plugin holds only a

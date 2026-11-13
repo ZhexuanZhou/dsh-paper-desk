@@ -1,7 +1,7 @@
 # PaperDesk (dsh-paper-desk) — implementation contract
 
-A native DeepSeek Harness Web GUI plugin (Host half + browser half) that turns a
-plain directory into a Mendeley-style paper library:
+A native DeepSeek Harness Web GUI plugin (Host half + browser half) that manages a
+paper library in a plain directory:
 
 * import PDFs (upload, host path, or drop into the library `_inbox/`),
 * metadata: PDF/XMP extraction, filename heuristics, optional Crossref enrichment,
@@ -463,9 +463,7 @@ export function apply(ctx: ClientContext): void {
 }
 ```
 
-Reference implementation in the installed plugin
-`/Users/zhexuansoffice/.dsh/profiles/desktop/node_modules/dsh-context/lib/client.js`
-(`function zl` registers `main` + `sidebar.panellist` exactly this way).
+The host exposes `main` and `sidebar.panellist` slots for panel and sidebar registration.
 
 ### 5.2 Component contract
 
@@ -576,7 +574,7 @@ the conversation but must not require it.
 Lead runs after integration:
 
 ```bash
-cd /Users/zhexuansoffice/Developments/dsh_plugins/dsh-paper-desk
+cd /path/to/dsh-paper-desk
 pnpm run typecheck && pnpm run build
 node scripts/smoke.mjs        # creates a temp library, imports a real PDF, exercises modules
 ```

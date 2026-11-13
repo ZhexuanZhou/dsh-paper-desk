@@ -7,7 +7,7 @@
  * boundary and the model boundary.
  */
 
-/** A paper's reading state (Mendeley-style). */
+/** A paper's reading state. */
 export type PaperStatus = 'unread' | 'reading' | 'read' | 'archived'
 
 /** How the paper entered the library. */

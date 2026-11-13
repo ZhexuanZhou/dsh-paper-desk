@@ -1,6 +1,6 @@
 # v0.3.43
 
-参考 Agentero 的架构与交互，集中提升 PDF 阅读性能与阅读体验：
+提升 PDF 阅读性能、阅读交互与笔记自动保存：
 
 ## PDF 渲染（P0）
 - 启用 pdf.js 6.5 的 renderer worker：页面栅格化在主线程之外完成，主线程只 drawImage

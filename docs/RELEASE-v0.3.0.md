@@ -1,6 +1,6 @@
 # PaperDesk v0.3.0 — 第一个版本
 
-给 DeepSeek Harness 的 Mendeley 式论文库：PDF 导入、面板内阅读与批注、Agent 精读、笔记卡片、
+给 DeepSeek Harness 的论文管理与 AI 助读插件：PDF 导入、面板内阅读与批注、Agent 精读、笔记卡片、
 多篇论文对比、带类型的论文关系图谱，以及交给云盘同步的纯文件存储。
 
 ## 功能
