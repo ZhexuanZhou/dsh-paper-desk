@@ -102,7 +102,7 @@ export function parseTagAnswer(raw: string): string[] {
   return tags
 }
 
-function resolveRoute(ctx: Context): { provider: string; model: string } | null {
+export function resolveRoute(ctx: Context): { provider: string; model: string } | null {
   const defaults = ctx.get('agentDefaultModel') as unknown as AgentDefaultModelLike | undefined
   try {
     const selection = defaults?.currentSelection?.()
@@ -122,7 +122,7 @@ function resolveRoute(ctx: Context): { provider: string; model: string } | null 
 }
 
 /** Build an excerpt from the first pages: abstract is already passed separately. */
-async function introductionExcerpt(pdfAbs: string): Promise<string> {
+export async function introductionExcerpt(pdfAbs: string): Promise<string> {
   try {
     const text = await extractText(pdfAbs, 4)
     const pages: string[] = []

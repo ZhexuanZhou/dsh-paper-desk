@@ -9,6 +9,7 @@
  *
  * Contract: DESIGN-VIEWER.md §3.
  */
+import { normaliseLinkRect } from './pdfLinkGeometry.js'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DEFAULT_KEYMAP,
@@ -917,11 +918,7 @@ interface LinkPageLike {
   getAnnotations?(): Promise<unknown>
 }
 
-interface LinkViewportLike {
-  width: number
-  height: number
-  convertToViewportRectangle?(rect: number[]): number[]
-}
+
 
 interface ZoomAnchor {
   page: number
@@ -1262,36 +1259,6 @@ async function findPages(
     }
   }
   return matches
-}
-
-/** Normalise a PDF-space link rectangle into the page box (0..1). */
-function normaliseLinkRect(viewport: LinkViewportLike, rect: readonly number[]): AnnotationRect | null {
-  if (rect.length < 4) return null
-  let x1 = rect[0] ?? 0
-  let y1 = rect[1] ?? 0
-  let x2 = rect[2] ?? 0
-  let y2 = rect[3] ?? 0
-  if (typeof viewport.convertToViewportRectangle === 'function') {
-    const converted = viewport.convertToViewportRectangle([x1, y1, x2, y2])
-    if (Array.isArray(converted) && converted.length >= 4) {
-      x1 = converted[0] ?? x1
-      y1 = converted[1] ?? y1
-      x2 = converted[2] ?? x2
-      y2 = converted[3] ?? y2
-    }
-  }
-  if (viewport.width <= 0 || viewport.height <= 0) return null
-  const left = Math.min(x1, x2)
-  const top = Math.min(y1, y2)
-  const width = Math.abs(x2 - x1)
-  const height = Math.abs(y2 - y1)
-  if (width <= 0 || height <= 0) return null
-  return {
-    x: clamp01(left / viewport.width),
-    y: clamp01(top / viewport.height),
-    w: clamp01(width / viewport.width),
-    h: clamp01(height / viewport.height),
-  }
 }
 
 /* ── small local icons (no external icon imports in this file) ──────────── */
@@ -1942,7 +1909,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           target = await resolveOutlineDest(outlineDoc, raw.dest)
         }
         if (url === null && target === null) continue
-        const normalised = normaliseLinkRect(viewport as unknown as LinkViewportLike, rect)
+        const normalised = normaliseLinkRect(viewport, rect)
         if (normalised === null) continue
         links.push({ id: `l-${pageNumber}-${links.length}`, rect: normalised, page: target, url })
         if (links.length >= LINK_MAX_PER_PAGE) break

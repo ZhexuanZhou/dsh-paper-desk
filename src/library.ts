@@ -25,6 +25,7 @@ import {
   normalizeDoi,
 } from './metadata.js'
 import type { PdfGuess } from './metadata.js'
+import type { AutoMetadataFn, AutoMetadataResult } from './importMetadata.js'
 import { autoTags, type AutoTagFn } from './autotag.js'
 import {
   extractNotePreview,
@@ -417,6 +418,8 @@ export interface CreatePaperOptions {
   enrich?: boolean
   /** Optional host-side tagger (LLM); falls back to the local taxonomy. */
   autoTag?: AutoTagFn
+  /** Fill missing abstract, keywords and tags after local extraction. */
+  autoMetadata?: AutoMetadataFn
   language: Language
   device?: string
 }
@@ -499,7 +502,7 @@ async function uniquePaperId(root: string, title: string, year: number | null, s
 export async function createPaper(
   root: string,
   opts: CreatePaperOptions,
-): Promise<{ id: string; meta: PaperMeta; duplicated: boolean }> {
+): Promise<{ id: string; meta: PaperMeta; duplicated: boolean; enrichmentWarning?: string }> {
   await ensureLayout(root)
 
   const sourceName =
@@ -556,17 +559,29 @@ export async function createPaper(
     const year = normalizeYear(explicit.year) ?? normalizeYear(guess.year ?? null)
     const doi = normalizeDoi(explicit.doi ?? '') ?? guess.doi ?? ''
     const venue = explicit.venue?.trim() || guess.venue?.trim() || ''
-    const abstract = explicit.abstract?.trim() || guess.abstract?.trim() || ''
+    let abstract = explicit.abstract?.trim() || guess.abstract?.trim() || ''
     const arxivId = guess.arxivId
     const url =
       explicit.url?.trim() ||
       crossrefUrl ||
       (doi ? `https://doi.org/${doi}` : '') ||
       (arxivId ? `https://arxiv.org/abs/${arxivId}` : '')
-    const keywords = stringArray(explicit.keywords)
+    let keywords = stringArray(explicit.keywords)
     const explicitTags = stringArray(explicit.tags)
     let tags = explicitTags
-    if (tags.length === 0 && abstract.trim().length > 0) {
+    let enrichmentWarning: string | undefined
+    if (opts.autoMetadata && (!abstract || keywords.length === 0 || tags.length === 0)) {
+      try {
+        const generated = await opts.autoMetadata({ title, abstract, keywords, tags, venue, pdfAbs: tempAbs })
+        if (!abstract && typeof generated.abstract === 'string') abstract = generated.abstract.trim().slice(0, 4000)
+        if (keywords.length === 0) keywords = stringArray(generated.keywords).slice(0, 8)
+        if (tags.length === 0) tags = stringArray(generated.tags).slice(0, 5)
+        enrichmentWarning = generated.warning
+      } catch {
+        enrichmentWarning = 'LLM 自动补全失败；论文已保留，可在信息页重试。'
+      }
+    }
+    if (tags.length === 0) {
       // Prefer the Host LLM (abstract + introduction). If no model is
       // available the tagger itself falls back to the deterministic taxonomy.
       let generated: readonly string[] = []
@@ -628,7 +643,7 @@ export async function createPaper(
       await atomicWrite(safeJoin(root, posixJoin(dirRel, NOTES_FILE)), initialNotesMarkdown(meta, opts.language))
     }
 
-    return { id, meta, duplicated: false }
+    return { id, meta, duplicated: false, ...(enrichmentWarning ? { enrichmentWarning } : {}) }
   } catch (error) {
     await rm(tempDirAbs, { recursive: true, force: true }).catch(() => {})
     if (createdDirAbs !== null) await rm(createdDirAbs, { recursive: true, force: true }).catch(() => {})
@@ -678,24 +693,46 @@ function applyMetaPatch(meta: PaperMeta, patch: Partial<PaperMeta>): void {
  * Update whitelisted metadata fields (id/addedAt/schemaVersion/path fields can
  * never be patched through here) and refresh `updatedAt`.
  */
-export async function updateMeta(
-  root: string,
-  paperId: string,
-  patch: Partial<PaperMeta>,
-): Promise<PaperMeta> {
+const metadataWrites = new Map<string, Promise<PaperMeta>>()
+
+async function editMeta(root: string, paperId: string, edit: (meta: PaperMeta) => void | boolean): Promise<PaperMeta> {
   assertPaperId(paperId)
-  const current = await readMeta(root, paperId)
-  if (current === null) throw new Error(`paper not found: ${paperId}`)
-  const next: PaperMeta = {
-    ...current,
-    authors: [...current.authors],
-    keywords: [...current.keywords],
-    tags: [...current.tags],
-  }
-  applyMetaPatch(next, patch)
-  next.updatedAt = nowIso()
-  await writeMeta(root, next)
-  return next
+  const key = `${path.resolve(root)}:${paperId}`
+  const previous = metadataWrites.get(key) ?? Promise.resolve()
+  const task = previous.catch(() => {}).then(async () => {
+    const current = await readMeta(root, paperId)
+    if (current === null) throw new Error(`paper not found: ${paperId}`)
+    const next = { ...current, authors: [...current.authors], keywords: [...current.keywords], tags: [...current.tags] }
+    if (edit(next) === false) return current
+    next.updatedAt = nowIso()
+    await writeMeta(root, next)
+    return next
+  })
+  metadataWrites.set(key, task)
+  try { return await task }
+  finally { if (metadataWrites.get(key) === task) metadataWrites.delete(key) }
+}
+
+export async function updateMeta(root: string, paperId: string, patch: Partial<PaperMeta>): Promise<PaperMeta> {
+  return editMeta(root, paperId, (meta) => applyMetaPatch(meta, patch))
+}
+
+/** Re-read inside the shared write queue so a late LLM cannot replace manual edits. */
+export async function fillMissingMetadata(root: string, paperId: string, generated: AutoMetadataResult): Promise<{ meta: PaperMeta; changed: string[] }> {
+  const changed: string[] = []
+  const meta = await editMeta(root, paperId, (current) => {
+    if (!current.abstract.trim() && generated.abstract?.trim()) {
+      current.abstract = generated.abstract.trim().slice(0, 4000); changed.push('abstract')
+    }
+    if (current.keywords.length === 0 && generated.keywords?.length) {
+      current.keywords = stringArray(generated.keywords).slice(0, 8); changed.push('keywords')
+    }
+    if (current.tags.length === 0 && generated.tags?.length) {
+      current.tags = stringArray(generated.tags).slice(0, 5); changed.push('tags')
+    }
+    return changed.length > 0
+  })
+  return { meta, changed }
 }
 
 /** Move a paper directory into `.paperdesk/trash/` (never unlink). */
@@ -745,7 +782,7 @@ export async function stats(
  * removed from the inbox (known duplicates too). Returns the ids of
  * *newly* created papers (an already-known paper is not counted).
  */
-export async function importInbox(root: string, language: Language, autoTag?: AutoTagFn): Promise<string[]> {
+export async function importInbox(root: string, language: Language, autoTag?: AutoTagFn, autoMetadata?: AutoMetadataFn): Promise<string[]> {
   let entries
   try {
     entries = await readdir(safeJoin(root, INBOX_DIR), { withFileTypes: true })
@@ -765,7 +802,7 @@ export async function importInbox(root: string, language: Language, autoTag?: Au
     // Zero-byte files are usually iCloud placeholders: leave them for later.
     if (info === null || info.size === 0) continue
     try {
-      const created = await createPaper(root, { sourcePath: absPath, source: 'inbox', language, autoTag })
+      const created = await createPaper(root, { sourcePath: absPath, source: 'inbox', language, autoTag, autoMetadata })
       await rm(absPath, { force: true }).catch(() => {})
       if (!created.duplicated && !seen.has(created.id)) {
         seen.add(created.id)

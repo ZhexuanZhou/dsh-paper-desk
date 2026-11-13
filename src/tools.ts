@@ -10,6 +10,7 @@ import { readCards } from './cards.js'
 import { readRelations, relationForPaper } from './relations.js'
 import type { Config } from './config.js'
 import { createPaper, readMeta, updateMeta } from './library.js'
+import type { AutoMetadataFn } from './importMetadata.js'
 import type { AutoTagFn } from './autotag.js'
 import { appendToNotes, readNotes } from './notes.js'
 import { ensureText, pageText } from './pdf.js'
@@ -73,7 +74,7 @@ export interface ToolRegistryLike {
  * Register the `paper_*` tools. Returns one disposer that unregisters them all,
  * so the caller can own the registration through a single `ctx.effect`.
  */
-export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?: AutoTagFn): () => void {
+export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?: AutoTagFn, autoMetadata?: AutoMetadataFn): () => void {
   const settings = (): EffectiveSettings => effectiveSettings(config)
   const disposers: (() => void)[] = []
   const add = (definition: ToolDefinition): void => {
@@ -494,12 +495,13 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             id: { type: 'string' },
             title: { type: 'string' },
             duplicated: { type: 'boolean' },
+            enrichmentWarning: { type: 'string' },
           },
         },
         render: (_args, value) =>
           textResult(
             value.ok
-              ? `${value.duplicated === true ? 'Already in the library' : 'Imported'}: ${String(value.title ?? '')} (id ${String(value.id ?? '')}).`
+              ? `${value.duplicated === true ? 'Already in the library' : 'Imported'}: ${String(value.title ?? '')} (id ${String(value.id ?? '')}).${value.enrichmentWarning ? ` Metadata: ${String(value.enrichmentWarning)}` : ''}`
               : `Import failed: ${String(value.error ?? 'unknown error')}`,
           ),
       },
@@ -524,10 +526,11 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             meta,
             enrich: current.enrich,
             autoTag,
+            autoMetadata,
             language: current.language,
             device: deviceShort(),
           })
-          return { ok: true, id: created.id, title: created.meta.title, duplicated: created.duplicated }
+          return { ok: true, id: created.id, title: created.meta.title, duplicated: created.duplicated, enrichmentWarning: created.enrichmentWarning }
         } catch (error) {
           return failure(error instanceof Error ? error.message : String(error))
         }

@@ -35,3 +35,14 @@ final result: passed
 无未决P0/P1/P2。旧drawer notes偏好未人工注入，不把兼容路径当作单独UI验证结论。未重跑已验OpenAlex/notes原功能。
 
 final result: passed
+
+
+## 0.4.4 验收
+
+最终client3175258989076183229eb803ccb87cdaa1da718469ce23cebc1d1e2dcfaac8e9，Host importMetadata80240c2ddf27386bf332ce67c74e1f62ba7943a43345f736d0d0e84e24755726。geometry媒体复用04f902，之后几何未改。用户before与TRIO51/100/156% after亲检，热区和文字对齐。标准/裁切UserUnit2四旋转页内循环通过，独立manifest验证记录在private round。工具无hover，未外链点击。
+
+真实UI上传与真实deepseek-official/deepseek-flash补全成功，完整摘要忠于PDF，关键词标签相关；隔离手动补空保留原字段。表单假dirty P2已修，原生同次补全后保存disabled通过。非首篇跨插件与刷新恢复、过期ID安全回退通过。原MiTA仅授权三空项和updatedAt改变，其他字段/PDF/notes未变。
+
+新增媒体由acceptance_resume唯一亲检，无未决P0/P1/P2；不提交private截图/PDF/日志。
+
+final result: passed

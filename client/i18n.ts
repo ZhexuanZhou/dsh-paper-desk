@@ -191,7 +191,7 @@ const zh = {
 
   // ── import ─────────────────────────────────────────────────────────────
   'import.button': '导入 PDF',
-  'import.importing': '正在导入…',
+  'import.importing': '正在导入并补全元数据…',
   'import.notPdf': '请选择 PDF 文件',
   'import.done': '已导入「{title}」',
   'import.duplicated': '论文已在库中，已为你选中',
@@ -358,6 +358,9 @@ const zh = {
   'meta.save': '保存元数据',
   'meta.saved': '元数据已保存',
   'meta.dirty': '有未保存的修改',
+  'meta.llmEnrich': '用 LLM 补全空项',
+  'meta.llmHint': '导入时会自动用 LLM 补全空的摘要、关键词和标签；已有内容保持不变，请核对生成结果。',
+  'meta.llmSaveFirst': '请先保存当前元数据，再补全空项。',
   'meta.enrich': '用 Crossref 补全',
   'meta.enriching': '正在补全…',
   'meta.enrichDone': '已补全 {n} 个字段',
@@ -892,7 +895,7 @@ const en: Record<DictKey, string> = {
 
   // ── import ─────────────────────────────────────────────────────────────
   'import.button': 'Import PDF',
-  'import.importing': 'Importing…',
+  'import.importing': 'Importing and filling metadata…',
   'import.notPdf': 'Please choose PDF files',
   'import.done': 'Imported “{title}”',
   'import.duplicated': 'Already in the library; selected it for you',
@@ -1059,6 +1062,9 @@ const en: Record<DictKey, string> = {
   'meta.save': 'Save metadata',
   'meta.saved': 'Metadata saved',
   'meta.dirty': 'Unsaved changes',
+  'meta.llmEnrich': 'Fill empty fields with LLM',
+  'meta.llmHint': 'Imports use the LLM to fill empty abstract, keywords and tags. Existing content is preserved; review generated values.',
+  'meta.llmSaveFirst': 'Save current metadata before filling empty fields.',
   'meta.enrich': 'Enrich with Crossref',
   'meta.enriching': 'Enriching…',
   'meta.enrichDone': 'Filled {n} field(s)',

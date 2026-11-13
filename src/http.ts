@@ -33,6 +33,7 @@ import { syncCitationEdges } from './references.js'
 import {
   bibtexOf,
   createPaper,
+  fillMissingMetadata,
   deletePaper,
   getPaper,
   importInbox,
@@ -46,7 +47,8 @@ import { importPaperFromUrl } from './urlImport.js'
 import { readResearch, saveTopic, topicPrompt, saveSubscription, updateResearch } from './research.js'
 import { discoverResults, arxivIdentity } from './feed.js'
 import { DiscoveryServiceError } from './discoveryTransport.js'
-import { createLlmTagger } from './tagging.js'
+import { createLlmMetadataEnricher } from './importMetadata.js'
+import type { AutoMetadataFn } from './importMetadata.js'
 import { synthesizeCard, type SynthesizedCard } from './cardsynth.js'
 import { synthesizeNotes } from './notesynth.js'
 import type { AutoTagFn } from './autotag.js'
@@ -391,6 +393,7 @@ async function handle(
   autoTag?: AutoTagFn,
   cardSynth?: CardSynthFn,
   notesSynth?: NotesSynthFn,
+  autoMetadata?: AutoMetadataFn,
 ): Promise<void> {
   try {
     const url = new URL(req.url ?? '/', 'http://localhost')
@@ -551,10 +554,11 @@ async function handle(
             source: 'import',
             enrich,
             autoTag,
+            autoMetadata,
             language: settings.language,
             device: deviceShort(),
           })
-          json(res, 200, { id: created.id, meta: created.meta, duplicated: created.duplicated })
+          json(res, 200, created)
           return
         }
         const rawName = headerValue(req, 'x-file-name') ?? ''
@@ -576,10 +580,11 @@ async function handle(
             source: 'import',
             enrich,
             autoTag,
+            autoMetadata,
             language: settings.language,
             device: deviceShort(),
           })
-          json(res, 200, { id: created.id, meta: created.meta, duplicated: created.duplicated })
+          json(res, 200, created)
         } finally {
           await rm(stagingDirAbs, { recursive: true, force: true }).catch(() => undefined)
         }
@@ -607,6 +612,7 @@ async function handle(
           device: deviceShort(),
           enrich: settings.enrich,
           autoTag,
+          autoMetadata,
         })
         json(res, 200, created)
       } catch (error) {
@@ -914,6 +920,18 @@ async function handle(
       return methodNotAllowed(res)
     }
 
+    if (route === 'enrich/llm') {
+      if (method !== 'POST') return methodNotAllowed(res)
+      const id = requirePdfId(q['id'] ?? null)
+      const meta = await readMeta(root, id)
+      if (!meta) throw new HttpError(404, 'paper not found')
+      if (meta.abstract.trim() && meta.keywords.length && meta.tags.length) return json(res, 200, { meta, enrich: { ok: true, changed: [], source: 'llm' } })
+      if (!meta.pdfFile || !autoMetadata) throw new HttpError(409, '缺少本地 PDF 或 LLM 补全服务。')
+      const generated = await autoMetadata({ title: meta.title, abstract: meta.abstract, keywords: meta.keywords, tags: meta.tags, venue: meta.venue, pdfAbs: path.join(root, 'papers', id, meta.pdfFile) })
+      const result = await fillMissingMetadata(root, id, generated)
+      return json(res, 200, { meta: result.meta, enrich: { ok: !generated.warning, changed: result.changed, source: 'llm', message: generated.warning } })
+    }
+
     if (route === 'enrich') {
       if (method !== 'POST') return methodNotAllowed(res)
       const id = requirePdfId(q['id'] ?? null)
@@ -1042,7 +1060,7 @@ async function handle(
 
     if (route === 'inbox') {
       if (method !== 'POST') return methodNotAllowed(res)
-      const imported = await importInbox(root, settings.language, autoTag)
+      const imported = await importInbox(root, settings.language, autoTag, autoMetadata)
       const papers = await queryPapers(root, { limit: 200 })
       json(res, 200, { imported, papers })
       return
@@ -1241,12 +1259,13 @@ export function buildRoutes(
   autoTag?: AutoTagFn,
   cardSynth?: CardSynthFn,
   notesSynth?: NotesSynthFn,
+  autoMetadata?: AutoMetadataFn,
 ): WebRoute[] {
   return [
     {
       kind: 'prefix',
       path: '/api/paper-desk',
-      handler: (req, res) => handle(req, res, config, autoTag, cardSynth, notesSynth),
+      handler: (req, res) => handle(req, res, config, autoTag, cardSynth, notesSynth, autoMetadata),
     },
   ]
 }
@@ -1257,11 +1276,11 @@ export const name = 'paper-desk-workbench'
 export const inject = ['webServer']
 
 export function apply(ctx: Context, config: Config): void {
-  const autoTag = createLlmTagger(ctx, config)
+  const autoMetadata = createLlmMetadataEnricher(ctx)
   const cardSynth: CardSynthFn = (turns) => synthesizeCard(ctx, config, turns)
   const notesSynth: NotesSynthFn = (cards) => synthesizeNotes(ctx, config, cards)
   ctx.effect(() => {
-    const disposers = buildRoutes(config, autoTag, cardSynth, notesSynth).map((route) => ctx.webServer.register(route))
+    const disposers = buildRoutes(config, undefined, cardSynth, notesSynth, autoMetadata).map((route) => ctx.webServer.register(route))
     return () => disposers.forEach((dispose) => dispose())
   })
 }

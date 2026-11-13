@@ -225,7 +225,7 @@ export function DiscoverView({
                           paper.id === item.id ? { ...paper, existingPaperId: result.id } : paper,
                         ) ?? null,
                     )
-                    setNotice(result.duplicated ? t('discover.duplicate') : t('discover.imported'))
+                    setNotice([result.duplicated ? t('discover.duplicate') : t('discover.imported'), result.enrichmentWarning].filter(Boolean).join(' · '))
                     onImported()
                   })
                   .catch((err: unknown) => setError(errorText(err)))

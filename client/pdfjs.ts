@@ -34,6 +34,7 @@ export interface PdfViewportLike {
   width: number
   height: number
   scale: number
+  convertToViewportPoint(x: number, y: number): number[]
 }
 
 /** The subset of the pdf.js module surface this plugin relies on. */

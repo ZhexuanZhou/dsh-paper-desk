@@ -37,7 +37,8 @@ import type {
   SyncStatus,
 } from '../src/types.js'
 import type { SettingsPatch, SettingsPayload } from './api.js'
-import { api } from './api.js'
+import { api, ApiError } from './api.js'
+import { readLastPaper, writeLastPaper } from './lastPaper.js'
 import { cleanUserPrompt } from './chatText.js'
 import { renderPageImages } from './pageImages.js'
 import { ResearchView } from './ResearchView.js'
@@ -278,9 +279,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const [count, setCount] = useState(0)
   const [listLoading, setListLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
+  const [papersLibrary, setPapersLibrary] = useState<string | null>(null)
+  const listRequest = useRef(0)
 
   /* detail */
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectionLibrary, setSelectionLibrary] = useState<string | null>(null)
   const [detail, setDetail] = useState<PaperDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -419,6 +423,23 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   /* Re-fetch when the configured folder changes (settings / first run). */
   const activeLibraryPath = status?.settings.libraryPath ?? ''
 
+  useEffect(() => {
+    if (!configured || !activeLibraryPath) {
+      setSelectionLibrary(null)
+      setSelectedId(null)
+      return
+    }
+    setSelectedId(readLastPaper(activeLibraryPath))
+    setSelectionLibrary(activeLibraryPath)
+  }, [configured, activeLibraryPath])
+
+  useEffect(() => {
+    if (configured && selectionLibrary === activeLibraryPath && selectedId !== null) {
+      writeLastPaper(activeLibraryPath, selectedId)
+    }
+  }, [configured, selectionLibrary, activeLibraryPath, selectedId])
+
+
   /* ── relation graph count (chip in the reader header) ────────────────── */
   const refreshRelations = useCallback(async (): Promise<void> => {
     if (!configured) {
@@ -542,6 +563,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   const loadPapers = useCallback(async (): Promise<void> => {
     if (!configured) return
+    const token = ++listRequest.current
     setListLoading(true)
     setListError(null)
     try {
@@ -551,12 +573,14 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         status: statusFilter,
         sort,
       })
+      if (token !== listRequest.current) return
       setPapers(result.papers)
+      setPapersLibrary(activeLibraryPath)
       setCount(result.count)
     } catch (error) {
-      setListError(errorText(error) || tRef.current('error.loadList'))
+      if (token === listRequest.current) setListError(errorText(error) || tRef.current('error.loadList'))
     } finally {
-      setListLoading(false)
+      if (token === listRequest.current) setListLoading(false)
     }
   }, [configured, activeLibraryPath, query, tagFilter, statusFilter, sort])
 
@@ -574,7 +598,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   /* ── detail ──────────────────────────────────────────────────────────── */
 
   useEffect(() => {
-    if (selectedId === null) {
+    if (selectedId === null || !configured || selectionLibrary !== activeLibraryPath) {
       setDetail(null)
       setDetailError(null)
       setDetailLoading(false)
@@ -607,7 +631,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           setDetail(paperResult.value)
           setExtractedText(paperResult.value.text)
         } else {
-          setDetailError(errorText(paperResult.reason) || tRef.current('error.loadDetail'))
+          if (paperResult.reason instanceof ApiError && paperResult.reason.status === 404) {
+            writeLastPaper(activeLibraryPath, null)
+            setPapers((previous) => previous.filter((paper) => paper.id !== selectedId))
+            setSelectedId(null)
+            return
+          } else setDetailError(errorText(paperResult.reason) || tRef.current('error.loadDetail'))
         }
         if (annotationsResult.status === 'fulfilled') {
           setAnnotationsDoc(annotationsResult.value)
@@ -645,14 +674,14 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     return () => {
       cancelled = true
     }
-  }, [selectedId, detailNonce, pushToast, setAnnotationsDoc, setCardsDoc])
+  }, [selectedId, detailNonce, pushToast, setAnnotationsDoc, setCardsDoc, configured, selectionLibrary, activeLibraryPath])
 
   /* Auto-select the first row when nothing is selected yet. */
   useEffect(() => {
-    if (!configured || nav !== 'library' || selectedId !== null) return
+    if (!configured || nav !== 'library' || selectedId !== null || selectionLibrary !== activeLibraryPath || papersLibrary !== activeLibraryPath) return
     const first = papers[0]
     if (first !== undefined) setSelectedId(first.id)
-  }, [configured, nav, papers, selectedId])
+  }, [configured, nav, papers, selectedId, selectionLibrary, papersLibrary, activeLibraryPath])
 
   const applyMeta = useCallback((meta: PaperMeta) => {
     setDetail((previous) => (previous !== null && previous.meta.id === meta.id ? { ...previous, meta } : previous))
@@ -1135,6 +1164,19 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     }
   }, [selectedId, applyMeta, pushToast, reportError, loadPapers])
 
+  const handleLlmEnrich = useCallback(async (): Promise<void> => {
+    if (!selectedId) return
+    setBusy('enrich')
+    try {
+      const result = await api.enrichLlm(selectedId)
+      applyMeta(result.meta)
+      if (result.enrich.message) pushToast('warn', result.enrich.message)
+      else pushToast('success', result.enrich.changed.length ? tRef.current('meta.enrichDone', { n: result.enrich.changed.length }) : tRef.current('meta.enrichNone'))
+      void loadPapers()
+    } catch (error) { reportError(error, 'error.enrich') }
+    finally { setBusy(null) }
+  }, [selectedId, applyMeta, loadPapers, pushToast, reportError])
+
   const handleExportBibtex = useCallback(async (): Promise<void> => {
     const paperId = selectedId
     if (paperId === null) return
@@ -1180,6 +1222,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     try {
       await api.deletePaper(paperId)
       pushToast('success', tRef.current('reader.delete.done'))
+      writeLastPaper(activeLibraryPath, null)
+      setPapers((previous) => previous.filter((paper) => paper.id !== paperId))
       setSelectedId(null)
       setDetail(null)
       setExtractedText(null)
@@ -1192,7 +1236,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     } finally {
       setBusy(null)
     }
-  }, [selectedId, pushToast, reportError, loadPapers, loadStatus])
+  }, [selectedId, activeLibraryPath, pushToast, reportError, loadPapers, loadStatus])
 
   const handleDownloadPdf = useCallback(async (): Promise<void> => {
     const paperId = selectedId
@@ -1215,7 +1259,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     } finally {
       setBusy(null)
     }
-  }, [selectedId, detail, pushToast, reportError, loadPapers])
+  }, [selectedId, activeLibraryPath, detail, pushToast, reportError, loadPapers])
 
   /* ── lazy text extraction ────────────────────────────────────────────── */
 
@@ -1598,10 +1642,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       let lastTitle = ''
       let lastDuplicated = false
       const importedIds: string[] = []
+      const enrichmentWarnings = new Set<string>()
       for (const file of pdfs) {
         try {
           const result = await api.importUpload(file, enrich)
           imported += 1
+          if (result.enrichmentWarning) enrichmentWarnings.add(result.enrichmentWarning)
           lastId = result.id
           lastTitle = result.meta.title
           lastDuplicated = result.duplicated
@@ -1624,6 +1670,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         } else {
           pushToast('warn', tRef.current('import.partial', { n: imported, failed }))
         }
+        for (const warning of enrichmentWarnings) pushToast('warn', warning)
         void loadStatus(true)
         maybeSyncCitations(importedIds)
       }
@@ -1652,6 +1699,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
           ? tRef.current('import.duplicated')
           : tRef.current('import.done', { title: result.meta.title }),
       )
+      if (result.enrichmentWarning) pushToast('warn', result.enrichmentWarning)
       void loadStatus(true)
     } catch (error) {
       setUrlError(errorText(error) || tRef.current('import.urlFailed'))
@@ -2283,6 +2331,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onAppendQuote={handleAppendQuote}
               onPatchMeta={handlePatchMeta}
               onEnrich={handleEnrich}
+              onLlmEnrich={handleLlmEnrich}
               onExportBibtex={handleExportBibtex}
               onReveal={handleReveal}
               onDelete={handleDelete}

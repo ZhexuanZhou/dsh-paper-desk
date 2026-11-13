@@ -101,6 +101,7 @@ export interface ImportResult {
   id: string
   meta: PaperMeta
   duplicated: boolean
+  enrichmentWarning?: string
 }
 
 export interface ConflictResolution {
@@ -203,8 +204,8 @@ export const api = {
   },
 
   /** Download and import a paper from an arXiv/PDF URL. */
-  importUrl(url: string): Promise<{ id: string; meta: PaperMeta; duplicated: boolean }> {
-    return requestJson<{ id: string; meta: PaperMeta; duplicated: boolean }>('/papers/url', {
+  importUrl(url: string): Promise<ImportResult> {
+    return requestJson<ImportResult>('/papers/url', {
       method: 'POST',
       body: JSON.stringify({ url }),
     })
@@ -263,6 +264,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     })
+  },
+
+  enrichLlm(id: string): Promise<{ meta: PaperMeta; enrich: { ok: boolean; changed: string[]; message?: string } }> {
+    return requestJson(`/enrich/llm${query({ id })}`, { method: 'POST' })
   },
 
   enrich(id: string): Promise<{ meta: PaperMeta; enrich: { ok: boolean; changed: string[]; source: string; message?: string } }> {

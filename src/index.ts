@@ -12,7 +12,7 @@ import { effectiveSettings } from './settings.js'
 import { registerTools, type ToolRegistryLike } from './tools.js'
 import { systemPromptText } from './prompt.js'
 import { readPackageJson } from './util.js'
-import { createLlmTagger } from './tagging.js'
+import { createLlmMetadataEnricher } from './importMetadata.js'
 
 export const name = 'paper-desk'
 
@@ -42,8 +42,8 @@ export function apply(ctx: Context, config: ConfigType): void {
   // Agent tools: `ctx.get` keeps the plugin usable in profiles without tools.
   const tools = ctx.get('tools') as unknown as ToolRegistryLike | undefined
   if (tools !== undefined) {
-    const autoTag = createLlmTagger(ctx, config)
-    ctx.effect(() => registerTools(tools, config, autoTag), 'paper-desk: paper tools')
+    const autoMetadata = createLlmMetadataEnricher(ctx)
+    ctx.effect(() => registerTools(tools, config, undefined, autoMetadata), 'paper-desk: paper tools')
   }
 
   // Teach every agent about the library when one is configured.

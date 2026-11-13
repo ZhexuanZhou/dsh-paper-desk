@@ -2,6 +2,8 @@
  * Editable metadata form for the reader's 信息 tab. The form is local until
  * saved; `App` performs the PATCH and refreshes both the reader and list rows.
  */
+import { reconcileMetaForm, toMetaForm } from './metaForm.js'
+import type { MetaForm } from './metaForm.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PaperMeta, PaperStatus } from '../src/types.js'
 import { IconExternal, IconRefresh, IconSave } from './icons.js'
@@ -11,19 +13,6 @@ import { Button, Field, Rating, Select, TextInput, Textarea } from './ui.js'
 type ToastKind = 'info' | 'success' | 'error' | 'warn'
 type ToastPush = (kind: ToastKind, message: string) => void
 
-interface MetaForm {
-  title: string
-  authors: string
-  year: string
-  venue: string
-  doi: string
-  url: string
-  abstract: string
-  keywords: string
-  tags: string
-  status: PaperStatus
-  rating: number
-}
 
 function splitList(value: string): string[] {
   return value
@@ -32,21 +21,6 @@ function splitList(value: string): string[] {
     .filter((part) => part.length > 0)
 }
 
-function toForm(meta: PaperMeta): MetaForm {
-  return {
-    title: meta.title,
-    authors: meta.authors.join(', '),
-    year: meta.year === null ? '' : String(meta.year),
-    venue: meta.venue,
-    doi: meta.doi,
-    url: meta.url,
-    abstract: meta.abstract,
-    keywords: meta.keywords.join(', '),
-    tags: meta.tags.join(', '),
-    status: meta.status,
-    rating: meta.rating,
-  }
-}
 
 export interface MetaEditorProps {
   meta: PaperMeta
@@ -55,52 +29,27 @@ export interface MetaEditorProps {
   busy: boolean
   onSave: (patch: Partial<PaperMeta>) => Promise<void>
   onEnrich: () => Promise<void>
+  onLlmEnrich: () => Promise<void>
   onToast: ToastPush
 }
 
 const STATUSES: readonly PaperStatus[] = ['unread', 'reading', 'read', 'archived']
 
-export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich, onToast }: MetaEditorProps) {
+export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich, onLlmEnrich, onToast }: MetaEditorProps) {
   const t = useT()
   const lang = useLang()
-  const baseline = useMemo(() => toForm(meta), [meta])
+  const baseline = useMemo(() => toMetaForm(meta), [meta])
   const [form, setForm] = useState<MetaForm>(baseline)
   const [yearError, setYearError] = useState<string | null>(null)
-  const metaIdRef = useRef(meta.id)
   const previousMetaRef = useRef(meta)
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(baseline), [form, baseline])
-  const dirtyRef = useRef(dirty)
-  dirtyRef.current = dirty
-
-  /* Adopt external changes only when the user has nothing unsaved. */
+  /* Compare to the previous server values; incoming results are not user edits. */
   useEffect(() => {
     const previous = previousMetaRef.current
     previousMetaRef.current = meta
-    const next = toForm(meta)
-    if (metaIdRef.current !== meta.id) {
-      metaIdRef.current = meta.id
-      setForm(next)
-      setYearError(null)
-      return
-    }
-    if (!dirtyRef.current) {
-      setForm(next)
-      setYearError(null)
-      return
-    }
-    // Header quick edits (status / rating) must reach the form even while other
-    // fields are dirty; only adopt when the form still holds the previous value.
-    setForm((current) => {
-      let patched = current
-      if (previous.status !== meta.status && current.status === previous.status) {
-        patched = { ...patched, status: next.status }
-      }
-      if (previous.rating !== meta.rating && current.rating === previous.rating) {
-        patched = { ...patched, rating: next.rating }
-      }
-      return patched
-    })
+    setForm((current) => reconcileMetaForm(current, previous, meta))
+    if (previous.id !== meta.id) setYearError(null)
   }, [meta])
 
   function update<K extends keyof MetaForm>(key: K, value: MetaForm[K]): void {
@@ -257,7 +206,11 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
         </Field>
       </div>
 
+      <p className="pd-field-hint">{t('meta.llmHint')}</p>
       <div className="pd-meta-actions">
+        <Button icon={<IconRefresh />} loading={busy} disabled={dirty || Boolean(meta.abstract.trim() && meta.keywords.length && meta.tags.length)} onClick={() => void onLlmEnrich()} title={dirty ? t('meta.llmSaveFirst') : t('meta.llmHint')}>
+          {t('meta.llmEnrich')}
+        </Button>
         <Button variant="primary" icon={<IconSave />} loading={busy} disabled={!dirty} onClick={() => void submit()}>
           {t('meta.save')}
         </Button>

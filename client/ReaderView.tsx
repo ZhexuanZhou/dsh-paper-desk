@@ -178,6 +178,7 @@ export interface ReaderViewProps {
   onAppendQuote: (text: string, page?: number) => Promise<NotesWriteResult>
   onPatchMeta: (patch: Partial<PaperMeta>, opts?: { silent?: boolean }) => Promise<void>
   onEnrich: () => Promise<void>
+  onLlmEnrich: () => Promise<void>
   onExportBibtex: () => Promise<void>
   onReveal: () => Promise<void>
   onDelete: () => Promise<void>
@@ -419,6 +420,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
     onAppendQuote,
     onPatchMeta,
     onEnrich,
+    onLlmEnrich,
     onExportBibtex,
     onReveal,
     onDelete,
@@ -1562,6 +1564,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
             busy={busy !== null}
             onSave={(patch) => onPatchMeta(patch)}
             onEnrich={onEnrich}
+            onLlmEnrich={onLlmEnrich}
             onToast={onToast}
           />
         </div>

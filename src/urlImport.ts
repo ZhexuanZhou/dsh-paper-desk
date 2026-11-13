@@ -9,6 +9,7 @@
  * size, PDF magic) because the URL comes from the user and the Host is a local
  * process.
  */
+import type { AutoMetadataFn } from './importMetadata.js'
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import { createPaper } from './library.js'
@@ -119,13 +120,14 @@ export interface UrlImportOptions {
   device?: string
   enrich: boolean
   autoTag?: AutoTagFn
+  autoMetadata?: AutoMetadataFn
 }
 
 export async function importPaperFromUrl(
   root: string,
   raw: string,
   options: UrlImportOptions,
-): Promise<{ id: string; meta: PaperMeta; duplicated: boolean }> {
+): Promise<{ id: string; meta: PaperMeta; duplicated: boolean; enrichmentWarning?: string }> {
   const trimmed = raw.trim()
   if (trimmed === '') throw new Error('请输入链接')
 
@@ -182,6 +184,7 @@ export async function importPaperFromUrl(
     sourceUrl,
     enrich: options.enrich,
     autoTag: options.autoTag,
+    autoMetadata: options.autoMetadata,
     language: options.language,
     device: options.device,
   })
