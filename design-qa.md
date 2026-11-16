@@ -90,7 +90,7 @@ viewport1720×1080，截图API clip{x:280,y:0,width:1440,height:1080}直接输�
 
 ## 2026-11-16 · 0.4.8 自然语言Agent与回答选区
 
-final result: passed（6项隔离Web验收；本地Harness重载待今日暂停授权，尚未执行）
+final result: passed（6项隔离Web验收；本地Harness已于今日授权暂停后通过插件管理器关闭/开启完成更新）
 
 最终client SHA256 `abf7124d887eb459bec665c6ae95d0e1ff43562aa39d1cab4ab0dcaba8d5c36f`，Host tools `210bb8f5c1bdb6dd800000eeeb0906c708b6dd2bac7073cf903d069bb0c10085`。沿用用户选1视觉方向，唯一媒体owner亲检真实UI：任务下拉/空态固定任务及回答保存菜单移除；紧凑问题可展开/收起，连续推理与工具默认单条折叠过程；回答选区改为输入框上方内联区，600×900按钮可达，不覆盖正文。最终Esc补验：第一次仅关闭选区并保留AI，第二次正常关闭AI。无未解决P0/P1/P2。
 
@@ -99,3 +99,5 @@ final result: passed（6项隔离Web验收；本地Harness重载待今日暂停�
 主agent提供188项自动化通过补证；其中工具真实落盘18项、草稿25项、过程分组7项。自动化与真实模型证据分开记录，模型未执行update，旧task兼容未人为注入storage。此前d557/0cdd/a9e7构建中未受后续文案或Esc修复影响的证据保留各自来源，最终键盘行为使用abf7实测。
 
 两张公共JPEG候选仅独立合成demo与本轮真实模型输出，已逐张亲检隐私与布局；裁除整个宿主个人侧栏和Chrome地址栏，无姓名头像、业务对话、本地路径或鉴权URL。自然语言图直接区域捕获；选区图由原始真实捕获裁切并JPEG重编码，未改变UI内容。公共候选及逐图来源见私有round `20261116-natural-language-agent/results/public-candidates-manifest.json`。本轮6项各含截图与文本，共12份required evidence；真实库未写入。
+
+0.4.8原生补充：今日明确暂停授权后，插件管理器on→off→on完成，无整应用重启；回Library观察界面/后台均v0.4.8、自然语言输入及复制Markdown，无旧task/回答保存菜单。未发模型或编辑真实库/对话。原生UI未单独展示create/update schema，不伪称工具执行复验；沿用隔离真实模型与工具证据。补充AX记录位于本轮results/native-reload.txt，Web原6项来源与12份required evidence不变。
