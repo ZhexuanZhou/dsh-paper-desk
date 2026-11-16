@@ -4,7 +4,7 @@ PaperDesk 是 DeepSeek Harness 的论文库插件。导入 PDF，在同一工作
 
 论文库直接保存在你选择的目录中：PDF、Markdown 笔记和 JSON 元数据都是普通文件，可以交给自己的网盘客户端同步。
 
-**当前源码版本：0.5.0** · [本版更新说明](docs/RELEASE-v0.5.0.md) · [安装与发布说明](docs/PUBLISHING.md)
+**当前源码版本：0.5.1** · [本版更新说明](docs/RELEASE-v0.5.1.md) · [安装与发布说明](docs/PUBLISHING.md)
 
 ## 功能概览
 
@@ -55,7 +55,7 @@ dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 
 ### 从 GitHub Release 安装
 
-从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前正式 Release 为 0.4.7；0.5.0 可按上方源码步骤使用。命令行维护的 profile 可安装 0.4.7：
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前正式 Release 为 0.4.7；0.5.1 可按上方源码步骤使用。命令行维护的 profile 可安装 0.4.7：
 
 ```sh
 dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.4.7/dsh-paper-desk-0.4.7.tgz
@@ -92,7 +92,7 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 - **阅读回答**：支持 Markdown、公式、列表、表格和代码；推理与工具过程可展开查看。生成中可以停止，向上阅读时不会强行跟随滚动，可点击“跳到最新”返回。
 - **核对引用**：每条回答独立列出引用页面。点击后查看 PDF 原页或提取文本，再跳回阅读器。页码来自回答中的引用标记，有页码不代表结论已核实。
 - **复制与记录**：“复制 Markdown”保留回答的原始公式和格式。需要保存时直接输入“将这段结论记入笔记”或“保存为卡片”，Agent 写入后会说明结果。
-- **回答批注**：选中回答文字后，在面板内查看引用、写问题或评论。可直接提问、保存批注、取消或按 Esc 关闭；已有批注可重新编辑或统一提问。
+- **回答批注**：划词只保留正常选区，不自动打开编辑区。需要操作时，选中回答文字，再点击输入框下方的“批注选中内容”，查看引用、写问题或评论。可直接提问、保存批注、取消或按 Esc 关闭；已有批注可重新编辑或统一提问。
 
 原页以最长边 2000px 的 JPEG 发送给当前会话模型。普通文字提问不自动附图；选区提问会附上对应原页。图片处理或模型请求失败会提示错误，不静默改成纯文字请求。
 

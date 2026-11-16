@@ -116,3 +116,12 @@ final result: passed
 今日明确暂停授权后原生插件管理器off/on更新，界面与后台均v0.5.0；只读确认新会话管理和版本历史入口。未发模型、编辑或恢复真实内容。Web5项/10份required evidence，native作为补充观察，不替代隔离写入证据。
 
 主agent最终自动化共259项（44历史编辑+8预览+18工具+33smoke+67regression+57Markdown+25composer+7display），另typecheck/build通过；不将这些计为真实模型。原生未独立检查工具schema或执行写工具，仅版本及入口只读观察。
+
+
+## 2026-11-16 · 0.5.1 显式回答批注
+
+final result: passed
+
+client `e5fa63cf5c8b54b39d1cf013973c2d68fb8465c983133ebf4b6873bba2c80b0a`。两项隔离真实操作通过：鼠标选词和Shift方向键扩展只保留原生选区，不开编辑区；面板/输入框尺寸和滚动均不变。固定footer“批注选中内容”按钮占原操作行，明确点击才打开正确引用。取消、实际保存、Esc、取消选区/跨回答禁用均实测；保存为浏览器localStorage，论文notes/cards/chats/PDF文件未改。复制Markdown与原回答字节一致；本轮回答无TeX，不伪称新测公式。无模型调用，不重跑历史编辑或PDF选择。唯一媒体owner已亲检两张真实JPEG，无未解决P0/P1/P2。
+
+主agent typecheck/build与82项自动化（25composer+57 delivered Markdown）补证通过。native fresh guard实际已显示界面v0.5.1和固定批注按钮，后台报告缓存v0.5.0如实保留；Host逻辑未改，未额外off/on或修改真实内容。2/2项、4份required evidence，私有round `20261116-z-selection-followup-0.5.1`。

@@ -747,6 +747,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
       noteDelete: t('ai.noteDelete'),
       noteQuoteHint: t('ai.noteQuoteHint'),
       selectionTitle: t('ai.selectionTitle'),
+      annotateSelection: t('ai.annotateSelection'),
       selectionExplain: t('ai.selectionExplain'),
       processTitle: t('ai.processTitle'),
       processTools: t('ai.processTools'),

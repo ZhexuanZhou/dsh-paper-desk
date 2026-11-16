@@ -70,6 +70,7 @@ export interface AiPanelLabels {
   noteDelete: string
   noteQuoteHint: string
   selectionTitle: string
+  annotateSelection: string
   selectionExplain: string
   processTitle: string
   processTools: string
@@ -255,6 +256,7 @@ export function AiPanel(props: AiPanelProps) {
   const [notes, setNotes] = useState<AnswerNote[]>([])
   const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null)
   const selectionRangeRef = useRef<Range | null>(null)
+  const [answerSelection, setAnswerSelection] = useState<{ quote: string; rowId: string; range: Range } | null>(null)
 
   useLayoutEffect(() => {
     const input = inputRef.current
@@ -526,30 +528,33 @@ export function AiPanel(props: AiPanelProps) {
     window.getSelection()?.removeAllRanges()
   }
 
-  const handleAnswerSelection = (event: React.SyntheticEvent<HTMLDivElement>): void => {
-    if (noteDraft?.comment.trim()) return // Keep a comment in progress when the reader selects elsewhere.
-    const target = event.target
-    if (target instanceof Element && target.closest('textarea, input, button, .pd-ai-selection-editor, .pd-ai-notes-tray') !== null) return
-    window.setTimeout(() => {
-      const dom = window.getSelection()
-      if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) return
-      const range = dom.getRangeAt(0)
-      const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
-        ? (range.startContainer as Element)
-        : range.startContainer.parentElement
-      const host = startElement?.closest<HTMLElement>('.pd-ai-assistant') ?? null
-      const panel = panelRef.current
-      if (host === null || panel === null || !panel.contains(host)) return
-      const endElement = range.endContainer.nodeType === Node.ELEMENT_NODE
-        ? range.endContainer as Element : range.endContainer.parentElement
-      if (endElement?.closest('.pd-ai-assistant') !== host) return
-      const quote = dom.toString().trim()
-      if (quote.length < 2) return
-      const row = host.closest<HTMLElement>('[data-ai-row-id]')
-      selectionRangeRef.current = range.cloneRange()
-      setFollow(false)
-      setNoteDraft({ quote, rowId: row?.dataset['aiRowId'] ?? '', comment: '', noteId: null })
-    }, 0)
+  useEffect(() => {
+    setAnswerSelection(null)
+    const capture = (): void => {
+      const selection = window.getSelection()
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) { setAnswerSelection(null); return }
+      const range = selection.getRangeAt(0)
+      const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement
+      const end = range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer as Element : range.endContainer.parentElement
+      const host = start?.closest<HTMLElement>('.pd-ai-assistant')
+      const row = host?.closest<HTMLElement>('[data-ai-row-id]')
+      const quote = selection.toString().trim()
+      if (!host || !panelRef.current?.contains(host) || end?.closest('.pd-ai-assistant') !== host || !row?.dataset['aiRowId'] || quote.length < 2) {
+        setAnswerSelection(null); return
+      }
+      // Reading selections never open UI, move focus, or change auto-follow.
+      setAnswerSelection({ quote, rowId: row.dataset['aiRowId'], range: range.cloneRange() })
+    }
+    document.addEventListener('selectionchange', capture)
+    return () => document.removeEventListener('selectionchange', capture)
+  }, [draftStoreKey])
+
+  const annotateSelectedAnswer = (rowId: string): void => {
+    if (noteDraft || !answerSelection || answerSelection.rowId !== rowId || !answerSelection.range.startContainer.isConnected || !panelRef.current?.contains(answerSelection.range.startContainer)) return
+    selectionRangeRef.current = answerSelection.range.cloneRange()
+    setNoteDraft({ quote: answerSelection.quote, rowId, comment: '', noteId: null })
+    setAnswerSelection(null)
+    setFollow(false)
   }
 
   const askWithAllNotes = (): void => {
@@ -643,6 +648,7 @@ export function AiPanel(props: AiPanelProps) {
     <div className="pd-ai-row-actions">
       <Button size="sm" variant="ghost" icon={<IconCopy size={14} />} onClick={() => void onCopy(row.text)}>{labels.copy}</Button>
 
+
     </div>
   )
 
@@ -721,8 +727,6 @@ export function AiPanel(props: AiPanelProps) {
       role="region"
       aria-label={labels.title}
       style={{ '--pd-ai-font-scale': zoom } as CSSProperties}
-      onMouseUp={handleAnswerSelection}
-      onKeyUp={(event) => { if (event.key === 'Shift' || event.key.startsWith('Arrow')) handleAnswerSelection(event) }}
     >
       {props.renderConversationBar?.([
         { id: 'smaller', label: labels.smallerText, disabled: zoom <= 0.85, onSelect: () => changeZoom(-0.05) },
@@ -929,6 +933,10 @@ export function AiPanel(props: AiPanelProps) {
         <div className="pd-ai-compose-actions">
           <IconButton label={labels.imageAttach} disabled={disabled || props.imagesAvailable === false} onClick={editPages}><IconPlus size={17} /></IconButton>
 
+          <Button size="sm" variant="ghost" className="pd-ai-annotate-selection" icon={<IconNote size={14} />}
+            disabled={noteDraft !== null || answerSelection === null}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => { if (answerSelection) annotateSelectedAnswer(answerSelection.rowId) }}>{labels.annotateSelection}</Button>
           <span className="pd-ai-send-hint">{labels.sendHint}</span>
           {running || sending ? <Button size="sm" variant="ghost" disabled={sending && !running} onClick={() => void onStop()}>{labels.stop}</Button> : <Button size="sm" variant="primary" disabled={disabled || editingPages || pageError || draft.trim() === ''} onClick={() => void send()}>{labels.send}</Button>}
         </div>
