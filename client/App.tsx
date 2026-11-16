@@ -6,6 +6,7 @@
  * (file picker + drag & drop), all API calls (through `client/api.ts`) and the
  * toast stream. Views stay presentational and receive data + callbacks.
  */
+import { readerAgentInstruction } from '../src/prompt.js'
 import { CLIENT_VERSION } from './version.js'
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, ReactNode } from 'react'
@@ -1426,6 +1427,25 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     }
   }, [ai, selectedId, activeChatId, saveActiveChat])
 
+  useEffect(() => {
+    if (selectedId === null || !configured) return
+    const paperId = selectedId
+    let cancelled = false
+    let wasRunning = ai.getSnapshot().status === 'running'
+    const unsubscribe = ai.subscribe(() => {
+      const running = ai.getSnapshot().status === 'running'
+      const finished = wasRunning && !running
+      wasRunning = running
+      if (!finished) return
+      void Promise.allSettled([api.paper(paperId), api.cards(paperId)]).then(([paper, cards]) => {
+        if (cancelled || selectedIdRef.current !== paperId) return
+        if (paper.status === 'fulfilled') setDetail(paper.value)
+        if (cards.status === 'fulfilled') setCardsDoc(cards.value)
+      })
+    })
+    return () => { cancelled = true; unsubscribe() }
+  }, [ai, selectedId, configured, activeLibraryPath])
+
   const selectChat = useCallback(
     (chatId: string): void => {
       if (selectedId === null || activeChatId === null || chatId === activeChatId) return
@@ -1534,7 +1554,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         const emptyThread = ai.getSnapshot().rows.length === 0
         const title = detail?.meta.title ?? paperId
         const history = activeChatRef.current?.messages ?? []
-        const parts: string[] = []
+        const parts: string[] = [readerAgentInstruction(lang)]
         if (emptyThread) parts.push(`当前论文：《${title}》（id: ${paperId}）。`)
         if (emptyThread && history.length > 0) {
           const transcript = history
@@ -1558,7 +1578,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         return false
       }
     },
-    [selectedId, ai, ensureAiChat, pushToast, reportError],
+    [selectedId, ai, ensureAiChat, pushToast, reportError, lang],
   )
 
   /** Start a clean AI thread for the selected paper (drops a stale/archived one). */

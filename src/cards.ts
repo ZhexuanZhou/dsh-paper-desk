@@ -439,6 +439,8 @@ function newCardId(items: readonly NoteCard[]): string {
 
 type CardMutation = (doc: CardsDocument) => CardsDocument
 
+const pendingMutations = new Map<string, Promise<unknown>>()
+
 /**
  * Apply `mutation` to the current document and persist it atomically. The file
  * is re-read once before writing so a concurrent additive change is re-applied
@@ -449,12 +451,19 @@ async function mutateDocument(
   paperId: string,
   mutation: CardMutation,
 ): Promise<CardsDocument> {
-  const first = await loadDocument(root, paperId)
-  const candidate = mutation(first.doc)
-  const second = await loadDocument(root, paperId)
-  const result = second.raw === first.raw ? candidate : mutation(second.doc)
-  await writeJsonFile(cardsPath(root, paperId), result)
-  return result
+  const key = cardsPath(root, paperId)
+  const previous = pendingMutations.get(key) ?? Promise.resolve()
+  const work = previous.catch(() => {}).then(async () => {
+    const first = await loadDocument(root, paperId)
+    const candidate = mutation(first.doc)
+    const second = await loadDocument(root, paperId)
+    const result = second.raw === first.raw ? candidate : mutation(second.doc)
+    await writeJsonFile(cardsPath(root, paperId), result)
+    return result
+  })
+  pendingMutations.set(key, work)
+  try { return await work }
+  finally { if (pendingMutations.get(key) === work) pendingMutations.delete(key) }
 }
 
 /**
@@ -490,6 +499,7 @@ export async function updateCard(
   paperId: string,
   cardId: string,
   patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>,
+  expectedUpdatedAt?: string,
 ): Promise<CardsDocument> {
   assertPaperId(paperId)
   const id = assertCardId(cardId)
@@ -508,7 +518,10 @@ export async function updateCard(
     const index = doc.items.findIndex((item) => item.id === id)
     const current = index >= 0 ? doc.items[index] : undefined
     if (current === undefined) throw notFound(id)
-    const now = nowIso()
+    if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) {
+      throw fail('card changed since it was read; read it again before updating', 409)
+    }
+    const now = new Date(Math.max(Date.now(), (Date.parse(current.updatedAt) || 0) + 1)).toISOString()
     const next: NoteCard = {
       ...current,
       title: update.title !== undefined ? update.title : current.title,

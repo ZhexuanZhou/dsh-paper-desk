@@ -1658,27 +1658,6 @@ export const CSS = `
   cursor: pointer;
 }
 .pd-ai-note-delete:hover { color: var(--dsw-alias-state-error-primary, #d44); }
-.pd-ai-note-popup {
-  position: fixed;
-  z-index: 30;
-  width: 280px;
-  padding: 9px;
-  border: 1px solid ${B1};
-  border-radius: 9px;
-  background: ${L1};
-  box-shadow: var(--dsw-shadow-lv2, 0 12px 32px rgba(0,0,0,.2));
-}
-.pd-ai-note-popup-quote {
-  max-height: 74px;
-  overflow: auto;
-  color: ${FG_2};
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-.pd-ai-note-popup-comment { margin-top: 6px; min-height: 62px; font-size: 11.5px; resize: vertical; }
-.pd-ai-note-popup-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 6px; }
-.pd-ai-note-popup-actions .pd-ai-note-delete { margin-right: auto; font-size: 11px; }
 .pd-ai-notes-tray {
   display: flex;
   align-items: center;

@@ -24,30 +24,37 @@ try {
   const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) }
   const keyA = 'paperdesk:ai-draft:paper-a:chat-a'
   const keyB = 'paperdesk:ai-draft:paper-a:chat-b'
-  const options = { task: 'method', pages: [4, 6] }
+  const options = { pages: [4, 6] }
   writeComposerOptions(storage, keyA, options)
-  check('switching chats does not carry page attachments or a task', readComposerOptions(storage, keyB, 17), { task: null, pages: [] })
+  values.set(`${keyA}:options`, JSON.stringify({ task: 'method', pages: [4, 6] }))
+  check('legacy task is ignored while explicit pages are preserved', readComposerOptions(storage, keyA, 17), options)
+  writeComposerOptions(storage, keyA, options)
+  check('switching chats does not carry page attachments or a task', readComposerOptions(storage, keyB, 17), { pages: [] })
   check('returning to the chat restores its own explicit attachments', readComposerOptions(storage, keyA, 17), options)
-  check('restoring after a smaller document count discards invalid attachments', readComposerOptions(storage, keyA, 5), { task: 'method', pages: [] })
+  check('restoring after a smaller document count discards invalid attachments', readComposerOptions(storage, keyA, 5), { pages: [] })
   values.set(`${keyB}:options`, JSON.stringify({ task: 'unknown', pages: ['4'] }))
-  check('malformed options do not create implicit attachments', readComposerOptions(storage, keyB, 17), { task: null, pages: [] })
+  check('malformed options do not create implicit attachments', readComposerOptions(storage, keyB, 17), { pages: [] })
   values.set(`${keyB}:options`, '{broken')
-  check('broken stored JSON is recoverable', readComposerOptions(storage, keyB, 17), { task: null, pages: [] })
+  check('broken stored JSON is recoverable', readComposerOptions(storage, keyB, 17), { pages: [] })
 
+  values.set(`${keyA}:options`, JSON.stringify({ task: 'method', pages: options.pages }))
+  clearAcceptedDraft(storage, keyA, 'text', options)
+  check('sending a legacy task draft clears its sent attachments', storage.getItem(`${keyA}:options`), null)
+  writeComposerOptions(storage, keyA, options)
   storage.setItem(keyA, 'sent question')
   storage.setItem(keyB, 'a different draft')
   clearAcceptedDraft(storage, keyA, 'sent question', options)
   check('acceptance clears only the sent chat text and attachments', [storage.getItem(keyA), storage.getItem(`${keyA}:options`), storage.getItem(keyB)], [null, null, 'a different draft'])
   storage.setItem(keyA, 'a newer unsent question')
-  writeComposerOptions(storage, keyA, { task: null, pages: [9] })
+  writeComposerOptions(storage, keyA, { pages: [9] })
   clearAcceptedDraft(storage, keyA, 'sent question', options)
-  check('a late acceptance preserves newer text and attachment choices', [storage.getItem(keyA), readComposerOptions(storage, keyA, 17)], ['a newer unsent question', { task: null, pages: [9] }])
-  writeComposerOptions(storage, keyA, { task: null, pages: [] })
+  check('a late acceptance preserves newer text and attachment choices', [storage.getItem(keyA), readComposerOptions(storage, keyA, 17)], ['a newer unsent question', { pages: [9] }])
+  writeComposerOptions(storage, keyA, { pages: [] })
   check('removing the last attachment clears empty options', storage.getItem(`${keyA}:options`), null)
 
   const denied = { getItem: () => { throw Error('denied') }, setItem: () => { throw Error('denied') }, removeItem: () => { throw Error('denied') } }
-  check('unavailable storage falls back to an ordinary text question', readComposerOptions(denied, keyA, 17), { task: null, pages: [] })
+  check('unavailable storage falls back to an ordinary text question', readComposerOptions(denied, keyA, 17), { pages: [] })
   assert.doesNotThrow(() => { writeComposerOptions(denied, keyA, options); clearAcceptedDraft(denied, keyA, 'text', options) }); checks++
-  check('no chat scope never reads another chat draft', readComposerOptions(storage, null, 17), { task: null, pages: [] })
+  check('no chat scope never reads another chat draft', readComposerOptions(storage, null, 17), { pages: [] })
   console.log(`${checks} AI composer checks passed`)
 } finally { await rm(root, { recursive: true, force: true }) }

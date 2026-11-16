@@ -68,6 +68,13 @@ function isZh(settings: EffectiveSettings): boolean {
   return settings.language !== 'en'
 }
 
+/** Shared policy for natural-language reader requests, including existing sessions. */
+export function readerAgentInstruction(language: string): string {
+  return language === 'en'
+    ? 'Follow the user’s actual request. Summarizing/explaining/reviewing alone is read-only. An explicit request to record notes or save cards authorizes that operation: read existing notes/cards first, then call paper_note_append or paper_card_create/paper_card_update. Never claim a write without a successful tool result; report failures and partial progress. Use paper_cards with limit 200 to read all cards for the current paper, including IDs and updatedAt; pass expectedUpdatedAt for updates. “Organize all cards” defaults to the current paper: read all cards and save a synthesis card preserving the originals and source page references. Update existing cards only when requested; do not delete originals or overwrite notes. Use explicitly requested cross-paper scope when given. Cite sources, distinguish inferences, and summarize what was saved and where.'
+    : '根据用户的实际输入执行任务。仅总结、解释、审阅时只读。用户明确说记入笔记、记录笔记、保存卡片时，已授权该操作：先读已有笔记/卡片，再调用 paper_note_append 或 paper_card_create/paper_card_update；不要再让用户去界面保存。只有工具成功后才能声称已保存；失败或部分完成要明确说明。用 paper_cards 的 limit 200 读取当前论文全部卡片及 ID、updatedAt，更新时传 expectedUpdatedAt。“整理所有卡片”默认指当前论文：先读全量卡片，保留原卡片与来源页码，创建综合整理卡片；只有明确要求修改原卡片才逐项更新，不删除原卡片或覆盖笔记。用户明确指定跨论文范围时按指定范围处理。引用证据、区分推断，完成后简要说明保存了什么、保存在哪里。'
+}
+
 /**
  * System-prompt section describing the library. Returns '' when the library is
  * not configured, so an unconfigured install adds no prompt noise.
@@ -83,7 +90,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
       '- 回答时尽量标注页码或图表编号；不确定的内容明确说明是推断。',
       '- 用户可能已在 PDF 上做高亮/划线/提问：先用 `paper_annotations` 读取这些标注（含页码、原文、批注），回答时优先回应用户标记过的内容。',
       '- 论文库里还有用户整理的「笔记卡片」与「论文关联图谱」：需要复用已有结论时先读 `paper_cards`；做跨论文分析或找相关工作时用 `paper_relations` 了解已有关系。',
-      '- 普通讨论只读。只有用户明确要求保存笔记时，才用 `paper_note_append` 追加，并在回复中说明已记录；不要自行把推断保存成已确认结论。',
+      readerAgentInstruction('zh'),
       '- 需要新论文入库时用 `paper_add` 传入本机绝对路径；不要直接改写论文库里的文件结构。',
       '- 该目录可能通过网盘同步，不要做批量重命名或移动目录。',
     ].join('\n')
@@ -95,7 +102,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
     '- Cite page numbers or figure/table numbers; mark anything uncertain as inference.',
     '- The user may have highlighted/underlined/asked questions on the PDF: read them with `paper_annotations` (page, quote, comment) and prefer addressing what the user already marked.',
     '- The library also has distilled note cards (`paper_cards`) and a paper relation graph (`paper_relations`): reuse the user\'s earlier conclusions and check existing relations for cross-paper analysis.',
-    '- Ordinary discussion is read-only. Only use `paper_note_append` when the user explicitly asks to save notes; distinguish inferences from verified conclusions.',
+    readerAgentInstruction('en'),
     '- Import new papers with `paper_add` and an absolute Host path; do not restructure the library directories.',
     '- The directory may be synced through a cloud drive: avoid bulk renames or moves.',
   ].join('\n')
@@ -179,7 +186,7 @@ export function assistPayload(
         `任务：${task}`,
         instruction,
         '',
-        '阅读顺序建议：先 `paper_info`，再 `paper_text` 读第 1 页（标题/摘要/引言），然后按需读取方法与实验所在页。普通讨论只读，不自动保存笔记，用户会在界面决定是否保存。',
+        '阅读顺序建议：先 `paper_info`，再 `paper_text` 读第 1 页（标题/摘要/引言），然后按需读取方法与实验所在页。根据用户输入决定是否保存；仅总结保持只读，明确要求记录时使用写入工具。',
         '输出要求：答案会直接显示在论文阅读器的 AI 侧栏里。请用 Markdown（标题/列表/公式），先给结论；引用原文时标注页码，格式为 p.N（如 p.3）；不要在最终答案里复述工具调用过程。',
         extra.length > 0 ? `补充要求：${extra}` : '',
       ]
@@ -198,7 +205,7 @@ export function assistPayload(
         `Task: ${task}`,
         instruction,
         '',
-        'Suggested reading order: `paper_info`, then `paper_text` for page 1, then the method and experiment pages as needed. Discussion is read-only; the user decides whether to save notes in the UI.',
+        'Suggested reading order: `paper_info`, then `paper_text` for page 1, then the method and experiment pages as needed. Follow the user’s request: discussion is read-only, explicit saving requests use the write tools.',
         'Output: your answer is rendered in the PaperDesk AI side panel. Use Markdown (headings/lists/equations), lead with the conclusion, cite pages as p.N (e.g. p.3), and keep tool-call narration out of the final answer.',
         extra.length > 0 ? `Additional requirements: ${extra}` : '',
       ]

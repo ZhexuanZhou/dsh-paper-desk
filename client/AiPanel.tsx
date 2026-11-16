@@ -8,14 +8,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import type { AssistTask } from '../src/types.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
-import type { CardContextTurn } from '../src/types.js'
+import { groupProcessingRows } from './aiDisplay.js'
 import { cleanUserPrompt } from './chatText.js'
 import { Markdown } from './markdown.js'
-import { Button, IconButton, Menu, Spinner } from './ui.js'
+import { Button, IconButton, Spinner } from './ui.js'
 import type { MenuItemDef } from './ui.js'
 import { IconClose, IconCopy, IconNote, IconPlus, IconSpark } from './icons.js'
-import { clearAcceptedDraft, parseImagePages, QUICK_TASKS, readComposerOptions, writeComposerOptions } from './aiComposer.js'
-import type { ComposerOptions, QuickTask } from './aiComposer.js'
+import { clearAcceptedDraft, parseImagePages, readComposerOptions, writeComposerOptions } from './aiComposer.js'
+import type { ComposerOptions } from './aiComposer.js'
 
 /** Every string the panel renders (owned by i18n, zh + en). */
 export interface AiPanelLabels {
@@ -23,8 +23,6 @@ export interface AiPanelLabels {
   emptyHint: string
   emptyTitle: string
   you: string
-  quickTasks: string
-  freeQuestion: string
   smallerText: string
   largerText: string
   citedPages: string
@@ -71,7 +69,13 @@ export interface AiPanelLabels {
   noteAskAll: string
   noteDelete: string
   noteQuoteHint: string
-  taskLabels: Readonly<Record<'summary' | 'method' | 'critique' | 'related' | 'questions', string>>
+  selectionTitle: string
+  selectionExplain: string
+  processTitle: string
+  processTools: string
+  processThoughts: string
+  expandQuestion: string
+  collapseQuestion: string
 }
 
 export interface AiPanelProps {
@@ -87,7 +91,6 @@ export interface AiPanelProps {
   history: readonly { role: 'user' | 'assistant'; text: string }[]
   busyTask: AssistTask | null
   labels: AiPanelLabels
-  onRunTask: (task: AssistTask, extra?: string, pages?: readonly number[]) => boolean | Promise<boolean>
   renderConversationBar?: (actions: readonly MenuItemDef[]) => ReactNode
   currentPage?: number
   pageCount?: number | null
@@ -96,17 +99,10 @@ export interface AiPanelProps {
   onAsk: (question: string, pages?: readonly number[]) => boolean | Promise<boolean>
   onStop: () => void | Promise<void>
   onReset: () => void | Promise<void>
-  onSaveToNotes: (text: string) => void | Promise<void>
   onCopy: (text: string) => void | Promise<void>
   onOpenInSession: () => void | Promise<void>
   onJumpPage: (page: number) => void
   onSourcePage?: (page: number) => void
-  /** Per-answer 「保存为卡片」 action (omitted → no per-message card button). */
-  onCreateCard?: (
-    row: AiRow,
-    availableTurns?: readonly CardContextTurn[],
-    defaultContext?: readonly CardContextTurn[],
-  ) => void
 }
 
 /** Distinct cited pages from the assistant text, capped at 8. */
@@ -151,8 +147,6 @@ interface AnswerNote {
 interface NoteDraft {
   quote: string
   rowId: string
-  x: number
-  y: number
   comment: string
   noteId: string | null
 }
@@ -204,8 +198,18 @@ function findQuoteRange(root: HTMLElement, quote: string): Range | null {
   return range
 }
 
+function UserQuestion({ text, label, expand, collapse }: { text: string; label: string; expand: string; collapse: string }): ReactElement {
+  const body = cleanUserPrompt(text)
+  return <div className="pd-ai-user">
+    <span className="pd-ai-user-label">{label}</span>
+    {body.length > 100 || body.split('\n').length > 3
+      ? <details className="pd-ai-question"><summary><span>{body}</span><small><span className="pd-ai-question-expand">{expand}</span><span className="pd-ai-question-collapse">{collapse}</span></small></summary><p>{body}</p></details>
+      : <p className="pd-ai-question-text">{body}</p>}
+  </div>
+}
+
 export function AiPanel(props: AiPanelProps) {
-  const { ai, history, labels, onAsk, onReset, onStop, onSaveToNotes, onCopy, onOpenInSession, onJumpPage, onSourcePage, onCreateCard } = props
+  const { ai, history, labels, onAsk, onReset, onStop, onCopy, onOpenInSession, onJumpPage, onSourcePage } = props
 
   const subscribe = useCallback((listener: () => void) => ai.subscribe(listener), [ai])
   const getSnapshot = useCallback(() => ai.getSnapshot(), [ai])
@@ -224,13 +228,12 @@ export function AiPanel(props: AiPanelProps) {
   const draftStoreKey = draftKey === null ? null : `paperdesk:ai-draft:${draftKey}`
   const scopeRef = useRef(draftStoreKey)
   scopeRef.current = draftStoreKey
-  const [options, setOptions] = useState<ComposerOptions>({ task: null, pages: [] })
+  const [options, setOptions] = useState<ComposerOptions>({ pages: [] })
   const [editingPages, setEditingPages] = useState(false)
   const [pageInput, setPageInput] = useState('')
   const [pageError, setPageError] = useState(false)
   const composingRef = useRef(false)
   const [noResponse, setNoResponse] = useState(false)
-  const [showTools, setShowTools] = useState(false)
   const [zoom, setZoom] = useState<number>(() => {
     try {
       const raw = localStorage.getItem('paperdesk:ai-zoom')
@@ -250,6 +253,7 @@ export function AiPanel(props: AiPanelProps) {
   const noteStoreKey = `paperdesk:ai-notes:${noteScope}`
   const [notes, setNotes] = useState<AnswerNote[]>([])
   const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null)
+  const selectionRangeRef = useRef<Range | null>(null)
 
   const rows = snapshot.rows
   const running = snapshot.status === 'running'
@@ -264,30 +268,6 @@ export function AiPanel(props: AiPanelProps) {
     return null
   }, [rows])
 
-  const conversationTurns = useMemo<CardContextTurn[]>(() => {
-    const out: CardContextTurn[] = []
-    if (rows.length > 0) {
-      for (const row of rows) {
-        if (row.kind === 'user' || row.kind === 'assistant') {
-          out.push({ id: row.id, role: row.kind, text: row.text })
-        }
-      }
-    } else {
-      history.forEach((message, index) => {
-        out.push({ id: `history-${index}`, role: message.role, text: message.text })
-      })
-    }
-    return out
-  }, [rows, history])
-
-  const contextForRow = (row: AiRow): CardContextTurn[] => {
-    const index = conversationTurns.findIndex((turn) => turn.id === row.id)
-    if (index < 0) return []
-    // The card body is the current answer; context is what came before it.
-    const start = Math.max(0, index - 3)
-    return conversationTurns.slice(start, index).map((turn) => ({ ...turn }))
-  }
-
   const changeZoom = (delta: number): void => {
     setZoom((current) => {
       const next = Math.min(1.4, Math.max(0.85, Math.round((current + delta) * 100) / 100))
@@ -296,11 +276,7 @@ export function AiPanel(props: AiPanelProps) {
     })
   }
 
-  const toolCount = rows.reduce((count, row) => count + (row.kind === 'tool' ? 1 : 0), 0)
-  const visibleRows = useMemo(
-    () => (showTools ? rows : rows.filter((row) => row.kind !== 'tool')),
-    [rows, showTools],
-  )
+  const displayItems = useMemo(() => groupProcessingRows(rows), [rows])
 
 
   useEffect(() => {
@@ -319,7 +295,7 @@ export function AiPanel(props: AiPanelProps) {
       setOptions(readComposerOptions(localStorage, draftStoreKey, props.pageCount ?? null))
     } catch {
       setDraft('')
-      setOptions({ task: null, pages: [] })
+      setOptions({ pages: [] })
     }
   }, [draftStoreKey, props.pageCount])
 
@@ -344,11 +320,6 @@ export function AiPanel(props: AiPanelProps) {
     updateOptions((previous) => ({ ...previous, pages }))
     setPageError(false)
     setEditingPages(false)
-    inputRef.current?.focus()
-  }
-
-  const chooseTask = (task: QuickTask): void => {
-    updateOptions((previous) => ({ ...previous, task }))
     inputRef.current?.focus()
   }
 
@@ -460,7 +431,7 @@ export function AiPanel(props: AiPanelProps) {
     return () => {
       try { registry.delete('paperdesk-answer-note') } catch {}
     }
-  }, [notes, visibleRows, history])
+  }, [notes, rows, history])
 
   const updateAnswerNote = (id: string, patch: Partial<Pick<AnswerNote, 'comment'>>): void => {
     persistNotes(notes.map((note) => (note.id === id ? { ...note, ...patch } : note)))
@@ -471,24 +442,54 @@ export function AiPanel(props: AiPanelProps) {
   }
 
   const openNoteEditor = (note: AnswerNote): void => {
-    let x = Math.max(8, window.innerWidth / 2 - 130)
-    let y = Math.max(8, window.innerHeight / 2 - 120)
-    const panel = panelRef.current
-    const rows = panel?.querySelectorAll<HTMLElement>('[data-ai-row-id]')
-    if (rows !== undefined) {
+    selectionRangeRef.current = null
+    setNoteDraft({ quote: note.quote, rowId: note.rowId, comment: note.comment, noteId: note.id })
+  }
+
+  useEffect(() => {
+    const registry = (CSS as unknown as { highlights?: { set(name: string, value: unknown): void; delete(name: string): void } }).highlights
+    const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight
+    if (!registry || !HighlightCtor || !noteDraft) return
+    let range = selectionRangeRef.current
+    if (!range || !range.startContainer.isConnected) {
+      const rows = panelRef.current?.querySelectorAll<HTMLElement>('[data-ai-row-id]') ?? []
       for (const row of rows) {
+        if (noteDraft.rowId && row.dataset['aiRowId'] !== noteDraft.rowId) continue
         const host = row.querySelector<HTMLElement>('.pd-ai-assistant')
-        if (host === null) continue
-        const range = findQuoteRange(host, note.quote)
-        if (range === null) continue
-        const rect = range.getBoundingClientRect()
-        x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 280))
-        const rawY = rect.top >= 180 ? rect.top - 168 : rect.bottom + 8
-        y = Math.min(Math.max(8, rawY), Math.max(8, window.innerHeight - 190))
-        break
+        if (host) { range = findQuoteRange(host, noteDraft.quote); if (range) break }
       }
     }
-    setNoteDraft({ quote: note.quote, rowId: note.rowId, x, y, comment: note.comment, noteId: note.id })
+    if (range) registry.set('paperdesk-answer-selection', new HighlightCtor(range))
+    return () => registry.delete('paperdesk-answer-selection')
+  }, [noteDraft, rows, history])
+
+  const closeNoteDraft = (): void => {
+    setNoteDraft(null)
+    selectionRangeRef.current = null
+    window.getSelection()?.removeAllRanges()
+  }
+
+  useEffect(() => {
+    if (noteDraft === null) return
+    const onEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.isComposing) return
+      const target = event.target
+      if (target !== document.body && (!(target instanceof Node) || !panelRef.current?.contains(target))) return
+      event.preventDefault()
+      event.stopPropagation()
+      closeNoteDraft()
+    }
+    // Consume Escape before the reader's window handler closes the whole drawer.
+    document.addEventListener('keydown', onEscape, true)
+    return () => document.removeEventListener('keydown', onEscape, true)
+  }, [noteDraft !== null])
+
+  const askAboutDraft = async (): Promise<void> => {
+    if (!noteDraft || disabled) return
+    const draft = noteDraft
+    const question = draft.comment.trim() || labels.selectionExplain
+    const accepted = await onAsk(`${labels.selectionTitle}：\n> ${draft.quote.replace(/\n/g, '\n> ')}\n\n${question}`)
+    if (accepted) closeNoteDraft()
   }
 
   const saveNoteDraft = (): void => {
@@ -517,9 +518,10 @@ export function AiPanel(props: AiPanelProps) {
     window.getSelection()?.removeAllRanges()
   }
 
-  const handleAnswerMouseUp = (event: React.MouseEvent<HTMLDivElement>): void => {
+  const handleAnswerSelection = (event: React.SyntheticEvent<HTMLDivElement>): void => {
+    if (noteDraft?.comment.trim()) return // Keep a comment in progress when the reader selects elsewhere.
     const target = event.target
-    if (target instanceof Element && target.closest('textarea, input, button, .pd-ai-note-popup, .pd-ai-notes-tray') !== null) return
+    if (target instanceof Element && target.closest('textarea, input, button, .pd-ai-selection-editor, .pd-ai-notes-tray') !== null) return
     window.setTimeout(() => {
       const dom = window.getSelection()
       if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) return
@@ -536,11 +538,9 @@ export function AiPanel(props: AiPanelProps) {
       const quote = dom.toString().trim()
       if (quote.length < 2) return
       const row = host.closest<HTMLElement>('[data-ai-row-id]')
-      const rect = range.getBoundingClientRect()
-      const x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 280))
-      const rawY = rect.top >= 180 ? rect.top - 168 : rect.bottom + 8
-      const y = Math.min(Math.max(8, rawY), Math.max(8, window.innerHeight - 190))
-      setNoteDraft({ quote: quote.slice(0, 600), rowId: row?.dataset['aiRowId'] ?? '', x, y, comment: '', noteId: null })
+      selectionRangeRef.current = range.cloneRange()
+      setFollow(false)
+      setNoteDraft({ quote, rowId: row?.dataset['aiRowId'] ?? '', comment: '', noteId: null })
     }, 0)
   }
 
@@ -593,7 +593,7 @@ export function AiPanel(props: AiPanelProps) {
 
   const send = async (): Promise<void> => {
     const text = draft.trim()
-    if ((text === '' && options.task === null) || disabled || editingPages || pageError) return
+    if (text === '' || disabled || editingPages || pageError) return
     const sentScope = draftStoreKey
     const sentDraft = draft
     const sentOptions = options
@@ -603,16 +603,14 @@ export function AiPanel(props: AiPanelProps) {
     setNoResponse(false)
     if (watchdogRef.current !== null) clearTimeout(watchdogRef.current)
     try {
-      const accepted = options.task === null
-        ? await onAsk(text, options.pages)
-        : await props.onRunTask(options.task, text || undefined, options.pages)
+      const accepted = await onAsk(text, options.pages)
       // Keep the question in the box when the session refused it, so the
       // failure is visible and the user can retry instead of losing the text.
       if (accepted) {
         try { clearAcceptedDraft(localStorage, sentScope, sentDraft, sentOptions) } catch {}
         if (scopeRef.current === sentScope) {
           setDraft('')
-          setOptions({ task: null, pages: [] })
+          setOptions({ pages: [] })
           setPageError(false)
         }
         const baseline = ai.getSnapshot().rows.length
@@ -632,18 +630,11 @@ export function AiPanel(props: AiPanelProps) {
     void onAsk(prompt)
   }
 
-  const saveActions = (row: AiRow): ReactElement => (
+  // Copy the stored Markdown, never the rendered DOM/MathML text.
+  const answerActions = (row: AiRow): ReactElement => (
     <div className="pd-ai-row-actions">
       <Button size="sm" variant="ghost" icon={<IconCopy size={14} />} onClick={() => void onCopy(row.text)}>{labels.copy}</Button>
-      <Menu
-        className="pd-ai-save-menu"
-        label={labels.saveAnswer}
-        triggerLabel={labels.saveAnswer}
-        items={[
-          { id: 'notes', label: labels.saveToNotes, onSelect: () => void onSaveToNotes(row.text) },
-          ...(onCreateCard ? [{ id: 'card', label: labels.createCard, onSelect: () => onCreateCard(row, conversationTurns, contextForRow(row)) }] : []),
-        ]}
-      />
+
     </div>
   )
 
@@ -666,12 +657,7 @@ export function AiPanel(props: AiPanelProps) {
   const renderRow = (row: AiRow): ReactElement => {
     switch (row.kind) {
       case 'user':
-        return (
-          <div key={row.id} className="pd-ai-user">
-            <span className="pd-ai-user-label">{labels.you}</span>
-            {cleanUserPrompt(row.text)}
-          </div>
-        )
+        return <UserQuestion text={row.text} label={labels.you} expand={labels.expandQuestion} collapse={labels.collapseQuestion} />
       case 'assistant':
         return (
           <div key={row.id} className="pd-ai-assistant">
@@ -727,7 +713,8 @@ export function AiPanel(props: AiPanelProps) {
       role="region"
       aria-label={labels.title}
       style={{ '--pd-ai-font-scale': zoom } as CSSProperties}
-      onMouseUp={handleAnswerMouseUp}
+      onMouseUp={handleAnswerSelection}
+      onKeyUp={(event) => { if (event.key === 'Shift' || event.key.startsWith('Arrow')) handleAnswerSelection(event) }}
     >
       {props.renderConversationBar?.([
         { id: 'smaller', label: labels.smallerText, disabled: zoom <= 0.85, onSelect: () => changeZoom(-0.05) },
@@ -749,34 +736,21 @@ export function AiPanel(props: AiPanelProps) {
             </div>
           ) : null}
 
-          {toolCount > 0 ? (
-            <button
-              type="button"
-              className="pd-ai-tools-toggle"
-              onClick={() => setShowTools((value) => !value)}
-            >
-              {showTools
-                ? labels.toolsHide
-                : labels.toolsToggle.replace('{n}', String(toolCount))}
-            </button>
-          ) : null}
+
 
           {rows.length === 0 && history.length > 0 ? (
             <div className="pd-ai-history">
               <div className="pd-ai-history-title">{labels.historyTitle}</div>
               {history.map((message, index) =>
                 message.role === 'user' ? (
-                  <div key={`history-${index}`} className="pd-ai-user">
-                    <span className="pd-ai-user-label">{labels.you}</span>
-                    {cleanUserPrompt(message.text)}
-                  </div>
+                  <UserQuestion key={`history-${index}`} text={message.text} label={labels.you} expand={labels.expandQuestion} collapse={labels.collapseQuestion} />
                 ) : (
                   <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
                     <div className="pd-ai-assistant">
                       <Markdown markdown={message.text} />
                     </div>
                     {renderCitations({ id: `history-${index}`, kind: 'assistant', text: message.text })}
-                    {saveActions({ id: `history-${index}`, kind: 'assistant', text: message.text })}
+                    {answerActions({ id: `history-${index}`, kind: 'assistant', text: message.text })}
                   </div>
                 ),
               )}
@@ -788,17 +762,30 @@ export function AiPanel(props: AiPanelProps) {
               <IconSpark size={24} />
               <h3>{labels.emptyTitle}</h3>
               <p>{labels.emptyHint}</p>
-              <div className="pd-ai-starters">
-                {(['summary', 'method', 'questions'] as const).map((task) => <Button key={task} size="sm" disabled={disabled} aria-pressed={options.task === task} onClick={() => chooseTask(task)}>{labels.taskLabels[task]}</Button>)}
-              </div>
+
             </div>
           ) : null}
 
-          {visibleRows.map((row) => (
-            <div key={row.id} className="pd-ai-row" data-ai-row-id={row.id}>
-              {renderRow(row)}
-              {row.kind === 'assistant' ? renderCitations(row) : null}
-              {row.kind === 'assistant' && row.streaming !== true ? saveActions(row) : null}
+          {displayItems.map((item) => item.kind === 'process' ? (
+            <details key={`process-${item.id}`} className="pd-ai-process">
+              <summary>
+                <span>{labels.processTitle}</span>
+                <small>{[
+                  item.rows.some((row) => row.kind === 'reasoning') ? labels.processThoughts.replace('{n}', String(item.rows.filter((row) => row.kind === 'reasoning').length)) : '',
+                  item.rows.some((row) => row.kind === 'tool') ? labels.processTools.replace('{n}', String(item.rows.filter((row) => row.kind === 'tool').length)) : '',
+                ].filter(Boolean).join(' · ')}</small>
+              </summary>
+              <div className="pd-ai-process-content">
+                {item.rows.map((row) => <div key={row.id} className="pd-ai-process-step">
+                  {row.kind === 'reasoning' ? <Markdown markdown={row.text} /> : renderRow(row)}
+                </div>)}
+              </div>
+            </details>
+          ) : (
+            <div key={item.row.id} className="pd-ai-row" data-ai-row-id={item.row.id}>
+              {renderRow(item.row)}
+              {item.row.kind === 'assistant' ? renderCitations(item.row) : null}
+              {item.row.kind === 'assistant' && item.row.streaming !== true ? answerActions(item.row) : null}
             </div>
           ))}
 
@@ -861,40 +848,22 @@ export function AiPanel(props: AiPanelProps) {
       </div>
 
       {noteDraft !== null ? (
-        <div
-          className="pd-ai-note-popup"
-          style={{ left: noteDraft.x, top: noteDraft.y }}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <div className="pd-ai-note-popup-quote">{noteDraft.quote}</div>
-          <textarea
-            autoFocus
-            className="pd-textarea pd-ai-note-popup-comment"
-            rows={3}
-            value={noteDraft.comment}
-            placeholder={labels.noteCommentPlaceholder}
-            aria-label={labels.noteCommentPlaceholder}
-            onChange={(event) => setNoteDraft({ ...noteDraft, comment: event.target.value })}
-          />
-          <div className="pd-ai-note-popup-actions">
-            {noteDraft.noteId !== null ? (
-              <button type="button" className="pd-ai-note-delete" onClick={deleteNoteDraft}>
-                {labels.noteDelete}
-              </button>
-            ) : null}
-            <Button size="sm" variant="ghost" onClick={() => setNoteDraft(null)}>
-              {labels.noteCancel}
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={noteDraft.comment.trim() === ''}
-              onClick={saveNoteDraft}
-            >
-              {labels.noteSave}
-            </Button>
+        <section className="pd-ai-selection-editor" aria-label={labels.selectionTitle}>
+          <div className="pd-ai-selection-head">
+            <strong>{labels.selectionTitle}</strong>
+            <IconButton label={labels.noteCancel} onClick={closeNoteDraft}><IconClose size={16} /></IconButton>
           </div>
-        </div>
+          <blockquote className="pd-ai-selection-quote" tabIndex={0}>{noteDraft.quote}</blockquote>
+          <textarea className="pd-textarea pd-ai-selection-comment" rows={2}
+            value={noteDraft.comment} placeholder={labels.noteCommentPlaceholder} aria-label={labels.noteCommentPlaceholder}
+            onChange={(event) => setNoteDraft({ ...noteDraft, comment: event.target.value })} />
+          <div className="pd-ai-selection-actions">
+            {noteDraft.noteId !== null ? <Button size="sm" variant="ghost" onClick={deleteNoteDraft}>{labels.noteDelete}</Button> : null}
+            <Button size="sm" variant="ghost" onClick={closeNoteDraft}>{labels.noteCancel}</Button>
+            <Button size="sm" disabled={noteDraft.comment.trim() === ''} onClick={saveNoteDraft}>{labels.noteSave}</Button>
+            <Button size="sm" variant="primary" disabled={disabled} onClick={() => void askAboutDraft()}>{labels.noteAsk}</Button>
+          </div>
+        </section>
       ) : null}
 
       <div className="pd-ai-foot">
@@ -950,15 +919,9 @@ export function AiPanel(props: AiPanelProps) {
         </div>
         <div className="pd-ai-compose-actions">
           <IconButton label={labels.imageAttach} disabled={disabled || props.imagesAvailable === false} onClick={editPages}><IconPlus size={17} /></IconButton>
-          <select className="pd-ai-task-select" aria-label={labels.quickTasks} value={options.task ?? ''} disabled={disabled} onChange={(event) => {
-            const task = event.target.value as QuickTask
-            updateOptions((previous) => ({ ...previous, task: QUICK_TASKS.includes(task) ? task : null }))
-          }}>
-            <option value="">{labels.freeQuestion}</option>
-            {QUICK_TASKS.map((task) => <option key={task} value={task}>{labels.taskLabels[task]}</option>)}
-          </select>
+
           <span className="pd-ai-send-hint">{labels.sendHint}</span>
-          {running || sending ? <Button size="sm" variant="ghost" disabled={sending && !running} onClick={() => void onStop()}>{labels.stop}</Button> : <Button size="sm" variant="primary" disabled={disabled || editingPages || pageError || (draft.trim() === '' && options.task === null)} onClick={() => void send()}>{labels.send}</Button>}
+          {running || sending ? <Button size="sm" variant="ghost" disabled={sending && !running} onClick={() => void onStop()}>{labels.stop}</Button> : <Button size="sm" variant="primary" disabled={disabled || editingPages || pageError || draft.trim() === ''} onClick={() => void send()}>{labels.send}</Button>}
         </div>
       </div>
     </div>

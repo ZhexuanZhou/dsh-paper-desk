@@ -1,6 +1,4 @@
-export const QUICK_TASKS = ['summary', 'method', 'critique', 'related', 'questions'] as const
-export type QuickTask = typeof QUICK_TASKS[number]
-export interface ComposerOptions { task: QuickTask | null; pages: number[] }
+export interface ComposerOptions { pages: number[] }
 
 /** Freeze explicit page numbers when attached, rather than following PDF navigation. */
 export function parseImagePages(input: string, currentPage: number, pageCount: number | null): number[] | null {
@@ -14,22 +12,21 @@ export function parseImagePages(input: string, currentPage: number, pageCount: n
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
 export function readComposerOptions(storage: StorageLike, key: string | null, pageCount: number | null): ComposerOptions {
-  if (key === null) return { task: null, pages: [] }
+  if (key === null) return { pages: [] }
   try {
     const value: unknown = JSON.parse(storage.getItem(`${key}:options`) ?? 'null')
-    if (value === null || typeof value !== 'object') return { task: null, pages: [] }
+    if (value === null || typeof value !== 'object') return { pages: [] }
     const record = value as Record<string, unknown>
-    const task = QUICK_TASKS.includes(record.task as QuickTask) ? record.task as QuickTask : null
     const pages = Array.isArray(record.pages) && record.pages.every((page) => typeof page === 'number')
       ? parseImagePages(record.pages.join(','), 0, pageCount) ?? [] : []
-    return { task, pages }
-  } catch { return { task: null, pages: [] } }
+    return { pages }
+  } catch { return { pages: [] } }
 }
 
 export function writeComposerOptions(storage: StorageLike, key: string | null, options: ComposerOptions): void {
   if (key === null) return
   try {
-    if (options.task === null && options.pages.length === 0) storage.removeItem(`${key}:options`)
+    if (options.pages.length === 0) storage.removeItem(`${key}:options`)
     else storage.setItem(`${key}:options`, JSON.stringify(options))
   } catch { /* Draft persistence is optional. */ }
 }
@@ -39,6 +36,7 @@ export function clearAcceptedDraft(storage: StorageLike, key: string | null, sen
   if (key === null) return
   try {
     if ((storage.getItem(key) ?? '') === sentText) storage.removeItem(key)
-    if (storage.getItem(`${key}:options`) === JSON.stringify(options)) storage.removeItem(`${key}:options`)
+    const stored = readComposerOptions(storage, key, null)
+    if (JSON.stringify(stored.pages) === JSON.stringify(options.pages)) storage.removeItem(`${key}:options`)
   } catch { /* Keep the in-memory composer usable when storage is unavailable. */ }
 }

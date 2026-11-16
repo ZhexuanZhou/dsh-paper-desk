@@ -698,8 +698,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
       emptyHint: t('ai.emptyHint'),
       emptyTitle: t('ai.emptyTitle'),
       you: t('ai.you'),
-      quickTasks: t('ai.quickTasks'),
-      freeQuestion: t('ai.freeQuestion'),
       smallerText: t('ai.smallerText'),
       largerText: t('ai.largerText'),
       citedPages: t('ai.citedPages'),
@@ -720,7 +718,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
       placeholder: t('ai.placeholder'),
       saveToNotes: t('ai.saveToNotes'),
       saveAnswer: t('ai.saveAnswer'),
-      copy: t('ai.copy'),
+      copy: t('ai.copyMarkdown'),
       openInSession: t('ai.openInSession'),
       retry: t('ai.retry'),
       error: t('ai.error'),
@@ -745,14 +743,14 @@ function ReaderViewImpl(props: ReaderViewProps) {
       noteAskAll: t('ai.noteAskAll'),
       noteDelete: t('ai.noteDelete'),
       noteQuoteHint: t('ai.noteQuoteHint'),
+      selectionTitle: t('ai.selectionTitle'),
+      selectionExplain: t('ai.selectionExplain'),
+      processTitle: t('ai.processTitle'),
+      processTools: t('ai.processTools'),
+      processThoughts: t('ai.processThoughts'),
+      expandQuestion: t('ai.expandQuestion'),
+      collapseQuestion: t('ai.collapseQuestion'),
       historyTitle: t('ai.historyTitle'),
-      taskLabels: {
-        summary: t('assist.summary'),
-        method: t('assist.method'),
-        critique: t('assist.critique'),
-        related: t('assist.related'),
-        questions: t('assist.questions'),
-      },
     }),
     [t],
   )
@@ -891,13 +889,6 @@ function ReaderViewImpl(props: ReaderViewProps) {
     if (!activateTab('read')) return
     setActiveAnnotationId(null)
     setFocusTarget({ page, annotationId: null })
-  }
-
-  /* Task buttons / chips never navigate away: they open the AI drawer and run. */
-  const runTask = async (task: AssistTask, extra?: string, pages?: readonly number[]): Promise<boolean> => {
-    if (!activateTab('read')) return false
-    openDrawer('ai')
-    return onAssist(task, extra, pages)
   }
 
   const cachedPages = text === null ? [] : text.pages.filter((page) => page.text.trim() !== '')
@@ -1445,16 +1436,13 @@ function ReaderViewImpl(props: ReaderViewProps) {
                     currentPage={currentPage ?? 1}
                     pageCount={meta.pageCount}
                     imagesAvailable={detail.pdfExists && !detail.pdfEvicted}
-                    onRunTask={runTask}
                     onAsk={onAiAsk}
                     onReset={() => void onAiReset()}
                     onStop={() => void onAiStop()}
-                    onSaveToNotes={(text) => void onAiSaveToNotes(text)}
                     onCopy={(text) => void onAiCopy(text)}
                     onOpenInSession={() => void onAiOpenInSession()}
                     onJumpPage={jumpToPage}
                     onSourcePage={setSourcePage}
-                    onCreateCard={openCardFromAnswer}
                   />
                   </>
                 )}

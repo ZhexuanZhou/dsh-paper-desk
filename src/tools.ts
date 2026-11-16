@@ -6,7 +6,7 @@
 import { stat } from 'node:fs/promises'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { annotationStats, readAnnotations } from './annotations.js'
-import { readCards } from './cards.js'
+import { addCard, readCards, updateCard } from './cards.js'
 import { readRelations, relationForPaper } from './relations.js'
 import type { Config } from './config.js'
 import { createPaper, readMeta, updateMeta } from './library.js'
@@ -379,7 +379,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
   add(
     defineTool({
       name: 'paper_notes_read',
-      description: "Read the user's markdown notes for one PaperDesk paper, including the notes hash you must pass back when appending.",
+      description: "Read the user's markdown notes for one PaperDesk paper, including the notes hash and whether the text is truncated.",
       parameters: { paperId: { type: 'string', required: true, description: 'Paper id.' } },
       output: {
         schema: {
@@ -394,12 +394,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             truncated: { type: 'boolean' },
           },
         },
-        render: (_args, value) =>
-          textResult(
-            value.ok
-              ? `${String(value.markdown ?? '')}${value.truncated === true ? '\n\n[... notes truncated]' : ''}`
-              : `PaperDesk unavailable: ${String(value.error ?? '')}`,
-          ),
+        render: (_args, value) => textResult(jsonText(value)),
       },
       async execute(args, exec) {
         exec.signal.throwIfAborted()
@@ -678,10 +673,10 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_cards',
       description:
-        "Read the note cards the user distilled for one PaperDesk paper (cards are created from AI answers and shown in the notes tab). Each card has a title, Markdown body, tags and page references.",
+        "Read the note cards the user distilled for one PaperDesk paper (cards are shown in the Cards tab). Each card has a title, Markdown body, tags and page references.",
       parameters: {
         paperId: { type: 'string', required: true, description: 'Paper id.' },
-        limit: { type: 'number', description: 'Maximum cards (default 50, max 200).' },
+        limit: { type: 'number', description: 'Maximum cards (default 200, max 200). Use 200 when organizing all cards.' },
       },
       output: {
         schema: {
@@ -695,16 +690,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             cards: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
           },
         },
-        render: (_args, value) => {
-          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
-          const cards = Array.isArray(value.cards) ? value.cards : []
-          const blocks = cards.map((entry) => {
-            const card = entry as Record<string, unknown>
-            const pages = Array.isArray(card.pages) && card.pages.length > 0 ? ` · p.${(card.pages as number[]).join(', p.')}` : ''
-            return `## ${String(card.title)}${pages}\n${String(card.body ?? '')}`
-          })
-          return textResult([`PaperDesk cards: ${cards.length} card(s).`, ...blocks].join('\n\n'))
-        },
+        render: (_args, value) => textResult(jsonText(value)),
       },
       async execute(args, exec) {
         exec.signal.throwIfAborted()
@@ -713,7 +699,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         const library = libraryOrError(settings())
         if (isToolFailure(library)) return library
         const doc = await readCards(library.root, args.paperId)
-        const limit = Math.min(Math.max(Math.trunc(args.limit ?? 50), 1), 200)
+        const limit = Math.min(Math.max(Math.trunc(args.limit ?? 200), 1), 200)
         return {
           ok: true,
           count: doc.items.length,
@@ -725,11 +711,61 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
             tags: card.tags,
             pages: card.pages,
             createdAt: card.createdAt,
+            updatedAt: card.updatedAt,
           })),
         }
       },
     }),
   )
+
+  for (const operation of ['create', 'update'] as const) {
+    add(defineTool({
+      name: `paper_card_${operation}`,
+      description: operation === 'create'
+        ? 'Save a Markdown note card for a paper when the user asks to record a card or organize cards. Read existing cards first; preserve originals when creating a synthesis. Returns the saved card and its id.'
+        : 'Update an existing card only when requested. Read paper_cards first and pass its updatedAt as expectedUpdatedAt. Concurrent edits are rejected; read again instead of overwriting them.',
+      parameters: {
+        paperId: { type: 'string', required: true, description: 'Paper id.' },
+        ...(operation === 'update' ? {
+          cardId: { type: 'string' as const, required: true, description: 'Existing card id from paper_cards.' },
+          expectedUpdatedAt: { type: 'string' as const, required: true, description: 'Exact updatedAt from the last read.' },
+        } : {}),
+        title: { type: 'string', ...(operation === 'create' ? { required: true as const } : {}), description: 'Card title (max 200 characters).' },
+        body: { type: 'string', ...(operation === 'create' ? { required: true as const } : {}), description: 'Markdown body (max 20000 characters); preserve evidence and source page references.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Up to 12 tags. Omit to preserve existing tags on updates.' },
+        pages: { type: 'array', items: { type: 'number' }, description: 'Up to 20 source pages (positive integers). Omit to preserve existing pages on updates.' },
+      },
+      output: {
+        schema: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            ok: { type: 'boolean', required: true }, error: { type: 'string' },
+            card: { type: 'object', additionalProperties: true, properties: {} }, count: { type: 'number' },
+          },
+        },
+        render: (_args, value) => textResult(jsonText(value)),
+      },
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const invalid = badId(args.paperId)
+        if (invalid !== undefined) return invalid
+        const library = libraryOrError(settings())
+        if (isToolFailure(library)) return library
+        try {
+          if (operation === 'update' && (!args.cardId || !args.expectedUpdatedAt)) return failure('cardId and expectedUpdatedAt are required')
+          const fields = { title: args.title, body: args.body, tags: args.tags, pages: args.pages }
+          if (operation === 'update' && Object.values(fields).every((v) => v === undefined)) return failure('provide at least one field to update')
+          const doc = operation === 'create'
+            ? await addCard(library.root, args.paperId, { ...fields, title: args.title ?? '', body: args.body ?? '', source: 'agent' })
+            : await updateCard(library.root, args.paperId, args.cardId!, fields, args.expectedUpdatedAt!)
+          const card = operation === 'create' ? doc.items[doc.items.length - 1] : doc.items.find((c) => c.id === args.cardId)
+          return { ok: true, card, count: doc.items.length }
+        } catch (error) {
+          return failure(error instanceof Error ? error.message : String(error))
+        }
+      },
+    }))
+  }
 
   add(
     defineTool({

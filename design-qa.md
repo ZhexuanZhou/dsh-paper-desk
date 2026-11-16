@@ -86,3 +86,16 @@ final result: passed（公共截图与隐私gate；产品功能复用上一轮0.
 7张新版真实UI截图已由唯一媒体owner逐张亲检：library、PDF+AI与p1附件、整页notes、cards目录、cardeditor预览、research专题、discovery初始态。仅独立公开合成demo副本；手写示例对话/笔记/卡片明确演示，非真实模型证据；没有新模型或检索请求。
 
 viewport1720×1080，截图API clip{x:280,y:0,width:1440,height:1080}直接输出原始JPEG，未重编码、不改像素内容。整个Harness侧栏及Chrome栏排除，无用户姓名头像、业务会话、本地路径或鉴权URL。逐图SHA/隐私判定见私有round `20261113-docs-screenshots-0.4.7/results/public-screenshots-manifest.json`，主agent统一引用并淘汰旧图。截图候选本身可公开；私有profile/fixture路径不提交。
+
+
+## 2026-11-16 · 0.4.8 自然语言Agent与回答选区
+
+final result: passed（6项隔离Web验收；本地Harness重载待今日暂停授权，尚未执行）
+
+最终client SHA256 `abf7124d887eb459bec665c6ae95d0e1ff43562aa39d1cab4ab0dcaba8d5c36f`，Host tools `210bb8f5c1bdb6dd800000eeeb0906c708b6dd2bac7073cf903d069bb0c10085`。沿用用户选1视觉方向，唯一媒体owner亲检真实UI：任务下拉/空态固定任务及回答保存菜单移除；紧凑问题可展开/收起，连续推理与工具默认单条折叠过程；回答选区改为输入框上方内联区，600×900按钮可达，不覆盖正文。最终Esc补验：第一次仅关闭选区并保留AI，第二次正常关闭AI。无未解决P0/P1/P2。
+
+4次真实deepseek-official/deepseek-flash分别验证只读总结、明确追加笔记、创建卡片、保留原卡整理综合卡；实际tool/call与返回逐字段对照隔离文件。总结前后notes/cards哈希相同；笔记追加不删除原行；原卡业务字段/时间戳保留，可选空context数组被规范化省略，不声称JSON字节不变。复制Markdown与1256字符原回答完全一致，含TeX源码。实际回答批注保存在浏览器localStorage，取消与保存均验证，不声称写入论文文件。
+
+主agent提供188项自动化通过补证；其中工具真实落盘18项、草稿25项、过程分组7项。自动化与真实模型证据分开记录，模型未执行update，旧task兼容未人为注入storage。此前d557/0cdd/a9e7构建中未受后续文案或Esc修复影响的证据保留各自来源，最终键盘行为使用abf7实测。
+
+两张公共JPEG候选仅独立合成demo与本轮真实模型输出，已逐张亲检隐私与布局；裁除整个宿主个人侧栏和Chrome地址栏，无姓名头像、业务对话、本地路径或鉴权URL。自然语言图直接区域捕获；选区图由原始真实捕获裁切并JPEG重编码，未改变UI内容。公共候选及逐图来源见私有round `20261116-natural-language-agent/results/public-candidates-manifest.json`。本轮6项各含截图与文本，共12份required evidence；真实库未写入。
