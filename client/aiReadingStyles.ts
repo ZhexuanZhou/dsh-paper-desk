@@ -210,4 +210,27 @@ export const aiReadingCss = `
   .pd-ai .pd-ai-foot { margin: 8px 10px 10px; }
   .pd-ai .pd-chat-new { font-size: 11px; padding: 4px; }
 }
+
+/* Card reading and editor preview share one type scale and content baseline. */
+.pd-root .pd-card-content.pd-md { width: 100%; max-width: none; margin: 0; font-family: inherit; font-size: 16px; line-height: 1.85; overflow-wrap: anywhere; }
+.pd-root .pd-card-content.pd-md > :first-child { margin-top: 0; }
+.pd-root .pd-card-content.pd-md > :last-child { margin-bottom: 0; }
+.pd-root .pd-card-content.pd-md h1 { margin: 28px 0 14px; padding: 0; border: 0; color: inherit; font-size: 22px; line-height: 1.5; }
+.pd-root .pd-card-content.pd-md h2 { margin: 28px 0 12px; padding: 0; border: 0; color: inherit; font-size: 19px; line-height: 1.55; }
+.pd-root .pd-card-content.pd-md h3 { margin: 24px 0 10px; font-size: 17px; line-height: 1.6; }
+.pd-root .pd-card-content.pd-md h4, .pd-root .pd-card-content.pd-md h5, .pd-root .pd-card-content.pd-md h6 { margin: 22px 0 10px; font-size: 16px; }
+.pd-root .pd-card-content.pd-md p { margin: 0 0 16px; }
+.pd-root .pd-card-content.pd-md ul, .pd-root .pd-card-content.pd-md ol { margin: 12px 0 18px; padding-left: 24px; }
+.pd-root .pd-card-content.pd-md ul { list-style-type: disc; }
+.pd-root .pd-card-content.pd-md :is(ul, ol) ul { list-style-type: circle; }
+.pd-root .pd-card-content.pd-md :is(ul, ol) :is(ul, ol) ul { list-style-type: square; }
+.pd-root .pd-card-content.pd-md li { margin: 8px 0; padding-left: 2px; }
+.pd-root .pd-card-content.pd-md li > p { margin: 8px 0; }
+.pd-root .pd-card-content.pd-md table { display: block; width: max-content; max-width: 100%; margin: 18px 0 24px; overflow-x: auto; border-collapse: collapse; font-family: inherit; font-size: 14px; line-height: 1.7; }
+.pd-root .pd-card-content.pd-md th, .pd-root .pd-card-content.pd-md td { padding: 10px 12px; min-width: 100px; max-width: 360px; vertical-align: top; overflow-wrap: anywhere; }
+.pd-root .pd-card-content.pd-md th { font-weight: 600; background: color-mix(in srgb, var(--pd-accent) 5%, transparent); }
+.pd-root .pd-card-content.pd-md pre { max-width: 100%; overflow: auto; font-size: 13px; line-height: 1.7; }
+.pd-root .pd-card-content.pd-md code { font-size: .88em; }
+.pd-cards-workspace .pd-card-item { gap: 18px; }
+.pd-card-editor-preview .pd-card-content { min-height: 0; }
 `

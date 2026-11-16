@@ -1,6 +1,6 @@
 {
   "name": "dsh-paper-desk",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "PaperDesk: a paper-management and AI reading plugin for DeepSeek Harness — import PDFs, annotate, organize notes, discuss papers, and sync your library through a cloud drive.",
   "type": "module",
   "license": "MIT",

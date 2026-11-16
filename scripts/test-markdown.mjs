@@ -21,7 +21,7 @@ try {
   assert.equal(bundle.split(footer).length, 2, 'one module-loader footer')
   // Expose existing local functions after the real factory body has executed.
   // This changes no renderer/lexer code or multiline string in the artifact.
-  const probe = bundle.replace(footer, 'module.exports.__markdown = {renderMarkdown, renderMarkdownSectioned, noteOutline}; return module.exports;')
+  const probe = bundle.replace(footer, 'module.exports.__markdown = {renderMarkdown, renderMarkdownSectioned, noteOutline, cardBodyForDisplay}; return module.exports;')
   let module
   vm.runInNewContext(probe, {
     window: { __ModuleLoader__: { load(value) { module = value } } },
@@ -49,6 +49,26 @@ try {
     check(`published render equals source: ${label}`, delivered.renderMarkdown(markdown), source.renderMarkdown(markdown))
     check(`published section preview equals source: ${label}`, delivered.renderMarkdownSectioned(markdown), source.renderMarkdownSectioned(markdown))
     check(`published outline equals source: ${label}`, JSON.stringify(delivered.noteOutline(markdown)), JSON.stringify(source.noteOutline(markdown)))
+  }
+  const cardCases = [
+    ['atx title', 'Card title', '# Card title\n\nBody (p.1).', 'Body (p.1).'],
+    ['formatted title', 'Card title', '## **Card** title\n\nBody', 'Body'],
+    ['setext title', 'Card title', 'Card title\n==========\n\nBody', 'Body'],
+    ['paragraph title', 'Card title', 'Card title\n\nBody', 'Body'],
+    ['different heading', 'Card title', '# Different\n\nBody', '# Different\n\nBody'],
+    ['long paragraph', 'Card title', 'Card title with an explanation.', 'Card title with an explanation.'],
+    ['code is not a title', 'Card title', '```text\nCard title\n```', '```text\nCard title\n```'],
+    ['inline code is not a title', 'Card title', '`Card title`', '`Card title`'],
+    ['linked heading keeps its destination', 'Card title', '# [Card title](https://example.org)', '# [Card title](https://example.org)'],
+    ['quote is not a title', 'Card title', '> Card title', '> Card title'],
+    ['later heading retained', 'Card title', 'Introduction\n\n## Card title', 'Introduction\n\n## Card title'],
+    ['formula retained', 'Card title', '# Card title\n\n$x>1$ and `code`', '$x>1$ and `code`'],
+    ['multiline paragraph retained', 'Card title', 'Card title\nAdditional explanation', 'Card title\nAdditional explanation'],
+    ['empty title', '', '# Card title\n', '# Card title'],
+  ]
+  for (const [name, title, body, expected] of cardCases) {
+    check(`card display: ${name}`, delivered.cardBodyForDisplay(title, body).trim(), expected.trim())
+    check(`published card display equals source: ${name}`, delivered.cardBodyForDisplay(title, body), source.cardBodyForDisplay(title, body))
   }
   const render = delivered.renderMarkdown
   const math = render('**$s>1$**；$a<b$，$x=1$，$\\tilde Q$')

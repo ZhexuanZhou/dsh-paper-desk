@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CardContextTurn, NoteCard } from '../src/types.js'
 import { IconEdit, IconNote, IconPlus, IconTrash } from './icons.js'
-import { Markdown } from './markdown.js'
+import { cardBodyForDisplay, Markdown } from './markdown.js'
 import { cleanUserPrompt } from './chatText.js'
 import { useT } from './i18n.js'
 import { Button, EmptyState, Field, IconButton, Modal, Spinner, Textarea, TextInput } from './ui.js'
@@ -219,7 +219,7 @@ export function CardEditor({ open, mode, initial, busy, availableTurns, onSynthe
           </div>
         </div>
         {preview ? <div className="pd-card-editor-preview">
-          {body.trim() ? <Markdown markdown={body} /> : <p className="pd-card-editor-empty">{t('cards.previewEmpty')}</p>}
+          {body.trim() ? <Markdown markdown={cardBodyForDisplay(title, body)} className="pd-card-content" /> : <p className="pd-card-editor-empty">{t('cards.previewEmpty')}</p>}
         </div> : <Textarea
           value={body}
           onChange={setBody}
@@ -461,7 +461,7 @@ export function CardsPanel(props: CardsPanelProps) {
                 <button type="button" className="pd-card-locate" onClick={() => onEdit(card)} title={t('cards.edit')}>
                   <span className="pd-card-title">{card.title}</span>
                 </button>
-                <Markdown markdown={card.body} className="pd-card-body" />
+                <Markdown markdown={cardBodyForDisplay(card.title, card.body)} className="pd-card-body pd-card-content" />
                 {(card.tags.length > 0 || card.pages.length > 0 || (card.context?.length ?? 0) > 0) ? (
                   <div className="pd-card-meta">
                     {(card.context?.length ?? 0) > 0 ? (

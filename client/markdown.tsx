@@ -52,6 +52,33 @@ const renderer: RendererObject = {
 
 const marked = new Marked({ gfm: true, breaks: true, renderer, extensions: mathExtensions })
 
+/** Hide only a redundant opening title in card display; never change stored Markdown. */
+export function cardBodyForDisplay(title: string, markdown: string): string {
+  const normalize = (text: string): string => text.normalize('NFC').replace(/\s+/g, ' ').trim()
+  const plain = (tokens: readonly { type: string; text?: string; tokens?: unknown[] }[]): string | null => {
+    let text = ''
+    for (const token of tokens) {
+      if (!['text', 'escape', 'strong', 'em', 'del', 'br'].includes(token.type)) return null
+      if (token.tokens) {
+        const child = plain(token.tokens as Parameters<typeof plain>[0])
+        if (child === null) return null
+        text += child
+      } else text += token.type === 'br' ? ' ' : token.text ?? ''
+    }
+    return text
+  }
+  const wanted = normalize(title)
+  if (!wanted) return markdown
+  let offset = 0
+  for (const token of marked.lexer(markdown)) {
+    if (token.type === 'space') { offset += token.raw.length; continue }
+    if (token.type !== 'heading' && token.type !== 'paragraph') return markdown
+    const text = plain(token.tokens ?? [])
+    return text !== null && normalize(text) === wanted ? markdown.slice(offset + token.raw.length) : markdown
+  }
+  return markdown
+}
+
 /**
  * Render a long Markdown document section by section at top-level `##`
  * headings. A preceding loose list would otherwise make the next heading a

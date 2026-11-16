@@ -4,7 +4,7 @@ PaperDesk 是 DeepSeek Harness 的论文库插件。导入 PDF，在同一工作
 
 论文库直接保存在你选择的目录中：PDF、Markdown 笔记和 JSON 元数据都是普通文件，可以交给自己的网盘客户端同步。
 
-**当前源码版本：0.5.1** · [本版更新说明](docs/RELEASE-v0.5.1.md) · [安装与发布说明](docs/PUBLISHING.md)
+**当前源码版本：0.5.2** · [本版更新说明](docs/RELEASE-v0.5.2.md) · [安装与发布说明](docs/PUBLISHING.md)
 
 ## 功能概览
 
@@ -55,7 +55,7 @@ dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 
 ### 从 GitHub Release 安装
 
-从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前正式 Release 为 0.4.7；0.5.1 可按上方源码步骤使用。命令行维护的 profile 可安装 0.4.7：
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前正式 Release 为 0.4.7；0.5.2 可按上方源码步骤使用。命令行维护的 profile 可安装 0.4.7：
 
 ```sh
 dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.4.7/dsh-paper-desk-0.4.7.tgz
@@ -127,15 +127,15 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 在 AI 助读中输入“将这个结论保存为卡片”。Agent 会先读已有卡片再保存，并反馈结果。输入“整理所有卡片”会读取当前论文全部卡片，按要求修改、合并、拆分、删除或排序；不再固定保留重复卡片或新增综合卡片。跨论文整理时请指定范围。
 
-在卡片页编辑已有卡片时，默认显示正文预览，可切换编辑；标题、标签、来源页码和上下文按需展开。
+卡片阅读页和编辑预览使用相同的字体、标题层级和表格字号，正文与卡片标题左对齐。正文开头若是同名标题或独立同名段落，仅展示时隐藏一次；编辑源码、复制、插入笔记和已保存内容保持原样。编辑预览可切换源码模式，标题、标签、来源页码和上下文按需展开。
 
-![0.4.7 保存卡片与正文预览](docs/screenshots/v0.4.7/card-editor.jpg)
+![0.5.2 卡片编辑与正文预览](docs/screenshots/v0.5.2/card-preview-v0.5.2.jpg)
 
 在卡片编辑器中，“根据对话生成”会调用模型，依据所选上下文重新整理标题和正文；手工编辑后点击保存不会额外调用模型。
 
 保存后，在独立“卡片”页按目录阅读全文，或编辑、核对页码、复制、插入笔记和删除。卡片保存在 `cards.json`，不会自动写入论文笔记。
 
-![0.4.7 卡片目录与完整正文](docs/screenshots/v0.4.7/cards.jpg)
+![0.5.2 卡片目录与完整正文](docs/screenshots/v0.5.2/cards-reader-v0.5.2.jpg)
 
 ## 编辑与版本恢复
 

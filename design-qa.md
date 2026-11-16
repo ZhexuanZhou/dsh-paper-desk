@@ -125,3 +125,14 @@ final result: passed
 client `e5fa63cf5c8b54b39d1cf013973c2d68fb8465c983133ebf4b6873bba2c80b0a`。两项隔离真实操作通过：鼠标选词和Shift方向键扩展只保留原生选区，不开编辑区；面板/输入框尺寸和滚动均不变。固定footer“批注选中内容”按钮占原操作行，明确点击才打开正确引用。取消、实际保存、Esc、取消选区/跨回答禁用均实测；保存为浏览器localStorage，论文notes/cards/chats/PDF文件未改。复制Markdown与原回答字节一致；本轮回答无TeX，不伪称新测公式。无模型调用，不重跑历史编辑或PDF选择。唯一媒体owner已亲检两张真实JPEG，无未解决P0/P1/P2。
 
 主agent typecheck/build与82项自动化（25composer+57 delivered Markdown）补证通过。native fresh guard实际已显示界面v0.5.1和固定批注按钮，后台报告缓存v0.5.0如实保留；Host逻辑未改，未额外off/on或修改真实内容。2/2项、4份required evidence，私有round `20261116-z-selection-followup-0.5.1`。
+
+
+## 2026-11-16 · 0.5.2 卡片阅读与预览统一
+
+final result: passed（2项隔离Web局部验收）
+
+最终client `58dd8363b2c9b9b4bfeefbed7870f2d2c71dd52edb4a8ee86638f6028c905b44`。唯一owner亲检宽屏/600×900：reader与preview共用sans16/29.6px正文、H2 19px无绿分隔边框、table14自身横滚，正文小节/标题左边线一致，无正文max70ch居中。ul祖先继承造成circle/disc差异已修，最终两处disc。表格/列表/公式可读，窄屏Modal保存取消可达，临时viewport已reset。无未解决P0/P1/P2。
+
+同名首heading或独立段落仅展示省略，原编辑body/卡片文件字节保留；复制沿用来源wrapper且保留完整原body与TeX。不同标题、代码、quote保留实测；含link/inlinecode首块新边界由主agent85项delivered Markdown检查补证，另typecheck/build通过。不新模型、不改notes/真实库。9d92窄屏/原文证据保留原出处，仅bullet补验与公共图用最终58dd。
+
+两张最终公共JPEG仅公开合成fixture，裁掉完整宿主个人侧栏，无身份、旧业务、路径或鉴权URL；1701×913裁为1421×913并重编码，UI内容未改，逐张亲检。manifest位于本轮results/public-candidates-manifest.json。2/2项共4份required evidence。native初态已见界面v0.5.2/后台缓存v0.5.0；只读卡片动作后用户切业务页即停，未独立确认原生卡片布局，未写真实内容。
