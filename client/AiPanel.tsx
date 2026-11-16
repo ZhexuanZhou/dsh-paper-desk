@@ -91,6 +91,7 @@ export interface AiPanelProps {
   history: readonly { role: 'user' | 'assistant'; text: string }[]
   busyTask: AssistTask | null
   labels: AiPanelLabels
+  documentNavigation?: ReactNode
   renderConversationBar?: (actions: readonly MenuItemDef[]) => ReactNode
   currentPage?: number
   pageCount?: number | null
@@ -254,6 +255,13 @@ export function AiPanel(props: AiPanelProps) {
   const [notes, setNotes] = useState<AnswerNote[]>([])
   const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null)
   const selectionRangeRef = useRef<Range | null>(null)
+
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(168, Math.max(64, input.scrollHeight))}px`
+  }, [draft, draftStoreKey])
 
   const rows = snapshot.rows
   const running = snapshot.status === 'running'
@@ -721,6 +729,7 @@ export function AiPanel(props: AiPanelProps) {
         { id: 'larger', label: labels.largerText, disabled: zoom >= 1.4, onSelect: () => changeZoom(0.05) },
         { id: 'session', label: labels.openInSession, disabled: snapshot.sessionId === null, onSelect: () => void onOpenInSession() },
       ])}
+      {props.documentNavigation}
       <div className="pd-ai-body">
         <div className="pd-ai-scroll" ref={scrollRef} onScroll={onScroll}>
           {attaching ? (
@@ -842,7 +851,7 @@ export function AiPanel(props: AiPanelProps) {
             onClick={jumpToLatest}
             title={hasNew ? labels.newAnswer : labels.scrolledUpHint}
           >
-            {labels.scrolledUpHint}
+            {hasNew ? labels.newAnswer : labels.scrolledUpHint}
           </button>
         ) : null}
       </div>
@@ -886,7 +895,7 @@ export function AiPanel(props: AiPanelProps) {
             value={draft}
             placeholder={labels.placeholder}
             aria-label={labels.placeholder}
-            disabled={disabled}
+            disabled={attaching || sending}
             onChange={(event) => {
               const value = event.target.value
               setDraft(value)

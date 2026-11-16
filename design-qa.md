@@ -101,3 +101,18 @@ final result: passed（6项隔离Web验收；本地Harness已于今日授权暂�
 两张公共JPEG候选仅独立合成demo与本轮真实模型输出，已逐张亲检隐私与布局；裁除整个宿主个人侧栏和Chrome地址栏，无姓名头像、业务对话、本地路径或鉴权URL。自然语言图直接区域捕获；选区图由原始真实捕获裁切并JPEG重编码，未改变UI内容。公共候选及逐图来源见私有round `20261116-natural-language-agent/results/public-candidates-manifest.json`。本轮6项各含截图与文本，共12份required evidence；真实库未写入。
 
 0.4.8原生补充：今日明确暂停授权后，插件管理器on→off→on完成，无整应用重启；回Library观察界面/后台均v0.4.8、自然语言输入及复制Markdown，无旧task/回答保存菜单。未发模型或编辑真实库/对话。原生UI未单独展示create/update schema，不伪称工具执行复验；沿用隔离真实模型与工具证据。补充AX记录位于本轮results/native-reload.txt，Web原6项来源与12份required evidence不变。
+
+
+## 2026-11-16 · 0.5.0 编辑重组、版本恢复与对话面板
+
+final result: passed
+
+最终client `a79c9b882fa988e9e2d11e795d9f28190fbd3204bb262676992936b9a203d1e3`。唯一媒体owner亲检宽屏与600×900：统一会话菜单、新建、重命名/取消删除、顶部笔记/卡片导航；草稿自动增高、生成中可编辑下一条、切换草稿不串；窄屏正文/按钮可达，表格/公式独立overflow容器且父正文不溢出。实际回答未形成超长公式，不声称拖动极长公式已验。历史共享Modal可预览完整笔记/卡片集合，恢复与撤销按钮可达。删卡旧“无法恢复”提示已修并fresh确认。无未解决P0/P1/P2。
+
+5次真实deepseek-official/deepseek-flash请求完成整篇笔记去重、卡片内容合并拆分、排序补验和两类对话历史恢复；文件与目标快照逐字节核对。UI恢复/撤销双向核对及手动编辑/删除前快照已实测，冲突/失败原子性等以主agent44项历史专项及8项预览补证，不混作真实模型。首批cards工具返回undefined被真实宿主lossless JSON拒绝，虽然已写入模型仍诚实读回；修后真实move成功返回与落盘一致。修前证据保留，后续构建仅文案/样式不重跑模型。
+
+两张最终0.5.0公共JPEG为独立合成demo与本轮真实模型回答，裁除整个宿主个人侧栏/Chrome地址，无用户身份、业务会话、私有路径或鉴权URL；原1701×913裁为1421×913并JPEG重编码，UI内容未改。逐张亲检及SHA见私有round `20261116-versions-followup-0.5.0/results/public-candidates-manifest.json`。
+
+今日明确暂停授权后原生插件管理器off/on更新，界面与后台均v0.5.0；只读确认新会话管理和版本历史入口。未发模型、编辑或恢复真实内容。Web5项/10份required evidence，native作为补充观察，不替代隔离写入证据。
+
+主agent最终自动化共259项（44历史编辑+8预览+18工具+33smoke+67regression+57Markdown+25composer+7display），另typecheck/build通过；不将这些计为真实模型。原生未独立检查工具schema或执行写工具，仅版本及入口只读观察。

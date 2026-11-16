@@ -404,6 +404,8 @@ export interface NoteCard {
 }
 
 export interface CardsDocument {
+  /** Hash of the raw collection returned by the API; not persisted. */
+  hash?: string
   schemaVersion: 1
   paperId: string
   updatedAt: string
@@ -561,3 +563,16 @@ export interface DiscoveryResult {
   checkedAt: string
   cacheHit: boolean
 }
+
+export type DocumentKind = 'notes' | 'cards'
+export interface RevisionSummary {
+  id: string
+  paperId: string
+  kind: DocumentKind
+  createdAt: string
+  reason: string
+  exists: boolean
+  hash: string
+}
+export interface Revision extends RevisionSummary { content: string | null }
+export interface DocumentState { content: string | null; hash: string }

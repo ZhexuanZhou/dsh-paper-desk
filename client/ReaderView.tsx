@@ -50,6 +50,7 @@ import type { KeyAction } from './keymap.js'
 import { CardEditor, CardsPanel, suggestCardTitle } from './CardsPanel.js'
 import type { CardDraft } from './CardsPanel.js'
 import { MetaEditor } from './MetaEditor.js'
+import { VersionHistory } from './VersionHistory.js'
 import { NotesEditor } from './NotesEditor.js'
 import { NotebookReference } from './NotebookReference.js'
 import { PdfViewer } from './PdfViewer.js'
@@ -134,6 +135,7 @@ interface CardEditorState {
   mode: 'create' | 'edit'
   cardId: string | null
   source: 'ai' | 'user'
+  expectedUpdatedAt?: string
   initial: CardDraft
   availableTurns?: readonly CardContextTurn[]
 }
@@ -174,6 +176,7 @@ export interface ReaderViewProps {
   onEnterNotebook: () => void
   onDirtyChange: (dirty: boolean) => void
   registerNotesSave: (save: (() => Promise<boolean>) | null) => void
+  onRestoreDocuments: () => Promise<void>
   onSaveNotes: (markdown: string, baseHash?: string) => Promise<NotesWriteResult>
   onReloadNotes: () => Promise<NotesDocument>
   onAppendQuote: (text: string, page?: number) => Promise<NotesWriteResult>
@@ -214,8 +217,8 @@ export interface ReaderViewProps {
   onSynthesizeCard: (turns: readonly CardContextTurn[]) => Promise<CardDraft | null>
   onSummarizeCards: () => Promise<void>
   onMergeCards: (cards: readonly NoteCard[]) => Promise<void>
-  onUpdateCard: (cardId: string, patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>) => Promise<void>
-  onDeleteCard: (cardId: string) => Promise<void>
+  onUpdateCard: (cardId: string, patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>, expectedUpdatedAt?: string) => Promise<void>
+  onDeleteCard: (cardId: string, expectedUpdatedAt?: string) => Promise<void>
   onInsertCard: (card: NoteCard) => Promise<void>
   onCopyCard: (card: NoteCard) => Promise<void>
   onToast: ToastPush
@@ -996,6 +999,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
     setCardEditor({
       mode: 'edit',
       cardId: card.id,
+      expectedUpdatedAt: card.updatedAt,
       source: card.source === 'ai' ? 'ai' : 'user',
       initial: {
         title: card.title,
@@ -1014,7 +1018,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
     setCardSaving(true)
     try {
       if (editor.mode === 'create') {
-        await onCreateCard({
+        const createdId = await onCreateCard({
           title: draft.title,
           body: draft.body,
           tags: draft.tags,
@@ -1022,6 +1026,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
           source: editor.source,
           context: draft.context,
         })
+        if (createdId === null) return
       } else if (editor.cardId !== null) {
         await onUpdateCard(editor.cardId, {
           title: draft.title,
@@ -1029,9 +1034,11 @@ function ReaderViewImpl(props: ReaderViewProps) {
           tags: draft.tags,
           pages: draft.pages,
           context: draft.context,
-        })
+        }, editor.expectedUpdatedAt)
       }
       setCardEditor(null)
+    } catch {
+      // Parent reports the error; preserve the editor/confirmation and its draft.
     } finally {
       setCardSaving(false)
     }
@@ -1042,8 +1049,10 @@ function ReaderViewImpl(props: ReaderViewProps) {
     if (editor === null || editor.cardId === null) return
     setCardSaving(true)
     try {
-      await onDeleteCard(editor.cardId)
+      await onDeleteCard(editor.cardId, editor.expectedUpdatedAt)
       setCardEditor(null)
+    } catch {
+      // Parent reports the error; preserve the editor/confirmation and its draft.
     } finally {
       setCardSaving(false)
     }
@@ -1054,8 +1063,10 @@ function ReaderViewImpl(props: ReaderViewProps) {
     if (target === null) return
     setDeletingCard(true)
     try {
-      await onDeleteCard(target.id)
+      await onDeleteCard(target.id, target.updatedAt)
       setPendingCardDelete(null)
+    } catch {
+      // Parent reports the error; preserve the editor/confirmation and its draft.
     } finally {
       setDeletingCard(false)
     }
@@ -1236,6 +1247,8 @@ function ReaderViewImpl(props: ReaderViewProps) {
               ariaLabel={t('aria.readerTabs')}
               tabs={READER_TABS.map((id) => ({ id, label: id === 'cards' ? `${tabLabel(t, id)} ${cards?.items.length ?? 0}` : tabLabel(t, id) }))}
             />
+            {(tab === 'notes' || tab === 'cards') ? <VersionHistory key={`${meta.id}:${tab}`} paperId={meta.id} kind={tab}
+              disabled={notesDirty || busy !== null} onRestored={props.onRestoreDocuments} /> : null}
             <div className="pd-assist-inline" role="group" aria-label={t('aria.assistBar')} title={t('assist.hint')}>
               <Button
                 size="sm"
@@ -1425,6 +1438,11 @@ function ReaderViewImpl(props: ReaderViewProps) {
                       onRemove={onRemoveChat}
                       extraActions={actions}
                     />}
+                    documentNavigation={<div className="pd-ai-document-nav">
+                      <span>{lang === 'en' ? 'This paper' : '当前论文'}</span>
+                      <Button size="sm" variant="ghost" onClick={() => activateTab('notes')}>{lang === 'en' ? 'View notes' : '查看笔记'}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => activateTab('cards')}>{lang === 'en' ? 'View cards' : '查看卡片'}</Button>
+                    </div>}
                     ai={ai}
                     expectedThreadKey={aiThreadKey}
                     draftKey={aiDraftKey}

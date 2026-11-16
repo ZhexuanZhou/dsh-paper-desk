@@ -30,3 +30,9 @@ LLM流的`finish.reason`可能为error或aborted，不能把它们当正常结�
 ## 0.4.7 构建产物必须与源码语义一致
 
 源码直接render正确不能代表发布bundle正确。真实DOM显示H2被多层LI包裹并累计120px缩进，而源码Marked无此嵌套。根因是build-client对完整esbuild输出逐行加缩进，改写模板字符串中换行，使Marked内部join/split规则变成换行加制表符。嵌入bundle必须保留code字节语义，并用实际lib factory与源码对同一真实原稿比较。数学应交给Marked扩展，避免全局占位替换破坏代码/列表；比较运算符和代码内美元符需同时验证。MathML accent几何略超本体可由外层padding容纳，普通inline本体不应自带overflowauto滚动条；长公式滚动放外层并验证后续正文位置。
+
+### 2026-11-16 · 工具落盘成功仍可能被宿主拒绝输出
+
+真实0.5.0 `paper_cards_edit`已经原子写入，但返回的卡片对象含`context: undefined`，DSH实际SDK拒绝为`INVALID_TOOL_OUTPUT: value is not lossless JSON`。不能只用JSON.stringify后能落盘来证明工具返回契约正确，也不能看到错误就盲目重放写操作。应先读回核对，修复字段构造不引入undefined；专项通过实际SDK的snapshotJsonValue、validateJsonSchemaValue和output.render检查每种返回。修后真实move成功返回与文件一致。保留修前失败来源，勿将单元stub当真实模型成功。
+
+本地lh报告以round目录排序选择最新轮。同日后续轮名称须排在既有轮之后；本轮改为`20261116-versions-followup-0.5.0`后，render实际返回5项/10证据，避免误把上一轮6项/12证据报成本轮覆盖。

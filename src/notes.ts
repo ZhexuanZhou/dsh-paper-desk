@@ -7,7 +7,8 @@
  * another device becomes a conflict copy instead of a lost update.
  */
 
-import { readFile, rm } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
+import { DocumentConflict, editDocument } from './history.js'
 import type { Language } from './config.js'
 import { deviceShort } from './settings.js'
 import { writeConflictCopy } from './sync.js'
@@ -18,7 +19,7 @@ import type {
   NotesWriteResult,
   PaperMeta,
 } from './types.js'
-import { atomicWrite, fileInfo, posixJoin, safeJoin, sha256 } from './util.js'
+import { fileInfo, posixJoin, safeJoin, sha256 } from './util.js'
 
 const PAPERS_DIR = 'papers'
 const NOTES_FILE = 'notes.md'
@@ -146,35 +147,15 @@ export async function writeNotes(
   opts?: { baseHash?: string; device?: string },
 ): Promise<NotesWriteResult> {
   assertPaperId(paperId)
-  const current = await readNotes(root, paperId)
-  if (current.exists && current.markdown === markdown) {
-    return { ok: true, conflict: false, notes: current }
-  }
-
-  if (opts?.baseHash !== undefined && opts.baseHash !== current.hash) {
-    const device = opts.device ?? deviceShort()
-    const conflictPath = await writeConflictCopy(
-      root,
-      paperId,
-      notesRel(paperId),
-      markdown,
-      device,
-    )
-    return { ok: false, conflict: true, conflictPath, notes: current }
-  }
-
-  const absPath = safeJoin(root, notesRel(paperId))
-  await atomicWrite(absPath, markdown)
-  const info = await fileInfo(absPath)
-  return {
-    ok: true,
-    conflict: false,
-    notes: {
-      markdown,
-      hash: sha256(markdown),
-      mtimeMs: info?.mtimeMs ?? 0,
-      exists: true,
-    },
+  try {
+    const saved = await editDocument(root, paperId, 'notes', () => markdown, {
+      expectedHash: opts?.baseHash, reason: 'edit notes',
+    })
+    return { ok: true, conflict: false, notes: { markdown: saved.content ?? '', hash: saved.hash, exists: saved.content !== null, mtimeMs: (await fileInfo(safeJoin(root, notesRel(paperId))))?.mtimeMs ?? 0 } }
+  } catch (error) {
+    if (!(error instanceof DocumentConflict)) throw error
+    const conflictPath = await writeConflictCopy(root, paperId, notesRel(paperId), markdown, opts?.device ?? deviceShort())
+    return { ok: false, conflict: true, conflictPath, notes: await readNotes(root, paperId) }
   }
 }
 
@@ -276,23 +257,23 @@ export async function appendToNotes(
   const language: Language = opts?.language ?? 'zh'
   const device = opts?.device ?? deviceShort()
 
-  // Conflict copies written by a retried attempt are redundant once the
-  // additive append lands; drop them so the sync panel shows no phantom conflicts.
-  const transientConflicts: string[] = []
-  let result: NotesWriteResult | undefined
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const current = await readNotes(root, input.paperId)
-    const next = buildAppendedMarkdown(current.markdown, input, language)
-    result = await writeNotes(root, input.paperId, next, { baseHash: current.hash, device })
-    if (!result.conflict) {
-      for (const relPath of transientConflicts) {
-        await rm(safeJoin(root, relPath), { force: true }).catch(() => {})
+  let proposed = ''
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const saved = await editDocument(root, input.paperId, 'notes', (current) => {
+        proposed = buildAppendedMarkdown(current.content ?? '', input, language)
+        return proposed
+      }, { reason: 'append notes' })
+      return { ok: true, conflict: false, notes: { markdown: saved.content ?? '', hash: saved.hash, exists: saved.content !== null, mtimeMs: (await fileInfo(safeJoin(root, notesRel(input.paperId))))?.mtimeMs ?? 0 } }
+    } catch (error) {
+      if (!(error instanceof DocumentConflict)) throw error
+      if (attempt === 1) {
+        const conflictPath = await writeConflictCopy(root, input.paperId, notesRel(input.paperId), proposed, device)
+        return { ok: false, conflict: true, conflictPath, notes: await readNotes(root, input.paperId) }
       }
-      return result
     }
-    if (result.conflictPath !== undefined) transientConflicts.push(result.conflictPath)
   }
-  return result!
+  throw new Error('note append failed')
 }
 
 /** First meaningful line for the library list; never throws on malformed markdown. */

@@ -348,7 +348,21 @@ export function Menu({ label, items, icon, disabled = false, className, triggerL
   }, [open])
 
   return (
-    <span className={classes('pd-menu', className)} ref={rootRef}>
+    <span className={classes('pd-menu', className)} ref={rootRef} onKeyDown={(event) => {
+      const direction = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
+      if (!direction && (!open || (event.key !== 'Home' && event.key !== 'End'))) return
+      event.preventDefault()
+      setOpen(true)
+      const key = event.key
+      window.requestAnimationFrame(() => {
+        const items = Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])
+        if (!items.length) return
+        const current = items.indexOf(document.activeElement as HTMLButtonElement)
+        const next = key === 'Home' ? 0 : key === 'End' ? items.length - 1
+          : current < 0 ? (direction > 0 ? 0 : items.length - 1) : (current + direction + items.length) % items.length
+        items[next]?.focus()
+      })
+    }}>
       <button
         ref={triggerRef}
         type="button"

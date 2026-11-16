@@ -245,6 +245,16 @@ export const api = {
     )
   },
 
+  history(id: string, kind: import('../src/types.js').DocumentKind): Promise<{ currentHash: string; versions: import('../src/types.js').RevisionSummary[] }> {
+    return requestJson(`/history${query({ id, kind })}`)
+  },
+  historyVersion(id: string, kind: import('../src/types.js').DocumentKind, revisionId: string): Promise<import('../src/types.js').Revision> {
+    return requestJson(`/history/version${query({ id, kind, revisionId })}`)
+  },
+  restoreVersion(id: string, kind: import('../src/types.js').DocumentKind, revisionId: string, expectedHash: string): Promise<{ ok: boolean; hash: string; changed: boolean }> {
+    return requestJson(`/history/restore${query({ id, kind })}`, { method: 'POST', body: JSON.stringify({ revisionId, expectedHash }) })
+  },
+
   notes(id: string): Promise<NotesDocument> {
     return requestJson<NotesDocument>(`/notes${query({ id })}`)
   },
@@ -404,11 +414,16 @@ export const api = {
     id: string,
     cardId: string,
     patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>,
+    expectedUpdatedAt?: string,
   ): Promise<CardsDocument> {
     return requestJson<CardsDocument>(`/cards${query({ id, cardId })}`, {
       method: 'PATCH',
-      body: JSON.stringify(patch),
+      body: JSON.stringify({ ...patch, expectedUpdatedAt }),
     })
+  },
+
+  editCards(id: string, operations: readonly Record<string, unknown>[], expectedHash: string): Promise<CardsDocument> {
+    return requestJson(`/cards/edit${query({ id })}`, { method: 'POST', body: JSON.stringify({ operations, expectedHash }) })
   },
 
   synthesizeCard(id: string, turns: readonly CardContextTurn[]): Promise<{ title: string; body: string; tags: string[]; pages: number[] }> {
@@ -425,8 +440,8 @@ export const api = {
     })
   },
 
-  deleteCard(id: string, cardId: string): Promise<CardsDocument> {
-    return requestJson<CardsDocument>(`/cards${query({ id, cardId })}`, { method: 'DELETE' })
+  deleteCard(id: string, cardId: string, expectedUpdatedAt?: string): Promise<CardsDocument> {
+    return requestJson<CardsDocument>(`/cards${query({ id, cardId, expectedUpdatedAt })}`, { method: 'DELETE' })
   },
 
   /* ── paper relation graph ──────────────────────────────────────────── */

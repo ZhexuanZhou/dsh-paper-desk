@@ -3,16 +3,17 @@
  * an unconfigured or broken library is reported to the model instead of throwing,
  * so a session never dies because of the paper library.
  */
+import { documentState, listRevisions, readRevision, restoreRevision } from './history.js'
 import { stat } from 'node:fs/promises'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { annotationStats, readAnnotations } from './annotations.js'
-import { addCard, readCards, updateCard } from './cards.js'
+import { addCard, editCards, readCards, readCardsState, updateCard } from './cards.js'
 import { readRelations, relationForPaper } from './relations.js'
 import type { Config } from './config.js'
 import { createPaper, readMeta, updateMeta } from './library.js'
 import type { AutoMetadataFn } from './importMetadata.js'
 import type { AutoTagFn } from './autotag.js'
-import { appendToNotes, readNotes } from './notes.js'
+import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { ensureText, pageText } from './pdf.js'
 import { listTags, queryPapers, searchLibrary } from './search.js'
 import { deviceShort, effectiveSettings } from './settings.js'
@@ -380,7 +381,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_notes_read',
       description: "Read the user's markdown notes for one PaperDesk paper, including the notes hash and whether the text is truncated.",
-      parameters: { paperId: { type: 'string', required: true, description: 'Paper id.' } },
+      parameters: { paperId: { type: 'string', required: true, description: 'Paper id.' }, offset: { type: 'number', description: 'Character offset for reading the remaining notes (default 0).' } },
       output: {
         schema: {
           type: 'object',
@@ -388,6 +389,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           properties: {
             ok: { type: 'boolean', required: true },
             error: { type: 'string' },
+            totalLength: { type: 'number' }, nextOffset: { type: 'number' },
             markdown: { type: 'string' },
             hash: { type: 'string' },
             exists: { type: 'boolean' },
@@ -403,10 +405,13 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         const library = libraryOrError(settings())
         if (isToolFailure(library)) return library
         const notes = await readNotes(library.root, args.paperId)
-        const truncated = notes.markdown.length > NOTES_TEXT_CAP
+        const offset = Math.max(0, Math.trunc(args.offset ?? 0))
+        const end = offset + NOTES_TEXT_CAP
+        const truncated = notes.markdown.length > end
         return {
           ok: true,
-          markdown: truncated ? notes.markdown.slice(0, NOTES_TEXT_CAP) : notes.markdown,
+          markdown: notes.markdown.slice(offset, end),
+          totalLength: notes.markdown.length, nextOffset: Math.min(end, notes.markdown.length),
           hash: notes.hash,
           exists: notes.exists,
           truncated,
@@ -685,7 +690,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           properties: {
             ok: { type: 'boolean', required: true },
             error: { type: 'string' },
-            count: { type: 'number' },
+            count: { type: 'number' }, hash: { type: 'string' },
             truncated: { type: 'boolean' },
             cards: { type: 'array', items: { type: 'object', additionalProperties: true, properties: {} } },
           },
@@ -698,10 +703,10 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         if (invalid !== undefined) return invalid
         const library = libraryOrError(settings())
         if (isToolFailure(library)) return library
-        const doc = await readCards(library.root, args.paperId)
+        const { document: doc, hash } = await readCardsState(library.root, args.paperId)
         const limit = Math.min(Math.max(Math.trunc(args.limit ?? 200), 1), 200)
         return {
-          ok: true,
+          ok: true, hash,
           count: doc.items.length,
           truncated: doc.items.length > limit,
           cards: doc.items.slice(0, limit).map((card) => ({
@@ -763,6 +768,95 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         } catch (error) {
           return failure(error instanceof Error ? error.message : String(error))
         }
+      },
+    }))
+  }
+
+  const editingOutput = {
+    schema: { type: 'object' as const, additionalProperties: true, properties: {
+      ok: { type: 'boolean' as const, required: true as const }, error: { type: 'string' as const },
+    } },
+    render: (_args: unknown, value: unknown) => textResult(jsonText(value)),
+  }
+  for (const mode of ['write', 'replace'] as const) {
+    add(defineTool({
+      name: mode === 'write' ? 'paper_notes_write' : 'paper_notes_replace',
+      description: mode === 'write'
+        ? 'Rewrite the current paper notes in place when the user asks to reorganize/rewrite them. Read ALL notes first (follow nextOffset while truncated); pass the hash you read. Automatically saves a recoverable prior version. Do not substitute a card for requested notes.'
+        : 'Edit one exact unique passage in the current notes. Read notes first and pass expectedHash. Rejects missing/ambiguous matches; supports replacement or deletion using empty newText. Prior version is recoverable.',
+      parameters: {
+        paperId: { type: 'string', required: true }, expectedHash: { type: 'string', required: true },
+        markdown: { type: 'string', ...(mode === 'write' ? { required: true as const } : {}), description: 'Complete new Markdown notes. Empty string clears notes when requested.' },
+        oldText: { type: 'string', ...(mode === 'replace' ? { required: true as const } : {}) },
+        newText: { type: 'string', ...(mode === 'replace' ? { required: true as const } : {}) },
+      },
+      output: editingOutput,
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const invalid = badId(args.paperId); if (invalid) return invalid
+        const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+        try {
+          const current = await readNotes(library.root, args.paperId)
+          if (current.hash !== args.expectedHash) return failure('notes changed; read the current notes before editing')
+          let markdown = args.markdown ?? ''
+          if (mode === 'replace') {
+            const old = args.oldText ?? ''
+            const index = current.markdown.indexOf(old)
+            if (!old || index < 0 || current.markdown.indexOf(old, index + 1) >= 0) return failure('oldText must match exactly one passage; no edit applied')
+            markdown = current.markdown.slice(0, index) + (args.newText ?? '') + current.markdown.slice(index + old.length)
+          }
+          if (markdown.length > 1_000_000) return failure('notes exceed 1000000 characters')
+          const result = await writeNotes(library.root, args.paperId, markdown, { baseHash: args.expectedHash })
+          return { ok: result.ok, conflict: result.conflict, hash: result.notes.hash, ...(result.ok ? {} : { error: 'notes changed; proposed text preserved as a conflict copy' }) }
+        } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+      },
+    }))
+  }
+  add(defineTool({
+    name: 'paper_cards_edit',
+    description: 'Atomically reorganize cards: merge/split/edit/delete using a batch of create/update/remove operations. Read all paper_cards first, pass the collection hash. Use update to retain an existing id; for a split create cards then remove the original; for a merge update a retained card and remove redundant ones. Save history before committing. Invalid/stale batches change nothing. Do not keep unwanted duplicates just to avoid edits.',
+    parameters: {
+      paperId: { type: 'string', required: true }, expectedHash: { type: 'string', required: true },
+      operations: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
+        action: { type: 'string', required: true, enum: ['create', 'update', 'remove', 'move'] },
+        cardId: { type: 'string' }, position: { type: 'number', description: 'Zero-based destination index for move.' }, title: { type: 'string' }, body: { type: 'string' },
+        tags: { type: 'array', items: { type: 'string' } }, pages: { type: 'array', items: { type: 'number' } },
+      } } },
+    },
+    output: editingOutput,
+    async execute(args, exec) {
+      exec.signal.throwIfAborted()
+      const invalid = badId(args.paperId); if (invalid) return invalid
+      const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+      try {
+        const document = await editCards(library.root, args.paperId, args.operations as unknown as import('./cards.js').CardEditOperation[], args.expectedHash)
+        return { ok: true, cards: document.items, hash: document.hash }
+      } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+    },
+  }))
+  for (const action of ['list', 'read', 'restore'] as const) {
+    add(defineTool({
+      name: `paper_history_${action}`,
+      description: action === 'list' ? 'List recoverable versions before prior notes/cards edits, newest first; includes currentHash. Use before a restoration request. Histories are separate for notes and the whole card collection.'
+        : action === 'read' ? 'Preview a prior version without changing anything. content=null means the document did not exist then.'
+        : 'Restore the user-requested prior notes/card-collection version, with expectedHash from a fresh read. Saves the CURRENT version first so the restoration can itself be undone. Check the version belongs to the requested paper and document kind.',
+      parameters: {
+        paperId: { type: 'string', required: true }, kind: { type: 'string', enum: ['notes', 'cards'], required: true },
+        ...(action !== 'list' ? { revisionId: { type: 'string' as const, required: true as const } } : {}),
+        ...(action === 'restore' ? { expectedHash: { type: 'string' as const, required: true as const } } : {}),
+      },
+      output: editingOutput,
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const invalid = badId(args.paperId); if (invalid) return invalid
+        const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+        const kind = args.kind as 'notes' | 'cards'
+        try {
+          if (action === 'list') return { ok: true, currentHash: (await documentState(library.root, args.paperId, kind)).hash, versions: await listRevisions(library.root, args.paperId, kind) }
+          if (action === 'read') return { ok: true, version: await readRevision(library.root, args.paperId, kind, args.revisionId!) }
+          const result = await restoreRevision(library.root, args.paperId, kind, args.revisionId!, args.expectedHash!)
+          return { ok: true, hash: result.hash, exists: result.content !== null, changed: result.changed }
+        } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
       },
     }))
   }

@@ -70,9 +70,20 @@ function isZh(settings: EffectiveSettings): boolean {
 
 /** Shared policy for natural-language reader requests, including existing sessions. */
 export function readerAgentInstruction(language: string): string {
-  return language === 'en'
-    ? 'Follow the user’s actual request. Summarizing/explaining/reviewing alone is read-only. An explicit request to record notes or save cards authorizes that operation: read existing notes/cards first, then call paper_note_append or paper_card_create/paper_card_update. Never claim a write without a successful tool result; report failures and partial progress. Use paper_cards with limit 200 to read all cards for the current paper, including IDs and updatedAt; pass expectedUpdatedAt for updates. “Organize all cards” defaults to the current paper: read all cards and save a synthesis card preserving the originals and source page references. Update existing cards only when requested; do not delete originals or overwrite notes. Use explicitly requested cross-paper scope when given. Cite sources, distinguish inferences, and summarize what was saved and where.'
-    : '根据用户的实际输入执行任务。仅总结、解释、审阅时只读。用户明确说记入笔记、记录笔记、保存卡片时，已授权该操作：先读已有笔记/卡片，再调用 paper_note_append 或 paper_card_create/paper_card_update；不要再让用户去界面保存。只有工具成功后才能声称已保存；失败或部分完成要明确说明。用 paper_cards 的 limit 200 读取当前论文全部卡片及 ID、updatedAt，更新时传 expectedUpdatedAt。“整理所有卡片”默认指当前论文：先读全量卡片，保留原卡片与来源页码，创建综合整理卡片；只有明确要求修改原卡片才逐项更新，不删除原卡片或覆盖笔记。用户明确指定跨论文范围时按指定范围处理。引用证据、区分推断，完成后简要说明保存了什么、保存在哪里。'
+  const common = language === 'en' ? [
+    'Follow the actual request. Discussion alone is read-only. Explicit requests to edit, rewrite, reorganize, merge, split, delete or restore authorize those edits in the specified scope; do not ask again for routine implementation details.',
+    'Read existing content first. For notes follow nextOffset until truncated=false (verify the hash stays consistent), then use paper_notes_write for a full rewrite, paper_notes_replace for one unique exact replacement, or paper_note_append only for additions. Reorganizing notes means updating notes, not making a substitute card or appending dated duplicates.',
+    'Read all paper_cards, then use paper_cards_edit with the collection hash for atomic merge/split/update/remove operations. Reorganizing cards does not require preserving unwanted duplicates or always creating a synthesis. By default keep useful evidence, page references and personal judgments; follow explicit requests to change or remove them, and distinguish inference. Stay within the current paper unless a different scope is requested.',
+    'All writes save recoverable versions. Use paper_history_list/read/restore for requested restoration. Restore notes or the whole card collection as requested, using a fresh current hash; restoring also saves the state it replaces. Do not invent history when none exists.',
+    'Only claim edits after successful tool results. Explain conflicts, failures or partial completion. Briefly state what changed and where; do not expose tool/storage details or repeatedly offer another artifact instead of completing the request.',
+  ] : [
+    '根据实际输入执行。普通讨论只读；明确要求修改、重写、整理、合并、拆分、删除或恢复时，已授权指定范围内的相应编辑，常规实现细节无需反复确认。',
+    '先读已有内容。笔记若truncated=true，按nextOffset继续读全并检查hash一致；整篇重写用paper_notes_write，局部唯一原文替换用paper_notes_replace，仅补充内容才用paper_note_append。重新整理笔记应更新原笔记，不要追加带日期的重复段落或改存替代卡片。',
+    '读全paper_cards后，用paper_cards_edit及集合hash一次性合并、拆分、修改、删除卡片；不必保留无用重复卡片，也不必固定新增综合卡。默认保留有价值内容、来源页码和个人判断；用户明确要求修改或删除这些内容时按要求执行，区分推断。默认处理当前论文，用户指定其他范围时按指定范围执行。',
+    '所有写入自动保存可恢复版本；用户要求恢复时用paper_history_list/read/restore，按指定对象恢复笔记或整个卡片集合，使用最新currentHash。恢复前也保存当前版本，可再反向恢复。没有历史版本时如实说明，不虚构历史。',
+    '仅在工具成功后声称已修改；冲突、失败或部分完成要明确说明。完成后简要说明改了什么和位置，不向用户讲工具/存储限制，不把本可完成的编辑改成另建内容再询问。',
+  ]
+  return common.join('\n')
 }
 
 /**

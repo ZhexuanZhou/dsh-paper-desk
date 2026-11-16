@@ -16,6 +16,7 @@
  * target inside `<root>/papers/<paperId>/` (strictly confined).
  */
 
+import { editDocument } from './history.js'
 import { spawn } from 'node:child_process'
 import { constants, existsSync } from 'node:fs'
 import {
@@ -476,7 +477,8 @@ export async function resolveConflict(
       if (paperDirStat === null || !paperDirStat.isDirectory()) {
         return { ok: false, message: 'paper directory not found' }
       }
-      await atomicWrite(targetAbs, body)
+      if (parsed.extension === 'json') await atomicWrite(targetAbs, body)
+      else await editDocument(root, parsed.paperId, 'notes', () => body, { reason: 'resolve notes conflict' })
     }
 
     try {

@@ -3,6 +3,7 @@
  * browser panel (and only that). Every filesystem access is confined to the
  * configured library root by the modules below; ids are validated here.
  */
+import { documentState, listRevisions, readRevision, restoreRevision } from './history.js'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
@@ -19,7 +20,7 @@ import {
   updateAnnotation,
 } from './annotations.js'
 import { readPdfjsAsset } from './assets.js'
-import { addCard, readCards, removeCard, updateCard } from './cards.js'
+import { addCard, editCards, readCards, readCardsState, removeCard, updateCard } from './cards.js'
 import { addChat, deleteChat, readChats, updateChat } from './chats.js'
 import {
   deleteComparison,
@@ -645,6 +646,26 @@ async function handle(
       return methodNotAllowed(res)
     }
 
+    if (route === 'history' || route === 'history/version' || route === 'history/restore') {
+      const id = requirePdfId(q['id'] ?? null)
+      const kind = q['kind']
+      if (kind !== 'notes' && kind !== 'cards') throw new HttpError(400, 'invalid document kind')
+      if (route === 'history' && method === 'GET') {
+        const current = await documentState(root, id, kind)
+        json(res, 200, { currentHash: current.hash, versions: await listRevisions(root, id, kind) }); return
+      }
+      if (route === 'history/version' && method === 'GET') {
+        json(res, 200, await readRevision(root, id, kind, q['revisionId'] ?? '')); return
+      }
+      if (route === 'history/restore' && method === 'POST') {
+        const body = await readJsonBody(req)
+        if (typeof body['revisionId'] !== 'string' || typeof body['expectedHash'] !== 'string') throw new HttpError(400, 'revisionId and expectedHash are required')
+        const result = await restoreRevision(root, id, kind, body['revisionId'], body['expectedHash'])
+        json(res, 200, { ok: true, hash: result.hash, exists: result.content !== null, changed: result.changed }); return
+      }
+      return methodNotAllowed(res)
+    }
+
     if (route === 'notes') {
       const id = requirePdfId(q['id'] ?? null)
       if (method === 'GET') {
@@ -654,7 +675,7 @@ async function handle(
       if (method === 'PUT') {
         const body = await readJsonBody(req)
         const markdown = typeof body['markdown'] === 'string' ? body['markdown'] : ''
-        const baseHash = typeof body['baseHash'] === 'string' && body['baseHash'].length > 0 ? body['baseHash'] : undefined
+        const baseHash = typeof body['baseHash'] === 'string' ? body['baseHash'] : undefined
         const result = await writeNotes(root, id, markdown, { baseHash, device: deviceShort() })
         json(res, result.conflict ? 409 : 200, result)
         return
@@ -768,10 +789,19 @@ async function handle(
       return
     }
 
+    if (route === 'cards/edit') {
+      if (method !== 'POST') return methodNotAllowed(res)
+      const id = requirePdfId(q['id'] ?? null)
+      const body = await readJsonBody(req)
+      if (typeof body['expectedHash'] !== 'string' || !Array.isArray(body['operations'])) throw new HttpError(400, 'expectedHash and operations are required')
+      json(res, 200, await editCards(root, id, body['operations'] as import('./cards.js').CardEditOperation[], body['expectedHash'])); return
+    }
+
     if (route === 'cards') {
       const id = requirePdfId(q['id'] ?? null)
       if (method === 'GET') {
-        json(res, 200, await readCards(root, id))
+        const state = await readCardsState(root, id)
+        json(res, 200, { ...state.document, hash: state.hash })
         return
       }
       if (method === 'POST') {
@@ -786,14 +816,14 @@ async function handle(
         json(
           res,
           200,
-          await updateCard(root, id, cardId, body as unknown as Partial<Pick<NewNoteCard, 'title' | 'body' | 'tags' | 'pages'>>),
+          await updateCard(root, id, cardId, body as unknown as Partial<Pick<NewNoteCard, 'title' | 'body' | 'tags' | 'pages'>>, typeof body['expectedUpdatedAt'] === 'string' ? body['expectedUpdatedAt'] : undefined),
         )
         return
       }
       if (method === 'DELETE') {
         const cardId = (q['cardId'] ?? '').trim()
         if (cardId.length === 0) throw new HttpError(400, 'cardId is required')
-        json(res, 200, await removeCard(root, id, cardId))
+        json(res, 200, await removeCard(root, id, cardId, q['expectedUpdatedAt']))
         return
       }
       return methodNotAllowed(res)

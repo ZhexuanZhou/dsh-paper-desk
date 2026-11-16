@@ -1022,18 +1022,14 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         const body = chosen
           .map((card) => `## ${card.title}\n\n${card.body.trim()}`)
           .join('\n\n')
-        const created = await api.addCard(paperId, {
-          title: chosen[0]?.title ?? 'Merged card',
-          body,
-          tags,
-          pages,
-          context,
-          source: 'user',
-        })
-        let latest = created
-        for (const card of chosen) {
-          latest = await api.deleteCard(paperId, card.id)
-        }
+        const state = await api.cards(paperId)
+        if (state.hash === undefined || chosen.some((card) => state.items.find((c) => c.id === card.id)?.updatedAt !== card.updatedAt)) throw new Error('卡片已变化，请重新选择后合并 / Cards changed; select them again')
+        const first = chosen[0]!
+        const latest = await api.editCards(paperId, [
+          { action: 'update', cardId: first.id, title: first.title, body, tags, pages, context },
+          ...chosen.slice(1).map((card) => ({ action: 'remove', cardId: card.id })),
+        ], state.hash)
+        if (selectedIdRef.current !== paperId) return
         setCardsDoc(latest)
         pushToast('success', tRef.current('cards.merged'))
       } catch (error) {
@@ -1047,32 +1043,35 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     async (
       cardId: string,
       patch: Partial<Pick<NoteCard, 'title' | 'body' | 'tags' | 'pages' | 'context'>>,
+      expectedUpdatedAt?: string,
     ): Promise<void> => {
       const paperId = selectedId
       if (paperId === null) return
       try {
-        const document = await api.updateCard(paperId, cardId, patch)
+        const document = await api.updateCard(paperId, cardId, patch, expectedUpdatedAt)
         if (selectedIdRef.current !== paperId) return
         setCardsDoc(document)
         pushToast('success', tRef.current('cards.updated'))
       } catch (error) {
         reportError(error, 'cards.saveFailed')
+        throw error
       }
     },
     [selectedId, setCardsDoc, pushToast, reportError],
   )
 
   const handleDeleteCard = useCallback(
-    async (cardId: string): Promise<void> => {
+    async (cardId: string, expectedUpdatedAt?: string): Promise<void> => {
       const paperId = selectedId
       if (paperId === null) return
       try {
-        const document = await api.deleteCard(paperId, cardId)
+        const document = await api.deleteCard(paperId, cardId, expectedUpdatedAt)
         if (selectedIdRef.current !== paperId) return
         setCardsDoc(document)
         pushToast('success', tRef.current('cards.deleted'))
       } catch (error) {
         reportError(error, 'cards.deleteFailed')
+        throw error
       }
     },
     [selectedId, setCardsDoc, pushToast, reportError],
@@ -2352,6 +2351,13 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onRequestText={() => void requestText()}
               onDirtyChange={setNotesDirty}
               registerNotesSave={registerNotesSave}
+              onRestoreDocuments={async () => {
+                const paperId = selectedId
+                if (!paperId) return
+                const [paper, cards] = await Promise.all([api.paper(paperId), api.cards(paperId)])
+                if (selectedIdRef.current !== paperId) return
+                setDetail(paper); setCardsDoc(cards)
+              }}
               onSaveNotes={handleSaveNotes}
               onReloadNotes={handleReloadNotes}
               onAppendQuote={handleAppendQuote}

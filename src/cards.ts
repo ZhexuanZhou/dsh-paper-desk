@@ -7,9 +7,9 @@
  *  - a missing file is an empty document; a corrupt one is *moved* to
  *    `.paperdesk/conflicts/cards-<timestamp>.json` (bytes preserved) and reads
  *    degrade to an empty document,
- *  - mutations are read-modify-write with one re-read before the atomic write,
- *    so a concurrent additive change on another device is merged rather than
- *    silently overwritten,
+ *  - mutations are serialized within this Host and checked again before the
+ *    atomic write; detected cloud edits are rejected, never silently replaced,
+ *  - every change preserves the exact prior document in version history,
  *  - input is validated strictly (title/body/tags/pages/source), ids are
  *    generated as `c-<8 hex>` and unknown payload fields are never stored,
  *  - creating a card requires the paper to exist (`papers/<id>/meta.json`), so
@@ -21,8 +21,9 @@ import { constants } from 'node:fs'
 import { copyFile, mkdir, readFile, unlink } from 'node:fs/promises'
 import path from 'node:path'
 
+import { editDocument } from './history.js'
 import type { CardContextTurn, CardSource, CardsDocument, NewNoteCard, NoteCard } from './types.js'
-import { fileInfo, nowIso, posixJoin, safeJoin, writeJsonFile } from './util.js'
+import { fileInfo, nowIso, posixJoin, safeJoin, sha256 } from './util.js'
 
 /** File name of a paper's card document inside its directory. */
 export const CARDS_FILE = 'cards.json'
@@ -86,6 +87,11 @@ interface LoadedCards {
 export async function readCards(root: string, paperId: string): Promise<CardsDocument> {
   const loaded = await loadDocument(root, paperId)
   return loaded.doc
+}
+
+export async function readCardsState(root: string, paperId: string): Promise<{ document: CardsDocument; hash: string }> {
+  const loaded = await loadDocument(root, paperId)
+  return { document: loaded.doc, hash: loaded.raw === null ? '' : sha256(loaded.raw) }
 }
 
 async function loadDocument(root: string, paperId: string): Promise<LoadedCards> {
@@ -439,31 +445,25 @@ function newCardId(items: readonly NoteCard[]): string {
 
 type CardMutation = (doc: CardsDocument) => CardsDocument
 
-const pendingMutations = new Map<string, Promise<unknown>>()
-
 /**
  * Apply `mutation` to the current document and persist it atomically. The file
- * is re-read once before writing so a concurrent additive change is re-applied
- * instead of overwritten (see the module header).
+ * is snapshotted before writing; a detected concurrent change rejects the edit.
  */
 async function mutateDocument(
   root: string,
   paperId: string,
   mutation: CardMutation,
+  expectedHash?: string,
+  reason = 'edit cards',
 ): Promise<CardsDocument> {
-  const key = cardsPath(root, paperId)
-  const previous = pendingMutations.get(key) ?? Promise.resolve()
-  const work = previous.catch(() => {}).then(async () => {
-    const first = await loadDocument(root, paperId)
-    const candidate = mutation(first.doc)
-    const second = await loadDocument(root, paperId)
-    const result = second.raw === first.raw ? candidate : mutation(second.doc)
-    await writeJsonFile(cardsPath(root, paperId), result)
-    return result
-  })
-  pendingMutations.set(key, work)
-  try { return await work }
-  finally { if (pendingMutations.get(key) === work) pendingMutations.delete(key) }
+  let result: CardsDocument | undefined
+  const saved = await editDocument(root, paperId, 'cards', (state) => {
+    const current = state.content === null ? emptyDocument(paperId) : parseDocument(state.content, paperId)
+    if (current === null) throw fail('invalid cards file; repair it before editing', 409)
+    result = mutation(current)
+    return JSON.stringify(result, null, 2) + '\n'
+  }, { expectedHash, reason })
+  return { ...result!, hash: saved.hash }
 }
 
 /**
@@ -528,7 +528,7 @@ export async function updateCard(
       body: update.body !== undefined ? update.body : current.body,
       tags: update.tags !== undefined ? update.tags : current.tags,
       pages: update.pages !== undefined ? update.pages : current.pages,
-      context: update.context !== undefined ? update.context : current.context,
+      ...(update.context === undefined ? {} : { context: update.context }),
       updatedAt: now,
     }
     const items = [...doc.items]
@@ -542,17 +542,70 @@ export async function removeCard(
   root: string,
   paperId: string,
   cardId: string,
+  expectedUpdatedAt?: string,
 ): Promise<CardsDocument> {
   assertPaperId(paperId)
   const id = assertCardId(cardId)
   return mutateDocument(root, paperId, (doc) => {
-    if (!doc.items.some((item) => item.id === id)) throw notFound(id)
+    const current = doc.items.find((item) => item.id === id)
+    if (!current) throw notFound(id)
+    if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw fail('card changed; reload before deleting', 409)
     return {
       ...doc,
       items: doc.items.filter((item) => item.id !== id),
       updatedAt: nowIso(),
     }
   })
+}
+
+export interface CardEditOperation {
+  action: 'create' | 'update' | 'remove' | 'move'
+  cardId?: string
+  position?: number
+  context?: CardContextTurn[]
+  title?: string
+  body?: string
+  tags?: string[]
+  pages?: number[]
+}
+
+/** One validated commit for merge/split/rewrite operations; never leaves half a batch. */
+export async function editCards(root: string, paperId: string, operations: readonly CardEditOperation[], expectedHash: string): Promise<CardsDocument> {
+  if (typeof expectedHash !== 'string') throw fail('expectedHash is required', 400)
+  if (Array.isArray(operations) && operations.some((op) => !op || typeof op !== 'object' || !['create', 'update', 'remove', 'move'].includes(op.action))) throw fail('invalid card operation', 400)
+  if (!Array.isArray(operations) || !operations.length || operations.length > 400) throw fail('provide 1–400 card operations', 400)
+  return mutateDocument(root, paperId, (doc) => {
+    const items = [...doc.items]
+    const now = nowIso()
+    for (const op of operations) {
+      if (op.action === 'create') {
+        const fields = sanitizeNewCard({ title: op.title!, body: op.body!, tags: op.tags, pages: op.pages, source: 'agent' })
+        items.push({ id: newCardId(items), ...fields, createdAt: now, updatedAt: now })
+      } else {
+        const index = items.findIndex((c) => c.id === assertCardId(op.cardId))
+        const current = items[index]
+        if (!current) throw notFound(String(op.cardId))
+        if (op.action === 'remove') items.splice(index, 1)
+        else if (op.action === 'move') {
+          if (!Number.isInteger(op.position) || op.position! < 0 || op.position! >= items.length) throw fail('invalid card position', 400)
+          items.splice(index, 1); items.splice(op.position!, 0, current)
+        }
+        else if (op.action === 'update') {
+          if ([op.title, op.body, op.tags, op.pages, op.context].every((v) => v === undefined)) throw fail('empty card update', 400)
+          items[index] = { ...current,
+            title: op.title === undefined ? current.title : sanitizeTitle(op.title),
+            body: op.body === undefined ? current.body : sanitizeBody(op.body),
+            tags: op.tags === undefined ? current.tags : sanitizeTags(op.tags),
+            pages: op.pages === undefined ? current.pages : sanitizePages(op.pages),
+            ...(op.context === undefined ? {} : { context: sanitizeContext(op.context) }),
+            updatedAt: new Date(Math.max(Date.now(), (Date.parse(current.updatedAt) || 0) + 1)).toISOString(),
+          }
+        } else throw fail('unknown card operation', 400)
+      }
+    }
+    if (items.length > CARD_LIMITS.items) throw fail('card limit exceeded', 400)
+    return { ...doc, items, updatedAt: now }
+  }, expectedHash, 'reorganize cards')
 }
 
 /* -------------------------------------------------------------------------- */
