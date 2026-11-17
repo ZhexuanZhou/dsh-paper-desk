@@ -4,10 +4,10 @@ import { IconSpark } from './icons.js'
 import { Markdown } from './markdown.js'
 
 /** Keep the actual question readable; folding is optional and based on rendered lines. */
-export function UserQuestion({ text, label, expand, collapse }: {
-  text: string; label: string; expand: string; collapse: string
+export function UserQuestion({ text, label, expand, collapse, cleanContext = true }: {
+  text: string; label: string; expand: string; collapse: string; cleanContext?: boolean
 }) {
-  const body = cleanUserPrompt(text)
+  const body = cleanContext ? cleanUserPrompt(text) : text
   const bodyId = useId()
   const bodyRef = useRef<HTMLParagraphElement>(null)
   const [expanded, setExpanded] = useState(true)

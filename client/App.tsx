@@ -2420,7 +2420,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
             />
           </>
         ) : nav === 'research' ? (
-          <ResearchView supported={status.features?.topicAnalysis === true} ctx={ctx} workspacePath={status.settings.libraryPath} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} onDirtyChange={setNotesDirty} registerSave={registerNotesSave} onPapersChanged={() => { void loadPapers(); void loadStatus(true); setDetailNonce((value) => value + 1) }} />
+          <ResearchView supported={status.features?.topicDiscussion === true} ctx={ctx} workspacePath={status.settings.libraryPath} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} onDirtyChange={setNotesDirty} registerSave={registerNotesSave} onPapersChanged={() => { void loadPapers(); void loadStatus(true); setDetailNonce((value) => value + 1) }} />
         ) : nav === 'discover' ? (
           <DiscoverView onImported={() => void loadPapers()} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} />
         ) : nav === 'sync' ? (

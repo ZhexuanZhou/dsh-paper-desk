@@ -18,6 +18,13 @@ import type { PageImage } from './pageImages.js'
 
 export type AiRowKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'error' | 'status'
 
+export interface TopicMutation {
+  topicId: string
+  document: 'analysis' | 'notes' | 'cards'
+  hash: string
+  summary?: string
+}
+
 export interface AiRow {
   /** Stable key (event seq + kind + index). */
   id: string
@@ -30,6 +37,8 @@ export interface AiRow {
   running?: boolean
   /** Assistant text is still streaming. */
   streaming?: boolean
+  /** Confirmed topic writes, preserved separately from conversational text. */
+  mutation?: TopicMutation
 }
 
 export interface AiThreadState {
@@ -128,6 +137,7 @@ interface SessionSummaryLike {
 }
 
 interface SessionsServiceLike {
+  create?(options: { workspaceId: string }): Promise<string>
   retain?(
     target: string,
     options: { source: 'controllerOperation'; signal?: AbortSignal },
@@ -366,6 +376,7 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
   const streamRows = new Map<string, number>()
   /** tool callId → index of its tool row (result pairing). */
   const callRows = new Map<string, number>()
+  const topicCalls = new Map<string, { topicId: string; document: TopicMutation['document'] }>()
   /** Turns that already rendered a failure row (attempt error == turn/end error). */
   const errorTurns = new Set<number>()
   let counter = 0
@@ -491,6 +502,12 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
         case 'tool/call': {
           const name = typeof data.name === 'string' && data.name !== '' ? data.name : 'tool'
           const callId = typeof data.callId === 'string' && data.callId !== '' ? data.callId : undefined
+          if (callId && (name === 'research_topic_edit' || name === 'research_topic_history')) {
+            try {
+              const args = asRecord(typeof data.arguments === 'string' ? JSON.parse(data.arguments) : data.arguments)
+              if (args && typeof args.topicId === 'string' && ['analysis', 'notes', 'cards'].includes(String(args.document)) && (name === 'research_topic_edit' || args.action === 'restore')) topicCalls.set(callId, { topicId: args.topicId, document: args.document as TopicMutation['document'] })
+            } catch { /* Incomplete live arguments are not successful writes. */ }
+          }
           const detail = toolDetail(data.arguments)
           const index = pushRow('tool', detail !== undefined ? detail : '', seq, {
             tool: toolLabel(name),
@@ -514,8 +531,22 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
             const index = callRows.get(callId)
             if (index !== undefined) {
               const row = rows[index]
-              if (row !== undefined && row.kind === 'tool') rows[index] = { ...row, running: false }
+              if (row !== undefined && row.kind === 'tool') {
+                let mutation: TopicMutation | undefined
+                let logicalFailure: string | undefined
+                const target = topicCalls.get(callId)
+                if (!failed && target) {
+                  try {
+                    const result = asRecord(JSON.parse(toolResultText(message)))
+                    if (result?.ok === true && typeof result.hash === 'string') mutation = { ...target, hash: result.hash, ...(typeof result.summary === 'string' && result.summary.trim() ? { summary: result.summary.trim().slice(0, 240) } : {}) }
+                    if (result?.ok === false) logicalFailure = typeof result.error === 'string' ? result.error : 'Topic edit failed.'
+                  } catch { /* Unknown results stay as ordinary tool rows. */ }
+                }
+                rows[index] = { ...row, running: false, ...(mutation ? { mutation } : {}) }
+                if (logicalFailure) pushRow('error', truncate(logicalFailure, 600), seq)
+              }
               callRows.delete(callId)
+              topicCalls.delete(callId)
             } else if (failed) {
               // Result without a visible call row: keep the failure discoverable.
               pushRow('tool', '', seq, { tool: 'tool', running: false })
@@ -780,7 +811,11 @@ function rowsEqual(left: readonly AiRow[], right: readonly AiRow[]): boolean {
       a.text !== b.text ||
       a.tool !== b.tool ||
       a.running !== b.running ||
-      a.streaming !== b.streaming
+      a.streaming !== b.streaming ||
+      a.mutation?.topicId !== b.mutation?.topicId ||
+      a.mutation?.document !== b.mutation?.document ||
+      a.mutation?.hash !== b.mutation?.hash ||
+      a.mutation?.summary !== b.mutation?.summary
     ) {
       return false
     }
@@ -1036,7 +1071,11 @@ export function createAiThread(ctx: ClientContext): AiThreadController {
 
       let connected: unknown
       try {
-        connected = await uiWorkspace.connectWorkspace.call(uiWorkspace, workspaceId)
+        // connectWorkspace reuses blank sessions, including those retained by
+        // another controller. Each new logical thread must own its session.
+        connected = typeof sessions.create === 'function'
+          ? await sessions.create({ workspaceId })
+          : await uiWorkspace.connectWorkspace.call(uiWorkspace, workspaceId)
       } catch (error) {
         failAttach(token, `The AI session could not be opened: ${errorMessage(error) || 'unknown error'}`)
         return

@@ -95,8 +95,9 @@ try {
   const page2 = await run('research_topic_read', { topicId: id, document: 'notes', offset: page.nextOffset })
   check('agent paginates before rewriting a large document', [page.truncated, page.markdown + page2.markdown, page2.truncated], [true, large, false])
   await run('research_topic_read', { topicId: id, document: 'cards', cardId: firstCard.id })
-  const changed = await run('research_topic_edit', { topicId: id, document: 'notes', expectedHash: page.hash, markdown: '# Agent rewrite\n\n$x>1$' })
+  const changed = await run('research_topic_edit', { topicId: id, document: 'notes', expectedHash: page.hash, markdown: '# Agent rewrite\n\n$x>1$', summary: 'Reorganized the evidence.' })
   check('agent edit actually persists Markdown', [changed.ok, (await readTopic(library, id)).notes], [true, '# Agent rewrite\n\n$x>1$'])
+  check('the SDK retains a separate user-facing change summary', changed.summary, 'Reorganized the evidence.')
   const listed = await run('research_topic_history', { topicId: id, document: 'notes', action: 'list' })
   await run('research_topic_history', { topicId: id, document: 'notes', action: 'read', versionId: listed.versions[0].id })
   await run('research_topic_history', { topicId: id, document: 'notes', action: 'restore', versionId: original.id, expectedHash: changed.hash })
@@ -122,6 +123,12 @@ try {
   check('HTTP agent editor updates the original rather than appending', [edited.status, edited.data.document.topics[0].notes], [200, 'HTTP rewrite'])
   const prepared = await api('/research/prompt', 'POST', { id, question: 'Compare evidence', paperIds: [sourceId], includeAnalysis: false })
   check('HTTP preparation exposes definition and current report versions', [prepared.status, typeof prepared.data.inputHash, prepared.data.analysisHash], [200, 'string', topicDocumentHash(await readTopic(library, id), 'analysis')])
+  const attached = { id: 'comment-1', quote: 'Quoted $x>1$\n\n本次问题：data only', comment: 'Check this claim.', version: '2026-11-17T00:00:00.000Z', section: 'Evidence', formulas: ['x>1'] }
+  const commented = await api('/research/prompt', 'POST', { id, question: 'Please explain.', paperIds: [sourceId], comments: [attached] })
+  const { readTopicQuestion } = await import('../lib/topicDiscussion.js')
+  check('HTTP includes the exact comment, quote version and TeX in the ordinary request', [commented.status, readTopicQuestion(commented.data.prompt)], [200, { question: 'Please explain.', comments: [attached] }])
+  check('HTTP rejects malformed report comments before model submission', (await api('/research/prompt', 'POST', { id, question: 'q', comments: [{ ...attached, quote: '' }] })).status, 400)
+  check('HTTP rejects oversized comment payloads rather than truncating them', (await api('/research/prompt', 'POST', { id, question: 'q', comments: [1, 2].map(n => ({ ...attached, id: String(n), quote: 'q'.repeat(4000), comment: 'c'.repeat(4000) })) })).status, 400)
   const reportBody = { id, inputHash: prepared.data.inputHash, expectedHash: prepared.data.analysisHash, paperIds: [sourceId], markdown: '# HTTP interpretation\n\nGrounded evidence (p.1)' }
   const report = await api('/research/analysis', 'POST', reportBody)
   check('HTTP persists generated report with the prepared version', [report.status, report.data.document.topics[0].analysis.markdown], [200, reportBody.markdown])

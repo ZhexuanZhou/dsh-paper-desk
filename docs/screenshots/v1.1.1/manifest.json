@@ -1,0 +1,12 @@
+{
+  "version": "1.1.1",
+  "image": "topic-comments-receipt.jpg",
+  "imageSha256": "4102a84cbc620ff2ea6c36d9a7929110e1e4cb41d4de335d354fc5fc3555f2cb",
+  "sourceCapture": ".acceptances/standalone-paperdesk-redesign/20261117-140659-topic-interaction-1.1.1/assets/final-topic-receipt.jpg",
+  "sourceCaptureSha256": "b59a58396c99ef1daa798b99e45ce544a9c170c3b22436bfa7f98a55ddfba173",
+  "sourceBuildSha256": "6d82aa4dd2483c2092b04690da1bdd1d1f963245ac36139ef9e0b61836d55aee",
+  "captured": "2026-11-17",
+  "description": "Synthetic two-paper topic report with concise right-side update receipt after two report comments were sent through the normal composer.",
+  "privacy": "Cropped 280px from the left to remove Harness sidebar/account avatar; re-encoded JPEG to strip metadata. Remaining content is synthetic fixture data.",
+  "provenance": "Isolated synthetic library only; no real library content. Overall acceptance used three model calls; no named provider/model is claimed."
+}

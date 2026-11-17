@@ -288,7 +288,7 @@ export interface EffectiveSettings {
 
 /** Status payload of `/api/paper-desk/status`. */
 export interface StatusPayload {
-  features?: { topicAnalysis?: boolean }
+  features?: { topicAnalysis?: boolean; topicDiscussion?: boolean }
   ok: boolean
   plugin: string
   version: string

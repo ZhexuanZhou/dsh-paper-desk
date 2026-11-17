@@ -814,6 +814,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
       expectedHash: { type: 'string', required: true }, markdown: { type: 'string' },
       action: { type: 'string', enum: ['create', 'update', 'remove', 'move'] }, cardId: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' },
       sourcePaperIds: { type: 'array', items: { type: 'string' } }, position: { type: 'number' },
+      summary: { type: 'string', description: 'Optional short user-facing change summary, at most 240 characters. Do not repeat the document body or internal hashes.' },
     }, output: editingOutput,
     async execute(args, exec) {
       exec.signal.throwIfAborted()
@@ -821,7 +822,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
       try {
         const next = await editTopicDocument(library.root, args)
         const topic = next.document.topics.find((item) => item.id === args.topicId)!
-        return { ok: true, hash: topicDocumentHash(topic, args.document as TopicDocumentKind), ...(args.document === 'cards' ? { cards: (topic.cards ?? []).map((card) => ({ id: card.id, title: card.title, sourcePaperIds: card.sourcePaperIds })) } : {}), ...(next.activityWarnings?.length ? { warnings: next.activityWarnings } : {}) }
+        return { ok: true, hash: topicDocumentHash(topic, args.document as TopicDocumentKind), ...(typeof args.summary === 'string' && args.summary.trim() ? { summary: args.summary.trim().slice(0, 240) } : {}), ...(args.document === 'cards' ? { cards: (topic.cards ?? []).map((card) => ({ id: card.id, title: card.title, sourcePaperIds: card.sourcePaperIds })) } : {}), ...(next.activityWarnings?.length ? { warnings: next.activityWarnings } : {}) }
       } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
     },
   }))

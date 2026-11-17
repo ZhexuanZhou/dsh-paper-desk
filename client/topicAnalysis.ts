@@ -2,6 +2,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { createAiThread } from './aiSession.js'
 import { api } from './api.js'
 import type { ResearchSnapshot } from '../src/types.js'
+import { TOPIC_ANALYSIS_DIRECTIVE } from '../src/topicDiscussion.js'
 
 export interface TopicAnalysisState { phase: 'idle' | 'running' | 'complete' | 'error'; markdown: string; error: string | null }
 const IDLE: TopicAnalysisState = { phase: 'idle', markdown: '', error: null }
@@ -59,7 +60,7 @@ export async function startTopicAnalysis(
         }
       })
       timer = setTimeout(() => { void ai.stop(); reject(new Error('专题解读超时，可重试；不会自动重复调用模型。')) }, 600000)
-      void ai.run(`${payload.prompt}\n\n请围绕预设研究问题生成专题解读：先回答各个问题，再比较证据、差异与资料缺口。区分论文结论、推断和建议，标明论文与页码。给出可行方案、适用条件和优先验证步骤。只输出报告正文，由应用保存；不要调用任何写入工具，也不要把研究问题重述成等待用户继续提问的说明。`).then((result) => { if (!result.ok) reject(new Error(result.error || '无法开始解读。')) }, reject)
+      void ai.run(`${payload.prompt}\n\n${TOPIC_ANALYSIS_DIRECTIVE}`).then((result) => { if (!result.ok) reject(new Error(result.error || '无法开始解读。')) }, reject)
     })
     if (cancelled || current.state.phase === 'error') return null
     const saved = await api.saveTopicAnalysis(id, payload.inputHash, paperIds, current.state.markdown, payload.analysisHash)

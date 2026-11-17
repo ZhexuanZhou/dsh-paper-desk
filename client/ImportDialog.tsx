@@ -37,7 +37,11 @@ export function ImportDialog(props: ImportDialogProps) {
     tabsRef.current?.querySelector<HTMLButtonElement>(`[data-mode="${next}"]`)?.focus()
   }
 
-  return <Modal open={props.open} title={t('import.button')} className="pd-import-dialog" onClose={props.onClose}>
+  return <Modal open={props.open} title={t('import.button')} className="pd-import-dialog" onClose={props.onClose}
+    footer={<div className="pd-import-status" role="status" aria-live="polite" data-busy={busy}>
+      <span className="pd-import-status-mark" aria-hidden="true">{busy ? <Spinner size={14} /> : <IconImport size={14} />}</span>
+      <div>{busy ? <><strong>{t(props.urlBusy ? 'import.urlImporting' : 'import.importing')}</strong><p>{t('import.background')}</p></> : <p>{t('import.afterImport')}</p>}</div>
+    </div>}>
     <p className="pd-import-intro">{t('import.intro')}</p>
     <div ref={tabsRef} className="pd-import-tabs" role="tablist" aria-label={t('import.method')}>
       {(['file', 'link'] as const).map((item) => <button key={item} type="button" role="tab"
@@ -67,7 +71,7 @@ export function ImportDialog(props: ImportDialogProps) {
           <p>{t('import.urlLimit')}</p>
         </div>
         {props.error ? <div id={`${id}-error`} className="pd-import-error" role="alert">{props.error}</div> : null}
-        <Button type="submit" variant="primary" loading={props.urlBusy} disabled={busy || !props.url.trim()}>{t('import.batchSubmit', { n: parseImportLinks(props.url).length })}</Button>
+        <Button type="submit" variant="primary" icon={<IconImport size={12} />} loading={props.urlBusy} disabled={busy || !props.url.trim()}>{t('import.batchSubmit', { n: parseImportLinks(props.url).length })}</Button>
       </form>}
     </div>
     {props.results.length ? <section className="pd-import-results" aria-label={t('import.results')}>
@@ -75,11 +79,8 @@ export function ImportDialog(props: ImportDialogProps) {
         {props.results.some((item) => item.state === 'error') ? <Button size="sm" disabled={busy} onClick={props.onRetryFailed}>{t('import.retryFailed')}</Button> : null}</header>
       <ol>{props.results.map((item) => <li key={item.url} data-state={item.state}>
         <div><span title={item.url}>{item.title || item.url}</span><small>{t(`import.result.${item.state}`)}{item.error ? ` · ${item.error}` : ''}</small></div>
-        {item.state === 'running' ? <Spinner size={14} /> : item.state === 'error' ? <Button size="sm" disabled={busy} onClick={() => props.onRetry(item.url)}>{t('common.retry')}</Button> : null}
+        <div className="pd-import-result-action">{item.state === 'running' ? <Spinner size={14} /> : item.state === 'error' ? <Button size="sm" disabled={busy} onClick={() => props.onRetry(item.url)}>{t('common.retry')}</Button> : null}</div>
       </li>)}</ol>
     </section> : null}
-    {busy ? <div className="pd-import-status" role="status">
-      <Spinner size={14} /><div><strong>{t(props.urlBusy ? 'import.urlImporting' : 'import.importing')}</strong><p>{t('import.background')}</p></div>
-    </div> : <p className="pd-import-footnote">{t('import.afterImport')}</p>}
   </Modal>
 }

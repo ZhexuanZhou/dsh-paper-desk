@@ -29,6 +29,9 @@ try {
   const long = question(longText)
   check('long question starts expanded with the complete text', long.includes(`data-collapsed="false">${longText}</p>`), true)
   check('injected paper context stays out of the visible question', question('Private paper context\n\n---\n\n我的问题全文').includes('Private paper context'), false)
+  const typed = 'First request.\n\n---\n\nTask: this heading belongs to my question.\nSecond request.'
+  const structured = renderToStaticMarkup(createElement(UserQuestion, { text: typed, cleanContext: false, label: 'User', expand: 'Expand', collapse: 'Collapse' }))
+  check('an already decoded topic question preserves user separators and headings', structured.includes(typed), true)
   const answer = renderToStaticMarkup(createElement(AssistantAnswer, { text: '## 方法\n\nEuler 更新为 $x_{t+1}=x_t+h v_t$。', label: 'AI 助读', streaming: true }))
   check('assistant role is visible', answer.includes('>AI 助读</span>'), true)
   check('assistant formulas still render as MathML', answer.includes('<math'), true)

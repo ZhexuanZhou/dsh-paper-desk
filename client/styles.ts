@@ -39,6 +39,7 @@ import { relationsCss } from './RelationsGraph.js'
 import { compareCss } from './CompareView.js'
 import { aiReadingCss } from './aiReadingStyles.js'
 import { importCss } from './importStyles.js'
+import { topicWorkspaceCss } from './topicWorkspaceStyles.js'
 
 
 const readingCss = `
@@ -2254,7 +2255,7 @@ export const CSS = `
 }
 ` +
   relationsCss +
-  compareCss + readingCss + aiReadingCss + importCss
+  compareCss + readingCss + aiReadingCss + importCss + topicWorkspaceCss
 
 /** Value of the injected `<style data-plugin-css="...">` attribute. */
 export const STYLE_ATTR = 'paper-desk'

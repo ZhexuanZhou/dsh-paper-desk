@@ -302,6 +302,30 @@ try {
   check('ordinary questions do not attach images', submitted, [{ type: 'text', text: 'Text only' }])
   ai.dispose()
 
+  let created = 0, blankConnections = 0
+  const dedicated = {
+    ...services,
+    uiWorkspace: { connectWorkspace: async () => { blankConnections++; return 'shared-blank' } },
+    sessions: {
+      create: async ({ workspaceId }) => { assert.equal(workspaceId, 'workspace'); return `dedicated-${++created}` },
+      retain: async (id) => ({ binding: { sessionId: id, session: { ...session, sessionId: id } }, release: () => {} }),
+    },
+  }
+  const analysisThread = createAiThread({ get: (name) => dedicated[name] })
+  const chatThread = createAiThread({ get: (name) => dedicated[name] })
+  await Promise.all([
+    analysisThread.openThread('topic-analysis:fresh', { workspacePath: root }),
+    chatThread.openThread('topic:fresh', { workspacePath: root }),
+  ])
+  check('parallel analysis and discussion allocate separate sessions', new Set([analysisThread.getSnapshot().sessionId, chatThread.getSnapshot().sessionId]).size, 2)
+  check('retained blank sessions are not reused for another logical thread', blankConnections, 0)
+  analysisThread.dispose(); chatThread.dispose()
+  const reopened = createAiThread({ get: (name) => dedicated[name] })
+  await reopened.openThread('topic:fresh', { workspacePath: root })
+  check('reopening the same logical discussion retains its own history', reopened.getSnapshot().sessionId, 'dedicated-2')
+  check('reopening does not allocate another session', created, 2)
+  reopened.dispose()
+
   const markdownModule = path.join(root, 'markdown.mjs')
   await build({ entryPoints: ['client/markdown.tsx'], bundle: true, format: 'esm', platform: 'node', outfile: markdownModule })
   const { noteOutline, renderMarkdownSectioned } = await import(pathToFileURL(markdownModule))

@@ -1,3 +1,4 @@
+import type { ReportComment } from '../src/topicDiscussion.js'
 /**
  * Typed client for the PaperDesk HTTP API (`/api/paper-desk/*`).
  * The only module in the browser half that performs fetch calls.
@@ -167,7 +168,7 @@ export const api = {
     return requestJson('/research', { method: 'POST', body: JSON.stringify({ ...topic, baseHash }) })
   },
   removeTopic(id: string, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research', { method: 'DELETE', body: JSON.stringify({ id, baseHash }) }) },
-  topicPrompt(id: string, question: string, paperIds?: string[], includeAnalysis = true, intent: 'analysis' | 'discussion' = 'discussion'): Promise<{ prompt: string; inputHash: string; analysisHash: string }> { return requestJson('/research/prompt', { method: 'POST', body: JSON.stringify({ id, question, includeAnalysis, intent, ...(paperIds ? { paperIds } : {}) }) }) },
+  topicPrompt(id: string, question: string, paperIds?: string[], includeAnalysis = true, intent: 'analysis' | 'discussion' = 'discussion', comments: ReportComment[] = []): Promise<{ prompt: string; inputHash: string; analysisHash: string }> { return requestJson('/research/prompt', { method: 'POST', body: JSON.stringify({ id, question, includeAnalysis, intent, comments, ...(paperIds ? { paperIds } : {}) }) }) },
   topicStatus(id: string, status: 'active' | 'completed', markRead: boolean, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research/status', { method: 'POST', body: JSON.stringify({ id, status, markRead, baseHash }) }) },
   saveTopicAnalysis(id: string, inputHash: string, paperIds: string[], markdown: string, expectedHash: string): Promise<ResearchSnapshot> { return requestJson('/research/analysis', { method: 'POST', body: JSON.stringify({ id, inputHash, paperIds, markdown, expectedHash }) }) },
   topicHistory(topicId: string, kind: string): Promise<{ hash: string; revisions: { id: string; createdAt: string; kind: string }[] }> { return requestJson(`/research/history${query({ topicId, kind })}`) },

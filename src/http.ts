@@ -248,7 +248,7 @@ async function buildStatus(config: Config): Promise<StatusPayload> {
   return {
     ok: true,
     plugin: 'dsh-paper-desk',
-    features: { topicAnalysis: true },
+    features: { topicAnalysis: true, topicDiscussion: true },
     version: pkg?.version ?? '0.0.0',
     configured: settings.libraryPath.length > 0 && libraryExists,
     libraryExists,
@@ -511,7 +511,7 @@ async function handle(
       if (typeof body.id !== 'string' || typeof body.question !== 'string') throw new HttpError(400, '缺少专题或问题')
       const topic = (await readResearch(root)).document.topics.find((item) => item.id === body.id)
       if (!topic) throw new HttpError(404, '专题不存在')
-      return json(res, 200, { prompt: await topicPrompt(root, body.id, body.question, body.paperIds, body.includeAnalysis !== false, body.intent === 'analysis' ? 'analysis' : 'discussion'), inputHash: topicInputHash(topic), analysisHash: topicDocumentHash(topic, 'analysis') })
+      return json(res, 200, { prompt: await topicPrompt(root, body.id, body.question, body.paperIds, body.includeAnalysis !== false, body.intent === 'analysis' ? 'analysis' : 'discussion', body.comments ?? []), inputHash: topicInputHash(topic), analysisHash: topicDocumentHash(topic, 'analysis') })
     }
     if (route === 'research/subscriptions') {
       const body = await readJsonBody(req)
