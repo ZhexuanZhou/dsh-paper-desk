@@ -119,7 +119,10 @@ export interface NoteAppendInput {
 }
 
 /** Result of a note write, including conflict handling. */
+export interface ReadingActivity { paperId: string; status?: PaperStatus; updatedAt?: string; warning?: string }
+
 export interface NotesWriteResult {
+  activity?: ReadingActivity
   ok: boolean
   /** True when a conflict copy was written instead of overwriting. */
   conflict: boolean
@@ -285,6 +288,7 @@ export interface EffectiveSettings {
 
 /** Status payload of `/api/paper-desk/status`. */
 export interface StatusPayload {
+  features?: { topicAnalysis?: boolean }
   ok: boolean
   plugin: string
   version: string
@@ -404,6 +408,7 @@ export interface NoteCard {
 }
 
 export interface CardsDocument {
+  activity?: ReadingActivity
   /** Hash of the raw collection returned by the API; not persisted. */
   hash?: string
   schemaVersion: 1
@@ -524,6 +529,15 @@ export interface NewPaperChat {
   title?: string
 }
 
+export interface TopicCard { id: string; title: string; body: string; sourcePaperIds: string[]; createdAt: string; updatedAt: string }
+export interface TopicAnalysis {
+  question: string
+  definitionPaperIds: string[]
+  markdown: string
+  inputHash: string
+  paperIds: string[]
+  updatedAt: string
+}
 export interface ResearchTopic {
   id: string
   title: string
@@ -531,6 +545,10 @@ export interface ResearchTopic {
   paperIds: string[]
   notes: string
   updatedAt: string
+  cards?: TopicCard[]
+  analysis?: TopicAnalysis
+  status?: 'active' | 'completed'
+  completedAt?: string
 }
 export type DiscoveryProvider = 'arxiv' | 'openalex'
 export interface ResearchSubscription { id: string; query: string; lastChecked: string | null; provider?: DiscoveryProvider }
@@ -539,7 +557,7 @@ export interface ResearchDocument {
   topics: ResearchTopic[]
   subscriptions: ResearchSubscription[]
 }
-export interface ResearchSnapshot { document: ResearchDocument; hash: string }
+export interface ResearchSnapshot { document: ResearchDocument; hash: string; activityWarnings?: string[] }
 
 export interface DiscoveredPaper {
   id: string
@@ -575,4 +593,4 @@ export interface RevisionSummary {
   hash: string
 }
 export interface Revision extends RevisionSummary { content: string | null }
-export interface DocumentState { content: string | null; hash: string }
+export interface DocumentState { content: string | null; hash: string; activity?: ReadingActivity }

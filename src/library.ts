@@ -717,6 +717,27 @@ export async function updateMeta(root: string, paperId: string, patch: Partial<P
   return editMeta(root, paperId, (meta) => applyMetaPatch(meta, patch))
 }
 
+/** Activity never reopens read or archived papers; check inside the metadata write queue. */
+export async function recordReadingActivity(root: string, paperId: string): Promise<import('./types.js').ReadingActivity> {
+  try {
+    const meta = await editMeta(root, paperId, (current) => {
+      if (current.status !== 'unread') return false
+      current.status = 'reading'
+    })
+    return { paperId, status: meta.status, updatedAt: meta.updatedAt }
+  } catch {
+    return { paperId, warning: `内容已保存，但论文 ${paperId} 的阅读状态未能更新，请检查后重试。` }
+  }
+}
+
+/** Explicit topic completion updates global paper status; archived records remain archived. */
+export async function markPaperRead(root: string, paperId: string): Promise<void> {
+  await editMeta(root, paperId, (current) => {
+    if (current.status === 'read' || current.status === 'archived') return false
+    current.status = 'read'
+  })
+}
+
 /** Re-read inside the shared write queue so a late LLM cannot replace manual edits. */
 export async function fillMissingMetadata(root: string, paperId: string, generated: AutoMetadataResult): Promise<{ meta: PaperMeta; changed: string[] }> {
   const changed: string[] = []

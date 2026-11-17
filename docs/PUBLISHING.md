@@ -28,32 +28,32 @@ node scripts/publish-package.mjs --pack
 
 ## GitHub Release
 
-以 1.0.0 为例，先提交已验收的源码：
+以 1.1.0 为例，先提交已验收的源码：
 
 ```sh
 git add <reviewed-files>
-git commit -m "chore(release): release v1.0.0"
-git tag -a v1.0.0 -m "知页 · 论文助手 1.0.0"
-git push origin main v1.0.0
+git commit -m "chore(release): release v1.1.0"
+git tag -a v1.1.0 -m "知页 · 论文助手 1.1.0"
+git push origin main v1.1.0
 ```
 
 将 scoped tgz 复制为面向安装者的附件名，放到忽略目录 `.publish/releases/`：
 
 ```sh
 mkdir -p .publish/releases
-cp .publish/npm/zhe_xuan-dsh-paper-desk-1.0.0.tgz .publish/releases/dsh-paper-desk-1.0.0.tgz
-gh release create v1.0.0 \
+cp .publish/npm/zhe_xuan-dsh-paper-desk-1.1.0.tgz .publish/releases/dsh-paper-desk-1.1.0.tgz
+gh release create v1.1.0 \
   --verify-tag \
-  --title "知页 · 论文助手 1.0" \
-  --notes-file docs/RELEASE-v1.0.0.md \
+  --title "知页 · 论文助手 1.1" \
+  --notes-file docs/RELEASE-v1.1.0.md \
   --latest \
-  .publish/releases/dsh-paper-desk-1.0.0.tgz
+  .publish/releases/dsh-paper-desk-1.1.0.tgz
 ```
 
 发布后核对 Latest、tag 指向的提交及附件下载。GitHub 安装方式：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.0.0/dsh-paper-desk-1.0.0.tgz
+dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.1.0/dsh-paper-desk-1.1.0.tgz
 ```
 
 桌面应用管理的 profile 应在应用的插件管理器中更新和重载。不要通过 CLI 改写正在运行的桌面 profile。

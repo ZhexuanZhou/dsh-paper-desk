@@ -1,8 +1,10 @@
 import { useId, useRef, useState } from 'react'
+import type { LinkImportItem } from './linkImports.js'
+import { parseImportLinks } from './linkImports.js'
 import type { KeyboardEvent } from 'react'
 import { useT } from './i18n.js'
 import { IconImport, IconLink } from './icons.js'
-import { Button, Modal, Spinner, TextInput } from './ui.js'
+import { Button, Modal, Spinner } from './ui.js'
 
 export interface ImportDialogProps {
   open: boolean
@@ -10,6 +12,9 @@ export interface ImportDialogProps {
   urlBusy: boolean
   url: string
   error: string | null
+  results: readonly LinkImportItem[]
+  onRetry: (url: string) => void
+  onRetryFailed: () => void
   onUrlChange: (value: string) => void
   onUrlSubmit: () => void
   onPickFiles: () => void
@@ -53,8 +58,8 @@ export function ImportDialog(props: ImportDialogProps) {
         <Button variant="primary" disabled={busy} onClick={props.onPickFiles}>{t('import.chooseFiles')}</Button>
       </div> : <form className="pd-import-url-form" onSubmit={(event) => { event.preventDefault(); if (!busy) props.onUrlSubmit() }}>
         <label htmlFor={`${id}-url`}>{t('import.urlLabel')}</label>
-        <TextInput id={`${id}-url`} value={props.url} inputMode="url" autoComplete="off"
-          placeholder={t('import.urlPlaceholder')} disabled={busy} invalid={props.error !== null}
+        <textarea className="pd-textarea pd-import-links" id={`${id}-url`} value={props.url} rows={5} autoComplete="off" spellCheck={false}
+          placeholder={t('import.batchPlaceholder')} disabled={busy} aria-invalid={props.error !== null}
           aria-describedby={`${id}-help${props.error ? ` ${id}-error` : ''}`}
           onChange={(event) => props.onUrlChange(event.target.value)} />
         <div id={`${id}-help`} className="pd-import-url-help">
@@ -62,9 +67,17 @@ export function ImportDialog(props: ImportDialogProps) {
           <p>{t('import.urlLimit')}</p>
         </div>
         {props.error ? <div id={`${id}-error`} className="pd-import-error" role="alert">{props.error}</div> : null}
-        <Button type="submit" variant="primary" loading={props.urlBusy} disabled={busy || !props.url.trim()}>{t('import.urlSubmit')}</Button>
+        <Button type="submit" variant="primary" loading={props.urlBusy} disabled={busy || !props.url.trim()}>{t('import.batchSubmit', { n: parseImportLinks(props.url).length })}</Button>
       </form>}
     </div>
+    {props.results.length ? <section className="pd-import-results" aria-label={t('import.results')}>
+      <header><strong>{t('import.results')}</strong><span>{props.results.filter((item) => item.state !== 'queued' && item.state !== 'running').length}/{props.results.length}</span>
+        {props.results.some((item) => item.state === 'error') ? <Button size="sm" disabled={busy} onClick={props.onRetryFailed}>{t('import.retryFailed')}</Button> : null}</header>
+      <ol>{props.results.map((item) => <li key={item.url} data-state={item.state}>
+        <div><span title={item.url}>{item.title || item.url}</span><small>{t(`import.result.${item.state}`)}{item.error ? ` · ${item.error}` : ''}</small></div>
+        {item.state === 'running' ? <Spinner size={14} /> : item.state === 'error' ? <Button size="sm" disabled={busy} onClick={() => props.onRetry(item.url)}>{t('common.retry')}</Button> : null}
+      </li>)}</ol>
+    </section> : null}
     {busy ? <div className="pd-import-status" role="status">
       <Spinner size={14} /><div><strong>{t(props.urlBusy ? 'import.urlImporting' : 'import.importing')}</strong><p>{t('import.background')}</p></div>
     </div> : <p className="pd-import-footnote">{t('import.afterImport')}</p>}

@@ -156,6 +156,9 @@ const LEGACY_CACHE_PREFIX = 'paperdesk:ai-session:'
 
 /** Friendly zh labels for the tools the PaperDesk agent can call. */
 const TOOL_LABELS: Readonly<Record<string, string>> = {
+  research_topic_read: '读取专题内容',
+  research_topic_edit: '更新专题内容',
+  research_topic_history: '查看或恢复专题版本',
   paper_info: '查看论文元数据',
   paper_text: '读取正文',
   paper_search: '搜索论文库',

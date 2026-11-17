@@ -45,6 +45,9 @@ import { renderPageImages } from './pageImages.js'
 import { ResearchView } from './ResearchView.js'
 import { DiscoverView } from './DiscoverView.js'
 import { ImportDialog } from './ImportDialog.js'
+import { createActionGuard } from './actionGuard.js'
+import { parseImportLinks, runLinkImports } from './linkImports.js'
+import type { LinkImportItem } from './linkImports.js'
 import { createAiThread } from './aiSession.js'
 import type { AiRow } from './aiSession.js'
 import { defaultLibraryPath, openHostPath, openSessionInShell, pickLibraryDirectory } from './agent.js'
@@ -323,6 +326,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   /* notes dirty guard */
   const [notesDirty, setNotesDirty] = useState(false)
+  const notesDirtyRef = useRef(notesDirty)
+  notesDirtyRef.current = notesDirty
   const [guardSaving, setGuardSaving] = useState(false)
   const [unsavedPrompt, setUnsavedPrompt] = useState<{ run: () => void } | null>(null)
   const saveNotesRef = useRef<(() => Promise<boolean>) | null>(null)
@@ -332,6 +337,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [urlValue, setUrlValue] = useState('')
   const [urlBusy, setUrlBusy] = useState(false)
+  const [urlResults, setUrlResults] = useState<LinkImportItem[]>([])
+  const importBusyRef = useRef(false)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -722,16 +729,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   /* ── unsaved-notes guard ─────────────────────────────────────────────── */
 
-  const requestAction = useCallback(
-    (run: () => void) => {
-      if (notesDirty) {
-        setUnsavedPrompt({ run })
-        return
-      }
-      run()
-    },
-    [notesDirty],
-  )
+  const requestAction = useMemo(() => createActionGuard(
+    () => notesDirtyRef.current,
+    (run) => setUnsavedPrompt({ run }),
+  ), [])
 
   const selectPaper = useCallback(
     (id: string) => {
@@ -798,6 +799,22 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     if (prompt !== null) prompt.run()
   }, [unsavedPrompt])
 
+  useEffect(() => {
+    if (!selectedId || !configured) return
+    const paperId = selectedId
+    let cancelled = false
+    void api.paper(paperId).then((next) => {
+      if (cancelled || selectedIdRef.current !== paperId) return
+      setDetail((previous) => previous?.meta.id === paperId && next.meta.updatedAt >= previous.meta.updatedAt ? { ...previous, meta: next.meta } : previous)
+      void loadPapers()
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [selectedId, configured, detail?.notes.hash, cards?.updatedAt, loadPapers])
+
+  useEffect(() => {
+    if (cards?.activity?.warning) pushToast('warn', cards.activity.warning)
+  }, [cards?.activity, pushToast])
+
   /* ── notes ───────────────────────────────────────────────────────────── */
 
   const handleSaveNotes = useCallback(
@@ -805,12 +822,13 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       const paperId = selectedId
       if (paperId === null) throw new Error(tRef.current('reader.empty.title'))
       const result = await api.saveNotes(paperId, markdown, baseHash)
+      if (result.activity?.warning) pushToast('warn', result.activity.warning)
       setDetail((previous) =>
         previous !== null && previous.meta.id === paperId ? { ...previous, notes: result.notes } : previous,
       )
       return result
     },
-    [selectedId],
+    [selectedId, pushToast],
   )
 
   const handleReloadNotes = useCallback(async (): Promise<NotesDocument> => {
@@ -826,6 +844,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       const paperId = selectedId
       if (paperId === null) throw new Error(tRef.current('reader.empty.title'))
       const result = await api.appendNote(paperId, { section: 'quotes', text, page, by: 'user' })
+      if (result.activity?.warning) pushToast('warn', result.activity.warning)
       if (result.ok) {
         setDetail((previous) =>
           previous !== null && previous.meta.id === paperId ? { ...previous, notes: result.notes } : previous,
@@ -833,7 +852,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       }
       return result
     },
-    [selectedId],
+    [selectedId, pushToast],
   )
 
   /* ── annotations (in-app viewer) ─────────────────────────────────────── */
@@ -1653,7 +1672,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   const importFiles = useCallback(
     async (files: File[]): Promise<void> => {
-      if (importing || urlBusy) return
+      if (importing || urlBusy || importBusyRef.current) return
       const pdfs = files.filter(
         (file) => file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf',
       )
@@ -1689,8 +1708,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         setImportOpen(false)
         const targetId: string = lastId
         await loadPapers()
-        setNav('library')
-        requestAction(() => setSelectedId(targetId))
+        requestAction(() => { setNav('library'); setSelectedId(targetId) })
         if (pdfs.length === 1) {
           pushToast('success', lastDuplicated ? tRef.current('import.duplicated') : tRef.current('import.done', { title: lastTitle }))
         } else if (failed === 0) {
@@ -1706,36 +1724,35 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     [status, importing, urlBusy, loadPapers, pushToast, reportError, loadStatus, requestAction, maybeSyncCitations],
   )
 
-  const importFromUrl = useCallback(async (): Promise<void> => {
-    const value = urlValue.trim()
-    if (value === '' || urlBusy || importing) {
-      if (value === '') setUrlError(tRef.current('import.urlRequired'))
+  const importFromUrl = useCallback(async (retryUrls?: string[]): Promise<void> => {
+    const urls = retryUrls ?? parseImportLinks(urlValue)
+    if (!urls.length || importBusyRef.current || importing) {
+      if (!urls.length) setUrlError(tRef.current('import.urlRequired'))
       return
     }
+    importBusyRef.current = true
     setUrlBusy(true)
     setUrlError(null)
+    if (!retryUrls) setUrlResults(urls.map((url) => ({ url, state: 'queued' })))
+    else setUrlResults((items) => items.map((item) => urls.includes(item.url) ? { url: item.url, state: 'queued' } : item))
     try {
-      const result = await api.importUrl(value)
-      setImportOpen(false)
-      setUrlValue('')
-      setNav('library')
-      await loadPapers()
-      requestAction(() => setSelectedId(result.id))
-      pushToast(
-        'success',
-        result.duplicated
-          ? tRef.current('import.duplicated')
-          : tRef.current('import.done', { title: result.meta.title }),
-      )
-      if (result.enrichmentWarning) pushToast('warn', result.enrichmentWarning)
-      void loadStatus(true)
-    } catch (error) {
-      setUrlError(errorText(error) || tRef.current('import.urlFailed'))
-      reportError(error, 'import.urlFailed')
+      const successes = await runLinkImports(urls, (url) => api.importUrl(url), (item) => {
+        setUrlResults((items) => items.map((current) => current.url === item.url ? item : current))
+      })
+      const last = successes.at(-1)
+      if (last) {
+        await loadPapers()
+        requestAction(() => { setNav('library'); setSelectedId(last.id) })
+        void loadStatus(true)
+        maybeSyncCitations(successes.filter((result) => !result.duplicated).map((result) => result.id))
+        for (const result of successes) if (result.enrichmentWarning) pushToast('warn', result.enrichmentWarning)
+      }
+      pushToast(successes.length === urls.length ? 'success' : 'warn', tRef.current('import.batchFinished', { ok: successes.length, failed: urls.length - successes.length }))
     } finally {
+      importBusyRef.current = false
       setUrlBusy(false)
     }
-  }, [urlValue, urlBusy, importing, loadPapers, requestAction, pushToast, loadStatus, reportError])
+  }, [urlValue, importing, loadPapers, requestAction, pushToast, loadStatus, maybeSyncCitations])
 
   const onDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
@@ -2403,7 +2420,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
             />
           </>
         ) : nav === 'research' ? (
-          <ResearchView ctx={ctx} workspacePath={status.settings.libraryPath} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} onDirtyChange={setNotesDirty} registerSave={registerNotesSave} />
+          <ResearchView supported={status.features?.topicAnalysis === true} ctx={ctx} workspacePath={status.settings.libraryPath} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} onDirtyChange={setNotesDirty} registerSave={registerNotesSave} onPapersChanged={() => { void loadPapers(); void loadStatus(true); setDetailNonce((value) => value + 1) }} />
         ) : nav === 'discover' ? (
           <DiscoverView onImported={() => void loadPapers()} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} />
         ) : nav === 'sync' ? (
@@ -2446,6 +2463,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       <ImportDialog open={importOpen} importing={importing} urlBusy={urlBusy} url={urlValue} error={urlError}
         onClose={() => setImportOpen(false)} onPickFiles={() => fileInputRef.current?.click()}
         onFiles={(files) => void importFiles(files)} onUrlSubmit={() => void importFromUrl()}
+        results={urlResults} onRetry={(url) => void importFromUrl([url])}
+        onRetryFailed={() => void importFromUrl(urlResults.filter((item) => item.state === 'error').map((item) => item.url))}
         onUrlChange={(value) => { setUrlValue(value); setUrlError(null) }} />
 
       <Modal

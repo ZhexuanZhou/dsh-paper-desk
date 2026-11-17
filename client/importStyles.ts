@@ -1,4 +1,15 @@
 export const importCss = `
+.pd-import-links { width: 100%; min-height: 130px; resize: vertical; font: inherit; line-height: 1.7; }
+.pd-import-results { margin-top: 20px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 14px; }
+.pd-import-results header { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.pd-import-results header > span { flex: 1; color: var(--dsw-alias-label-secondary); }
+.pd-import-results ol { list-style: none; padding: 0; margin: 8px 0 0; max-height: 230px; overflow: auto; }
+.pd-import-results li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+.pd-import-results li > div { flex: 1; min-width: 0; }
+.pd-import-results li span { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.pd-import-results li small { display: block; margin-top: 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.pd-import-results li[data-state="error"] small { color: var(--dsw-alias-state-error-primary); }
+
 .pd-import-dialog { width: min(560px, calc(100vw - 32px)); }
 .pd-import-dialog .pd-modal-head { padding: 20px 24px 16px; }
 .pd-import-dialog .pd-modal-title { font-size: 19px; }

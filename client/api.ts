@@ -85,6 +85,7 @@ export interface SettingsPayload {
 }
 
 export interface PapersQuery {
+  offset?: number
   q?: string
   tag?: string
   status?: PaperStatus | 'all'
@@ -166,7 +167,12 @@ export const api = {
     return requestJson('/research', { method: 'POST', body: JSON.stringify({ ...topic, baseHash }) })
   },
   removeTopic(id: string, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research', { method: 'DELETE', body: JSON.stringify({ id, baseHash }) }) },
-  topicPrompt(id: string, question: string): Promise<{ prompt: string }> { return requestJson('/research/prompt', { method: 'POST', body: JSON.stringify({ id, question }) }) },
+  topicPrompt(id: string, question: string, paperIds?: string[], includeAnalysis = true, intent: 'analysis' | 'discussion' = 'discussion'): Promise<{ prompt: string; inputHash: string; analysisHash: string }> { return requestJson('/research/prompt', { method: 'POST', body: JSON.stringify({ id, question, includeAnalysis, intent, ...(paperIds ? { paperIds } : {}) }) }) },
+  topicStatus(id: string, status: 'active' | 'completed', markRead: boolean, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research/status', { method: 'POST', body: JSON.stringify({ id, status, markRead, baseHash }) }) },
+  saveTopicAnalysis(id: string, inputHash: string, paperIds: string[], markdown: string, expectedHash: string): Promise<ResearchSnapshot> { return requestJson('/research/analysis', { method: 'POST', body: JSON.stringify({ id, inputHash, paperIds, markdown, expectedHash }) }) },
+  topicHistory(topicId: string, kind: string): Promise<{ hash: string; revisions: { id: string; createdAt: string; kind: string }[] }> { return requestJson(`/research/history${query({ topicId, kind })}`) },
+  topicRevision(topicId: string, kind: string, id: string): Promise<{ content: string | null }> { return requestJson('/research/history', { method: 'POST', body: JSON.stringify({ topicId, kind, id }) }) },
+  restoreTopicDocument(topicId: string, kind: string, id: string, expectedHash: string): Promise<ResearchSnapshot> { return requestJson('/research/history', { method: 'PUT', body: JSON.stringify({ topicId, kind, id, expectedHash }) }) },
   discover(q: string, provider: DiscoveryProvider = 'arxiv'): Promise<DiscoveryResult> { return requestJson(`/research/discover${query({ q, provider })}`) },
   subscribe(query: string, baseHash: string, provider: DiscoveryProvider = 'arxiv'): Promise<ResearchSnapshot> { return requestJson('/research/subscriptions', { method: 'POST', body: JSON.stringify({ query, provider, baseHash }) }) },
   unsubscribe(id: string, baseHash: string): Promise<ResearchSnapshot> { return requestJson('/research/subscriptions', { method: 'DELETE', body: JSON.stringify({ id, baseHash }) }) },
@@ -195,6 +201,7 @@ export const api = {
         status: params.status === 'all' ? undefined : params.status,
         sort: params.sort,
         limit: params.limit,
+        offset: params.offset,
       })}`,
     )
   },

@@ -1090,6 +1090,12 @@ function ReaderViewImpl(props: ReaderViewProps) {
               />
             </span>
             <span className="pd-reader-row-spacer" />
+            <Menu className={`pd-reader-status pd-reader-status-${meta.status}`} label={t('meta.status')}
+              triggerLabel={statusLabel(t, meta.status)} disabled={busy !== null}
+              icon={<span aria-hidden="true">⌄</span>}
+              items={READER_STATUSES.map((status) => ({ id: status, label: statusLabel(t, status),
+                onSelect: () => { if (status !== meta.status) void onPatchMeta({ status }, { silent: true }) },
+              }))} />
             {busy !== null ? <Spinner size={11} label={t('common.loading')} /> : null}
             <Button
               size="sm"
@@ -1197,26 +1203,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                 <span className="pd-reader-meta-item">{t('meta.value.pages', { n: meta.pageCount })}</span>
               </>
             ) : null}
-            <label className="pd-status-chip pd-status-chip-edit" data-status={meta.status} title={t('meta.status')}>
-              <span className="pd-dot" data-status={meta.status} aria-hidden="true" />
-              <select
-                className="pd-status-select"
-                value={meta.status}
-                aria-label={t('meta.status')}
-                disabled={busy !== null}
-                onChange={(event) => {
-                  const value = event.target.value as PaperStatus
-                  if (value !== meta.status) void onPatchMeta({ status: value }, { silent: true })
-                }}
-              >
-                {READER_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {statusLabel(t, status)}
-                  </option>
-                ))}
-              </select>
-              <span className="pd-status-caret" aria-hidden="true">▾</span>
-            </label>
+
             {meta.tags.slice(0, 3).map((tag) => (
               <span key={`${meta.id}-tag-${tag}`} className="pd-tag" title={tag}>
                 {tag}

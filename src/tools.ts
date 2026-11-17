@@ -1,3 +1,5 @@
+import { readTopic, editTopicDocument, restoreTopicDocument } from './topicDocuments.js'
+import { topicDocumentContent, topicDocumentHash, listTopicRevisions, readTopicRevision, type TopicDocumentKind } from './topicHistory.js'
 /**
  * Agent-facing tools. Every tool returns a plain `{ ok, error? , ... }` object:
  * an unconfigured or broken library is reported to the model instead of throwing,
@@ -778,6 +780,73 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     } },
     render: (_args: unknown, value: unknown) => textResult(jsonText(value)),
   }
+  add(defineTool({
+    name: 'research_topic_read',
+    description: 'Read the current research topic and hashes before editing. No document returns an overview and card index; notes/analysis are paginated with nextOffset. Follow all pages before rewriting. Cards belong to the topic and cite sourcePaperIds; pass cardId to read one full card.',
+    parameters: {
+      topicId: { type: 'string', required: true }, document: { type: 'string', enum: ['notes', 'analysis', 'cards'] },
+      cardId: { type: 'string' }, offset: { type: 'number' },
+    }, output: editingOutput,
+    async execute(args, exec) {
+      exec.signal.throwIfAborted()
+      const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+      try {
+        const topic = await readTopic(library.root, args.topicId)
+        const info = { id: topic.id, title: topic.title, question: topic.question, paperIds: topic.paperIds, status: topic.status ?? 'active' }
+        if (!args.document) return { ok: true, topic: info, documents: Object.fromEntries((['notes', 'analysis', 'cards'] as const).map((kind) => [kind, { hash: topicDocumentHash(topic, kind), length: topicDocumentContent(topic, kind)?.length ?? 0 }])), cards: (topic.cards ?? []).map((card) => ({ id: card.id, title: card.title, sourcePaperIds: card.sourcePaperIds })) }
+        const kind = args.document as TopicDocumentKind
+        const hash = topicDocumentHash(topic, kind)
+        if (kind === 'cards') {
+          if (args.cardId) { const card = topic.cards?.find((item) => item.id === args.cardId); if (!card) return failure('card not found'); return { ok: true, topic: info, hash, card } }
+          return { ok: true, topic: info, hash, cards: (topic.cards ?? []).map((card) => ({ id: card.id, title: card.title, sourcePaperIds: card.sourcePaperIds })) }
+        }
+        const markdown = kind === 'notes' ? topic.notes : topic.analysis?.markdown ?? ''
+        const offset = Math.max(0, Math.trunc(args.offset ?? 0)), end = Math.min(markdown.length, offset + 20000)
+        return { ok: true, topic: info, hash, markdown: markdown.slice(offset, end), totalLength: markdown.length, nextOffset: end, truncated: end < markdown.length }
+      } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+    },
+  }))
+  add(defineTool({
+    name: 'research_topic_edit',
+    description: 'Persist requested changes to the CURRENT topic, never substitute a paper card for a topic card. First use research_topic_read and pass its document hash. For notes/analysis use markdown to replace the complete document, preserving unrelated material unless asked to reorganize. For cards use create/update/remove/move, with at least one sourcePaperId from this topic when creating. Prior versions are saved automatically; stale edits fail without overwriting. Only edit when the user explicitly asks, ordinary discussion is read-only.',
+    parameters: {
+      topicId: { type: 'string', required: true }, document: { type: 'string', required: true, enum: ['notes', 'analysis', 'cards'] },
+      expectedHash: { type: 'string', required: true }, markdown: { type: 'string' },
+      action: { type: 'string', enum: ['create', 'update', 'remove', 'move'] }, cardId: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' },
+      sourcePaperIds: { type: 'array', items: { type: 'string' } }, position: { type: 'number' },
+    }, output: editingOutput,
+    async execute(args, exec) {
+      exec.signal.throwIfAborted()
+      const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+      try {
+        const next = await editTopicDocument(library.root, args)
+        const topic = next.document.topics.find((item) => item.id === args.topicId)!
+        return { ok: true, hash: topicDocumentHash(topic, args.document as TopicDocumentKind), ...(args.document === 'cards' ? { cards: (topic.cards ?? []).map((card) => ({ id: card.id, title: card.title, sourcePaperIds: card.sourcePaperIds })) } : {}), ...(next.activityWarnings?.length ? { warnings: next.activityWarnings } : {}) }
+      } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+    },
+  }))
+  add(defineTool({
+    name: 'research_topic_history',
+    description: 'List/preview recoverable topic notes, analysis, or card-collection versions; restore only when requested. Restoration checks the current document hash, snapshots the present document first, and does not revert topic question, sources, lifecycle, or global paper reading status.',
+    parameters: {
+      topicId: { type: 'string', required: true }, document: { type: 'string', required: true, enum: ['notes', 'analysis', 'cards'] }, action: { type: 'string', required: true, enum: ['list', 'read', 'restore'] },
+      versionId: { type: 'string' }, expectedHash: { type: 'string' }, offset: { type: 'number' },
+    }, output: editingOutput,
+    async execute(args, exec) {
+      exec.signal.throwIfAborted()
+      const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+      try {
+        const kind = args.document as TopicDocumentKind
+        const topic = await readTopic(library.root, args.topicId)
+        if (args.action === 'list') return { ok: true, hash: topicDocumentHash(topic, kind), versions: await listTopicRevisions(library.root, topic.id, kind) }
+        if (!args.versionId) return failure('versionId is required')
+        if (args.action === 'read') { const revision = await readTopicRevision(library.root, topic.id, kind, args.versionId); const text = revision.content ?? ''; const offset = Math.max(0, Math.trunc(args.offset ?? 0)), end = Math.min(text.length, offset + 20000); return { ok: true, content: revision.content === null ? null : text.slice(offset, end), nextOffset: end, truncated: end < text.length, totalLength: text.length } }
+        if (typeof args.expectedHash !== 'string') return failure('expectedHash is required')
+        const next = await restoreTopicDocument(library.root, topic.id, kind, args.versionId, args.expectedHash)
+        return { ok: true, hash: topicDocumentHash(next.document.topics.find((item) => item.id === topic.id)!, kind) }
+      } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+    },
+  }))
   for (const mode of ['write', 'replace'] as const) {
     add(defineTool({
       name: mode === 'write' ? 'paper_notes_write' : 'paper_notes_replace',

@@ -14,6 +14,7 @@ export interface PaperQuery {
   status?: PaperStatus | 'all'
   sort?: 'added' | 'title' | 'year' | 'updated'
   limit?: number
+  offset?: number
 }
 
 const DEFAULT_LIMIT = 200
@@ -53,7 +54,8 @@ export async function queryPapers(root: string, options: PaperQuery = {}): Promi
     }
   })
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), 1000)
-  return sorted.slice(0, limit)
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0))
+  return sorted.slice(offset, offset + limit)
 }
 
 /** Distinct tags across the library, most frequent first. */

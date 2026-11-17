@@ -1,6 +1,6 @@
 {
   "name": "dsh-paper-desk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "知页 · 论文助手 (Paper Companion): a local paper library and AI reading workspace for DeepSeek Harness — import PDFs, read, annotate, organize notes and cards, and follow research topics.",
   "type": "module",
   "license": "MIT",
@@ -47,7 +47,12 @@
     "test:agent-actions": "node scripts/test-agent-actions.mjs",
     "test:ai-composer": "node scripts/test-ai-composer.mjs",
     "test:ai-messages": "node scripts/test-ai-messages.mjs",
-    "test:markdown": "node scripts/test-markdown.mjs"
+    "test:markdown": "node scripts/test-markdown.mjs",
+    "test:research-workflow": "node scripts/test-research-workflow.mjs",
+    "test:link-imports": "node scripts/test-link-imports.mjs",
+    "test:topic-analysis": "node scripts/test-topic-analysis.mjs",
+    "test:topic-documents": "node scripts/test-topic-documents.mjs",
+    "test:action-guard": "node scripts/test-action-guard.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",

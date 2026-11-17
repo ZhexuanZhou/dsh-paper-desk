@@ -151,7 +151,7 @@ export async function writeNotes(
     const saved = await editDocument(root, paperId, 'notes', () => markdown, {
       expectedHash: opts?.baseHash, reason: 'edit notes',
     })
-    return { ok: true, conflict: false, notes: { markdown: saved.content ?? '', hash: saved.hash, exists: saved.content !== null, mtimeMs: (await fileInfo(safeJoin(root, notesRel(paperId))))?.mtimeMs ?? 0 } }
+    return { ok: true, conflict: false, ...(saved.activity ? { activity: saved.activity } : {}), notes: { markdown: saved.content ?? '', hash: saved.hash, exists: saved.content !== null, mtimeMs: (await fileInfo(safeJoin(root, notesRel(paperId))))?.mtimeMs ?? 0 } }
   } catch (error) {
     if (!(error instanceof DocumentConflict)) throw error
     const conflictPath = await writeConflictCopy(root, paperId, notesRel(paperId), markdown, opts?.device ?? deviceShort())
@@ -264,7 +264,7 @@ export async function appendToNotes(
         proposed = buildAppendedMarkdown(current.content ?? '', input, language)
         return proposed
       }, { reason: 'append notes' })
-      return { ok: true, conflict: false, notes: { markdown: saved.content ?? '', hash: saved.hash, exists: saved.content !== null, mtimeMs: (await fileInfo(safeJoin(root, notesRel(input.paperId))))?.mtimeMs ?? 0 } }
+      return { ok: true, conflict: false, ...(saved.activity ? { activity: saved.activity } : {}), notes: { markdown: saved.content ?? '', hash: saved.hash, exists: saved.content !== null, mtimeMs: (await fileInfo(safeJoin(root, notesRel(input.paperId))))?.mtimeMs ?? 0 } }
     } catch (error) {
       if (!(error instanceof DocumentConflict)) throw error
       if (attempt === 1) {

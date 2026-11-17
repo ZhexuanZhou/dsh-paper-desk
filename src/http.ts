@@ -3,6 +3,8 @@
  * browser panel (and only that). Every filesystem access is confined to the
  * configured library root by the modules below; ids are validated here.
  */
+import { readTopic, editTopicDocument, restoreTopicDocument } from './topicDocuments.js'
+import { listTopicRevisions, readTopicRevision, topicDocumentHash, type TopicDocumentKind } from './topicHistory.js'
 import { documentState, listRevisions, readRevision, restoreRevision } from './history.js'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -45,7 +47,7 @@ import {
 import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
 import { importPaperFromUrl } from './urlImport.js'
-import { readResearch, saveTopic, topicPrompt, saveSubscription, updateResearch } from './research.js'
+import { readResearch, saveTopic, setTopicStatus, topicInputHash, saveTopicAnalysis, topicPrompt, saveSubscription, updateResearch } from './research.js'
 import { discoverResults, arxivIdentity } from './feed.js'
 import { DiscoveryServiceError } from './discoveryTransport.js'
 import { createLlmMetadataEnricher } from './importMetadata.js'
@@ -246,6 +248,7 @@ async function buildStatus(config: Config): Promise<StatusPayload> {
   return {
     ok: true,
     plugin: 'dsh-paper-desk',
+    features: { topicAnalysis: true },
     version: pkg?.version ?? '0.0.0',
     configured: settings.libraryPath.length > 0 && libraryExists,
     libraryExists,
@@ -490,10 +493,25 @@ async function handle(
       }
       return methodNotAllowed(res)
     }
+    if (route === 'research/document' && method === 'POST') return json(res, 200, await editTopicDocument(root, await readJsonBody(req)))
+    if (route === 'research/history') {
+      const body = method === 'GET' ? q : await readJsonBody(req)
+      if (typeof body.topicId !== 'string' || !['notes', 'analysis', 'cards'].includes(String(body.kind))) throw new HttpError(400, '历史参数不正确')
+      const kind = body.kind as TopicDocumentKind
+      const topic = await readTopic(root, body.topicId)
+      if (method === 'GET') return json(res, 200, { hash: topicDocumentHash(topic, kind), revisions: await listTopicRevisions(root, topic.id, kind) })
+      if (method === 'POST' && typeof body.id === 'string') return json(res, 200, await readTopicRevision(root, topic.id, kind, body.id))
+      if (method === 'PUT' && typeof body.id === 'string' && typeof body.expectedHash === 'string') return json(res, 200, await restoreTopicDocument(root, topic.id, kind, body.id, body.expectedHash))
+      return methodNotAllowed(res)
+    }
+    if (route === 'research/analysis' && method === 'POST') return json(res, 200, await saveTopicAnalysis(root, await readJsonBody(req)))
+    if (route === 'research/status' && method === 'POST') return json(res, 200, await setTopicStatus(root, await readJsonBody(req)))
     if (route === 'research/prompt' && method === 'POST') {
       const body = await readJsonBody(req)
       if (typeof body.id !== 'string' || typeof body.question !== 'string') throw new HttpError(400, '缺少专题或问题')
-      return json(res, 200, { prompt: await topicPrompt(root, body.id, body.question) })
+      const topic = (await readResearch(root)).document.topics.find((item) => item.id === body.id)
+      if (!topic) throw new HttpError(404, '专题不存在')
+      return json(res, 200, { prompt: await topicPrompt(root, body.id, body.question, body.paperIds, body.includeAnalysis !== false, body.intent === 'analysis' ? 'analysis' : 'discussion'), inputHash: topicInputHash(topic), analysisHash: topicDocumentHash(topic, 'analysis') })
     }
     if (route === 'research/subscriptions') {
       const body = await readJsonBody(req)
@@ -536,6 +554,7 @@ async function handle(
             status,
             sort: (q['sort'] ?? 'added') as 'added' | 'title' | 'year' | 'updated',
             limit,
+            offset: Math.max(0, Number.parseInt(q['offset'] ?? '0', 10) || 0),
           }),
           listTags(root),
         ])

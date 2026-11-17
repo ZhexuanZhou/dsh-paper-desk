@@ -463,7 +463,7 @@ async function mutateDocument(
     result = mutation(current)
     return JSON.stringify(result, null, 2) + '\n'
   }, { expectedHash, reason })
-  return { ...result!, hash: saved.hash }
+  return { ...result!, hash: saved.hash, ...(saved.activity ? { activity: saved.activity } : {}) }
 }
 
 /**

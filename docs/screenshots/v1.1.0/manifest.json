@@ -1,0 +1,13 @@
+{
+  "screenshot": "topic-analysis-main.jpg",
+  "sha256": "bc626017d62583103ed81bb4b8ec2b9f81644c91362f0bfb49e95e596551ca59",
+  "source": {
+    "roundArtifact": ".acceptances/standalone-paperdesk-redesign/20261117-114702-research-workflow-1.1/assets/topic-main-916701.jpg",
+    "sha256": "c172d7c6724dbd195a5e2e60436815437604676117e171426b974c2206a73096",
+    "clientBuildSha256": "9167016104c669bbf194bf37772eac7ecde285f945de041420a4146615b387ac"
+  },
+  "capture": "CUA screenshot of the real isolated Paper Companion 1.1 UI using only synthetic fixture papers and a real model-generated topic analysis.",
+  "transform": "Removed the 55 px Harness global sidebar, including the user avatar; JPEG re-encoded at quality 88. No app content was edited.",
+  "privacyReview": "Inspected the output; it contains synthetic titles and topic analysis, no account name, avatar, credentials, or browser address.",
+  "use": "README topic-analysis section; this image documents the topic main view only, not all 1.1 screens."
+}

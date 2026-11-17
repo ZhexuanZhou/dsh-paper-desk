@@ -1,4 +1,5 @@
 /** Durable pre-edit snapshots shared by UI and agent writes. No automatic pruning. */
+import { recordReadingActivity } from './library.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { atomicWrite, safeJoin, sha256 } from './util.js'
@@ -59,7 +60,12 @@ export async function editDocument(
     if ((await documentState(root, paperId, kind)).hash !== current.hash) throw new DocumentConflict('document changed while saving; no edit applied')
     if (next === null) await unlink(file).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
     else await atomicWrite(file, next)
-    return { content: next, hash: next === null ? '' : sha256(next) }
+    let meaningful = kind === 'notes' && Boolean(next?.trim())
+    if (kind === 'cards' && next !== null) {
+      try { meaningful = Array.isArray(JSON.parse(next).items) && JSON.parse(next).items.length > 0 } catch { /* Preserve legacy restore behavior. */ }
+    }
+    const activity = meaningful ? await recordReadingActivity(root, paperId) : undefined
+    return { content: next, hash: next === null ? '' : sha256(next), ...(activity ? { activity } : {}) }
   })
   pending.set(file, work)
   try { return await work }
