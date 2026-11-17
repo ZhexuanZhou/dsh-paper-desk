@@ -1,0 +1,9 @@
+{
+  "version": "1.1.2",
+  "sourceClientSha256": "bb9b24e00b816a473406735c6c701d88f0eaa755a464fc78cb852533c82a64d9",
+  "capture": "Owned isolated DSH web profile; Chrome 100%; light theme; five-paper synthetic fixture; selected the synthetic long-title paper; reading status 已读.",
+  "description": "Reader header showing the new ghost status dot, label and caret; the synthetic long title wraps to two lines, actions remain grouped, and the tag disclosure shows a collapsed +3 indicator. No model was called and no real library data is shown.",
+  "crop": "JPEG re-encoded after cropping 280 px from the left Harness account rail; 1421x913.",
+  "sha256": "640b48f0f9c143526b12c2a4d05acd4d38fc221380ecddab62a7d60446e7e9e9",
+  "privacyReviewed": true
+}

@@ -318,6 +318,8 @@ export interface MenuItemDef {
   icon?: ReactNode
   danger?: boolean
   disabled?: boolean
+  /** Supplying this renders a radio item with an explicit selected state. */
+  selected?: boolean
   onSelect: () => void
 }
 
@@ -329,7 +331,7 @@ export interface MenuProps {
   disabled?: boolean
   className?: string
   /** A visible text trigger when an icon alone would hide the action. */
-  triggerLabel?: string
+  triggerLabel?: ReactNode
 }
 
 /** One icon-only trigger with a keyboard/click-away-dismissed item menu. */
@@ -370,7 +372,7 @@ export function Menu({ label, items, icon, disabled = false, className, triggerL
       setOpen(true)
       const key = event.key
       window.requestAnimationFrame(() => {
-        const items = Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])
+        const items = Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled)') ?? [])
         if (!items.length) return
         const current = items.indexOf(document.activeElement as HTMLButtonElement)
         const next = key === 'Home' ? 0 : key === 'End' ? items.length - 1
@@ -399,17 +401,20 @@ export function Menu({ label, items, icon, disabled = false, className, triggerL
             <button
               key={item.id}
               type="button"
-              role="menuitem"
+              role={item.selected === undefined ? 'menuitem' : 'menuitemradio'}
+              aria-checked={item.selected}
               className="pd-menu-item"
               data-danger={item.danger === true ? 'true' : 'false'}
               disabled={item.disabled}
               onClick={() => {
                 setOpen(false)
+                triggerRef.current?.focus()
                 if (item.disabled !== true) item.onSelect()
               }}
             >
               {item.icon !== undefined ? <span className="pd-menu-item-icon">{item.icon}</span> : null}
               <span>{item.label}</span>
+              {item.selected !== undefined ? <span className="pd-menu-item-check" aria-hidden="true">{item.selected ? <IconCheck size={14} /> : null}</span> : null}
             </button>
           ))}
         </span>

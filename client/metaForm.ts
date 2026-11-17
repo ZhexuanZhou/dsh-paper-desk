@@ -1,5 +1,11 @@
 import type { PaperMeta, PaperStatus } from '../src/types.js'
 
+/** Reading state is a saved fact, not an optimistic form value. */
+export function optimisticMetaPatch(patch: Partial<PaperMeta>): Partial<PaperMeta> {
+  const { status: _status, ...otherFields } = patch
+  return otherFields
+}
+
 export interface MetaForm {
   title: string
   authors: string

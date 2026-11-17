@@ -26,6 +26,7 @@ export interface PdfPageLike {
   render(params: Record<string, unknown>): { promise: Promise<void>; cancel(): void }
   streamTextContent?(params?: Record<string, unknown>): unknown
   getTextContent(params?: Record<string, unknown>): Promise<unknown>
+  getOperatorList?(params?: Record<string, unknown>): Promise<unknown>
   cleanup?(): void
 }
 

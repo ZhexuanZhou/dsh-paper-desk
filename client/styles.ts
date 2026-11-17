@@ -40,6 +40,7 @@ import { compareCss } from './CompareView.js'
 import { aiReadingCss } from './aiReadingStyles.js'
 import { importCss } from './importStyles.js'
 import { topicWorkspaceCss } from './topicWorkspaceStyles.js'
+import { readerHeaderCss } from './readerHeaderStyles.js'
 
 
 const readingCss = `
@@ -68,9 +69,6 @@ const readingCss = `
 .pd-topic-chat .pd-ai-user { align-self: flex-end; max-width: 92%; padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent); font-size: 15px; line-height: 1.8; }
 .pd-topic-chat .pd-ai-assistant .pd-md { font-size: 15px; line-height: 1.85; }
 
-.pd-reader-status { flex: 0 0 80px; }
-.pd-reader-status > .pd-btn { width: 80px; min-height: 30px; justify-content: space-between; border-radius: 7px; font-size: 12px; }
-.pd-reader-status-reading > .pd-btn { border-color: color-mix(in srgb, var(--pd-accent) 25%, transparent); color: var(--pd-accent); background: color-mix(in srgb, var(--pd-accent) 7%, transparent); }
 
 .pd-root { --pd-accent-fill: #637b69; --pd-accent-foreground: white; --pd-accent: color-mix(in srgb, #637b69 72%, var(--dsw-alias-label-primary)); font-size: 15px; line-height: 1.6; background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, #c8bca3); }
 .pd-topbar { min-height: 56px; padding: 8px 24px; gap: 20px; background: transparent; }
@@ -2255,7 +2253,7 @@ export const CSS = `
 }
 ` +
   relationsCss +
-  compareCss + readingCss + aiReadingCss + importCss + topicWorkspaceCss
+  compareCss + readingCss + aiReadingCss + importCss + topicWorkspaceCss + readerHeaderCss
 
 /** Value of the injected `<style data-plugin-css="...">` attribute. */
 export const STYLE_ATTR = 'paper-desk'

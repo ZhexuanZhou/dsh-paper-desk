@@ -4,7 +4,7 @@
 
 论文库直接保存在你选择的目录中：PDF、Markdown 笔记和 JSON 元数据都是普通文件，可以交给自己的网盘客户端同步。
 
-**当前版本：1.1.1** · [本版更新说明](docs/RELEASE-v1.1.1.md) · [安装与发布说明](docs/PUBLISHING.md)
+**当前版本：1.1.2** · [本版更新说明](docs/RELEASE-v1.1.2.md) · [安装与发布说明](docs/PUBLISHING.md)
 
 ## 功能概览
 
@@ -12,7 +12,7 @@
 | --- | --- |
 | 论文导入 | 上传、拖拽、多行链接批量导入、扫描 `_inbox/`，或通过 `paper_add` 按路径导入；相同 PDF 自动去重。 |
 | 元数据 | 提取标题、作者、年份、DOI 等信息；可用 Crossref 补全，并用当前配置的模型补齐空的摘要、关键词和标签。 |
-| PDF 阅读 | 连续滚动、缩放、旋转、目录、全文查找、页内与外部链接、手型拖动和深色纸张。 |
+| PDF 阅读 | 连续滚动、按阅读进度后台预加载、缩放、目录、全文查找、页内与外部链接、手型拖动和深色纸张。 |
 | 高亮与批注 | 选中文字后高亮、划线、备注或提问；批注按页整理，可编辑、删除或交给 AI 解答。 |
 | AI 助读 | 在阅读器旁流式问答，支持独立对话、自然语言任务、原页图片附件、引用页核对和回答批注；按要求记录笔记或卡片。 |
 | 笔记与卡片 | Markdown 整页阅读、分节目录、自动保存；回答可保存为独立卡片，再编辑或插入论文笔记。 |
@@ -21,9 +21,15 @@
 | 对比与图谱 | 对比 2–6 篇论文，保存对比报告；管理引用、相关、方法、对比等论文关系。 |
 | 本地管理 | 阅读状态、评分、标签、BibTeX 导出、文件定位、冲突副本和中英文界面。 |
 
-论文阅读、助读、导入及卡片等截图来自 1.0 界面审查，使用合成演示库；文献发现展示公开 OpenAlex 结果。AI 助读图包含一次真实的只读模型回答，演示内容不作为研究结论。截图的来源和裁切记录见 [截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。1.0 的验证范围与未覆盖边界见 [1.0 发布说明](docs/RELEASE-v1.0.0.md)；1.1 的专题与导入变更单独验证，见 [1.1 发布说明](docs/RELEASE-v1.1.0.md)。
+阅读头部截图来自 1.1.2 合成演示库，见 [截图记录](docs/screenshots/v1.1.2/manifest.json)。专题图来自 1.1.1；助读、导入及卡片等未修改页面保留 1.0 的版本标注和[截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。文献发现展示公开 OpenAlex 结果，AI 助读图包含真实只读模型回答；演示内容不作为研究结论。
 
-![1.0 论文库与 PDF 阅读](docs/screenshots/v1.0.0/library.jpg)
+![1.1.2 论文阅读头部：轻量状态操作与分组元数据](docs/screenshots/v1.1.2/reader-header.jpg)
+
+## 1.1.2 的阅读改版
+
+- 阅读状态与批注、关联采用一致的轻量样式；菜单勾选当前项，保存确认后才切换。
+- 长标题显示两行，操作组在空间不足时换行；标签可以展开查看全部。
+- PDF 后台初始准备前 10 页，读到第 8 页时开始准备下一批。当前页优先，后台任务在滚动和选字时让路，并限制缓存数量。
 
 ## 1.1.1 的专题工作台
 
@@ -72,10 +78,10 @@ dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 
 ### 从 GitHub Release 安装
 
-从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.1.1。命令行维护的 profile 可安装：
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.1.2。命令行维护的 profile 可安装：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.1.1/dsh-paper-desk-1.1.1.tgz
+dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.1.2/dsh-paper-desk-1.1.2.tgz
 ```
 
 Release 同时提供安装包的 `SHA256SUMS` 校验文件；合成演示库位于源码的 `demo/library/`。
@@ -96,6 +102,12 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 2. 在设置中选择论文库目录，也可以使用默认目录。若要多设备同步，可选择自己的网盘目录。
 3. 点击“导入论文”，选择“本地 PDF”上传或拖入文件，也可切换“论文链接”粘贴 arXiv 页面、编号或公开 PDF 直链，每行一条。链接按顺序处理，逐项显示已导入、已在库中或失败；可单项重试或重试所有失败项。关闭弹窗后，本次页面中的队列继续执行，刷新或关闭页面不会自动续传。也可以把文件放入 `<库>/_inbox/`，再扫描收件箱。
 4. 在“信息”页核对元数据；空的摘要、关键词或标签可以点击“用 LLM 补全空项”重试补全。
+
+## PDF 后台预加载
+
+当前可见页面优先显示，后台按批次准备后续页面：初始到第 10 页，读到第 8 页时扩展到第 20 页，后续以相同方式推进。快速跳页或回看时，准备范围随阅读位置调整，不把整篇论文一次性绘制出来。
+
+滚动、选字、调整窗口及当前页绘制期间，后台任务让路。最多保留两个批次的低清预览；可用渲染 worker 时提前生成位图，其他环境只准备解析数据。清晰正文、文本选择、链接和批注仍通过正常页面流程生成。跳到尚未准备好的页面时仍需正常加载，后台失败不会阻塞阅读。这里预先准备的是页面显示数据，PDF 文件下载方式保持不变。
 
 ## AI 助读
 

@@ -44,8 +44,7 @@ import { ChatBar } from './ChatBar.js'
 import type { ChatBarLabels } from './ChatBar.js'
 import type { AiPanelLabels } from './AiPanel.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
-import type { PaperStatus } from '../src/types.js'
-import { annotationKindLabel, formatNumber, statusLabel, useLang, useT } from './i18n.js'
+import { annotationKindLabel, formatNumber, useLang, useT } from './i18n.js'
 import { KEY_ACTION_LABELS, KEY_ACTIONS } from './keymap.js'
 import type { KeyAction } from './keymap.js'
 import { CardEditor, CardsPanel, suggestCardTitle } from './CardsPanel.js'
@@ -56,7 +55,9 @@ import { NotesEditor } from './NotesEditor.js'
 import { NotebookReference } from './NotebookReference.js'
 import { PdfViewer } from './PdfViewer.js'
 import type { PdfSelectionPayload, PdfViewerLabels } from './PdfViewer.js'
-import { Button, EmptyState, IconButton, Menu, Modal, Rating, Spinner, Tabs, Textarea } from './ui.js'
+import { Button, EmptyState, IconButton, Menu, Modal, Spinner, Tabs, Textarea } from './ui.js'
+import { ReaderStatus } from './ReaderStatus.js'
+import { ReaderTags } from './ReaderTags.js'
 
 type ToastKind = 'info' | 'success' | 'error' | 'warn'
 type ToastPush = (kind: ToastKind, message: string) => void
@@ -65,7 +66,6 @@ export type ReaderBusy = 'enrich' | 'bibtex' | 'reveal' | 'delete' | 'download'
 
 type ReaderTab = 'read' | 'text' | 'notes' | 'cards' | 'info'
 
-const READER_STATUSES: readonly PaperStatus[] = ['unread', 'reading', 'read', 'archived']
 
 type DrawerTab = 'annotations' | 'ai'
 
@@ -1080,22 +1080,9 @@ function ReaderViewImpl(props: ReaderViewProps) {
             <h2 className="pd-reader-title" title={meta.title !== '' ? meta.title : meta.id}>
               {meta.title !== '' ? meta.title : meta.id}
             </h2>
-            <span className="pd-rating-inline" title={t('reader.rating')}>
-              <Rating
-                value={meta.rating}
-                label={t('aria.rating')}
-                onChange={(value) => {
-                  if (value !== meta.rating) void onPatchMeta({ rating: value }, { silent: true })
-                }}
-              />
-            </span>
-            <span className="pd-reader-row-spacer" />
-            <Menu className={`pd-reader-status pd-reader-status-${meta.status}`} label={t('meta.status')}
-              triggerLabel={statusLabel(t, meta.status)} disabled={busy !== null}
-              icon={<span aria-hidden="true">⌄</span>}
-              items={READER_STATUSES.map((status) => ({ id: status, label: statusLabel(t, status),
-                onSelect: () => { if (status !== meta.status) void onPatchMeta({ status }, { silent: true }) },
-              }))} />
+            <div className="pd-reader-actions" role="group" aria-label={t('reader.menu.label')}>
+            <ReaderStatus key={meta.id} status={meta.status} disabled={busy !== null}
+              onChange={(status) => onPatchMeta({ status }, { silent: true })} />
             {busy !== null ? <Spinner size={11} label={t('common.loading')} /> : null}
             <Button
               size="sm"
@@ -1163,9 +1150,11 @@ function ReaderViewImpl(props: ReaderViewProps) {
                 },
               ]}
             />
+            </div>
           </div>
 
           <div className="pd-reader-row pd-reader-row-meta">
+            <div className="pd-reader-metadata">
             {meta.authors.length > 0 ? (
               <span className="pd-reader-authors" title={meta.authors.join(', ')}>
                 {meta.authors.join(', ')}
@@ -1190,7 +1179,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
                     ·
                   </span>
                 ) : null}
-                <span className="pd-reader-meta-item">{meta.year}</span>
+                <span className="pd-reader-meta-item pd-reader-meta-year">{meta.year}</span>
               </>
             ) : null}
             {meta.pageCount !== null && meta.pageCount > 0 ? (
@@ -1200,25 +1189,17 @@ function ReaderViewImpl(props: ReaderViewProps) {
                     ·
                   </span>
                 ) : null}
-                <span className="pd-reader-meta-item">{t('meta.value.pages', { n: meta.pageCount })}</span>
+                <span className="pd-reader-meta-item pd-reader-meta-pages">{t('meta.value.pages', { n: meta.pageCount })}</span>
               </>
             ) : null}
 
-            {meta.tags.slice(0, 3).map((tag) => (
-              <span key={`${meta.id}-tag-${tag}`} className="pd-tag" title={tag}>
-                {tag}
-              </span>
-            ))}
-            {meta.tags.length > 3 ? (
-              <span className="pd-tag" title={meta.tags.slice(3).join(', ')}>
-                +{meta.tags.length - 3}
-              </span>
-            ) : null}
             {detail.pdfEvicted ? (
               <span className="pd-badge" data-kind="warn">
                 {t('meta.value.evicted')}
               </span>
             ) : null}
+            </div>
+            <ReaderTags key={meta.id} tags={meta.tags} />
           </div>
 
           <div className="pd-reader-row pd-reader-row-tabs">

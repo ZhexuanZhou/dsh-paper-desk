@@ -160,8 +160,8 @@ Behaviour requirements:
   cheap and can stay).
 * The component must render safely before the module loads (loading state) and on
   load failure (error + retry).
-* No imports outside `react` and `./pdfjs.js` (+ type-only imports from
-  `../src/types.js`).
+* Keep imports limited to React, local rendering/geometry/preload/keyboard
+  helpers and type-only model imports. Do not import the HTTP API or Host services.
 
 ## 4. Reader integration (owner: client-ui, Lead-reviewed)
 
@@ -193,3 +193,36 @@ In `client/ReaderView.tsx`, the 阅读 tab becomes:
   sidebar panellist icon match the shell's line-art glyphs (18px, viewBox 16,
   `stroke="currentColor"`, `strokeWidth` 1.3, **explicit `fill="none"` on the svg
   and on every shape**, no gradient/opacity tricks).
+
+## 5. Bounded background preparation (1.1.2)
+
+The live DOM still contains only the current page and nearby pages. Existing
+700px intersection rendering and immediate neighbour previews are retained.
+The new background cache does not create text layers or annotation overlays.
+
+- Initial preparation window: pages 1–10. At page 8 extend to 20; at page 18
+  slide to 11–30. Distant jumps replace the window around the target, and
+  backward jumps rebuild the relevant batch. Never request nonexistent pages.
+- One background job at a time, scheduled on browser idle. Visible raster and
+  selectable text work abort active background work and take priority. Scrolling,
+  pointer selection, resizing, hidden documents and open dialogs defer new jobs.
+- At most twenty cached previews, each at most 262144 pixels and at most 1024px
+  on its longer side. Their RGBA backing stores total at most 20 MiB, plus one
+  active preview. This bounds our preview cache, not pdf.js's internal resources
+  or the existing visible page canvases. Eviction and document disposal release
+  the previews; far-page PDF resources are cleaned after bitmap preparation.
+- Use a ready current bitmap when possible. Otherwise prepare low-resolution
+  bitmaps only when the current page actually uses the pdf.js renderer worker.
+  On the main-thread fallback, warm the operator list without adding background
+  raster work. Full-resolution pages still render through the existing path.
+- Preview promotion only copies bitmap pixels. Text, links and annotations use
+  the current normal viewport, preserving zoom and intrinsic page rotation.
+- A failed/aborted preparation does not block normal page rendering. Late jobs
+  from an old document cannot enter the current cache. No model or external
+  service is involved; PDF download/range semantics remain unchanged.
+
+`client/pdfPreload.ts` owns the queue/window contract separately from React.
+`test:pdf-preload` checks boundaries, priority, cancellation, allocation limits,
+backward/distant jumps, failure continuation and disposal. Viewer diagnostics
+`data-preload-range`, `data-preload-ready` and `data-preload-bitmaps` describe
+the actual cache; they do not introduce progress messages into the reading UI.

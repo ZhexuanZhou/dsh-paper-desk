@@ -31,6 +31,7 @@ import type { AnnotationColor, AnnotationItem, AnnotationKind, AnnotationRect } 
 import { configurePdfjsRenderer } from './pdf-engine.js'
 import { loadPdfjs, pdfjsAsset } from './pdfjs.js'
 import type { PdfDocumentLike, PdfPageLike, PdfjsModule, PdfViewportLike } from './pdfjs.js'
+import { PdfPreloader, pdfPreviewSize, schedulePdfIdle } from './pdfPreload.js'
 import { topDialog } from './dialogFocus.js'
 
 function blockedByDialog(root: HTMLElement | null): boolean {
@@ -124,7 +125,6 @@ const MAX_RECTS = 60
 const RENDER_MARGIN = '700px 0px'
 /** Keep recently rendered pages warm for fast back/forward flips. */
 const RELEASE_DELAY_MS = 1200
-const PREFETCH_IDLE_TIMEOUT_MS = 900
 /** Only this many pages exist in the DOM around the current page. */
 const PAGE_WINDOW = 2
 /** Cap full-page raster DPR: 2x on Retina makes a cold page take seconds. */
@@ -885,6 +885,8 @@ interface PageView {
   renderTask?: { promise: Promise<void>; cancel(): void }
 }
 
+interface CachedPdfPreview { page: PdfPageLike; pageNumber: number; canvas: HTMLCanvasElement | null }
+
 /** One flattened outline entry (pdf.js outline tree → drawer rows). */
 interface OutlineEntry {
   id: string
@@ -1370,6 +1372,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const loadingTaskRef = useRef<LoadingTaskLike | null>(null)
   const pagesRef = useRef<Map<number, PageView>>(new Map())
   const visibleRef = useRef<Set<number>>(new Set())
+  const preloaderRef = useRef<PdfPreloader<CachedPdfPreview> | null>(null)
   /** Invalidation counter for all in-flight async render work. */
   const epochRef = useRef(0)
   /** Debounce fit-width during host/sidebar animations. */
@@ -1690,6 +1693,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     return () => {
       cancelled = true
       epochRef.current += 1
+      preloaderRef.current?.dispose()
+      preloaderRef.current = null
       for (const view of pagesRef.current.values()) {
         view.token += 1
         try {
@@ -1932,6 +1937,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (previewOnly && view.previewKey === key) return
 
     const epoch = epochRef.current
+    const finishForeground = preloaderRef.current?.beginForeground()
     const token = view.token + 1
     view.token = token
     view.pendingKey = key
@@ -1950,6 +1956,19 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       const scale = zoomRef.current * CSS_UNITS
       const viewport = page.getViewport({ scale })
       const canvas = view.canvas
+
+      const cached = preloaderRef.current?.get(pageNumber)?.canvas
+      if (view.previewKey !== key && cached && cached.width > 0) {
+        canvas.width = cached.width
+        canvas.height = cached.height
+        canvas.style.width = `${viewport.width}px`
+        canvas.style.height = `${viewport.height}px`
+        canvas.getContext('2d')?.drawImage(cached, 0, 0)
+        view.previewKey = key
+        view.wrap.dataset.rendered = 'true'
+        view.wrap.dataset.previewSource = 'preload'
+        if (previewOnly) return
+      }
 
       // First paint a cheap preview so fast flips never sit on a blank sheet;
       // the full-resolution pass follows on idle/short delay.
@@ -2016,6 +2035,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       // on idle so scrolling starts as soon as the canvas is painted.
       const buildTextLayer = async (): Promise<void> => {
         if (epoch !== epochRef.current || token !== view.token) return
+        const finishText = preloaderRef.current?.beginForeground()
         // A fresh `.textLayer` container per render means a stale, cancelled
         // layer can only ever write into its own detached node.
         const container = document.createElement('div')
@@ -2063,6 +2083,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           })
         } catch {
           // Text layer failure is not fatal: the raster page stays usable.
+        } finally {
+          finishText?.()
         }
       }
       if (typeof window.requestIdleCallback === 'function') {
@@ -2080,8 +2102,97 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       }
     } finally {
       if (token === view.token) view.pendingKey = undefined
+      finishForeground?.()
     }
   }, [])
+
+  /* A separate bounded cache prepares batches without expanding live page DOM. */
+  useEffect(() => {
+    const doc = docRef.current
+    if (status !== 'ready' || !doc) return
+    const epoch = epochRef.current
+    const cache = new PdfPreloader<CachedPdfPreview>({
+      schedule: schedulePdfIdle,
+      busy: () => scrollingRef.current || windowResizingRef.current || resizeCooldownRef.current ||
+        scrollbarDraggingRef.current || jumpCooldownRef.current || document.visibilityState !== 'visible' ||
+        blockedByDialog(rootRef.current) || [...visibleRef.current].some((number) => Boolean(pagesRef.current.get(number)?.pendingKey)) ||
+        Boolean((navigator as Navigator & { scheduling?: { isInputPending?(): boolean } }).scheduling?.isInputPending?.()),
+      load: async (number, signal) => {
+        const check = () => { if (signal.aborted || epoch !== epochRef.current) throw new DOMException('Preload interrupted', 'AbortError') }
+        check()
+        const page = await doc.getPage(number)
+        check()
+        const base = page.getViewport({ scale: 1 })
+        const size = pdfPreviewSize(base.width, base.height)
+        const visible = pagesRef.current.get(number)
+        const readyCanvas = visible?.previewKey === renderKey(zoomRef.current, renderDpr()) && visible.canvas.width > 0 ? visible.canvas : null
+        // Never add background main-thread raster work when the renderer worker
+        // is unavailable. Preparing the operator list still warms document data.
+        const worker = pagesRef.current.get(currentPageRef.current)?.wrap.dataset.render === 'worker'
+        if (!readyCanvas && !worker) {
+          await page.getOperatorList?.({ intent: 'display' })
+          check()
+          return { page, pageNumber: number, canvas: null }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = size.width; canvas.height = size.height
+        try {
+          if (readyCanvas) canvas.getContext('2d')?.drawImage(readyCanvas, 0, 0, size.width, size.height)
+          else {
+            const task = page.render({ canvas, viewport: page.getViewport({ scale: size.scale }), intent: 'display' }) as { promise: Promise<void>; cancel(): void; onContinue?: (resume: () => void) => void }
+            const continuation: { cancel?: () => void } = {}
+            task.onContinue = (resume) => { continuation.cancel = schedulePdfIdle(() => { if (!signal.aborted) resume() }) }
+            const abort = () => { continuation.cancel?.(); task.cancel() }
+            signal.addEventListener('abort', abort, { once: true })
+            try { await task.promise }
+            finally { signal.removeEventListener('abort', abort); continuation.cancel?.() }
+          }
+          check()
+          if (Math.abs(number - currentPageRef.current) > PAGE_WINDOW) {
+            try { page.cleanup?.() } catch { /* Retain the small bitmap even if PDF resources are still busy. */ }
+          }
+          return { page, pageNumber: number, canvas }
+        } catch (error) {
+          canvas.width = 0; canvas.height = 0
+          throw error
+        }
+      },
+      release: (value) => {
+        if (value.canvas) { value.canvas.width = 0; value.canvas.height = 0 }
+        if (Math.abs(value.pageNumber - currentPageRef.current) > PAGE_WINDOW) {
+          try { value.page.cleanup?.() } catch { /* A foreground render may still own this page. */ }
+        }
+      },
+      changed: (state) => {
+        const root = rootRef.current
+        if (!root || epoch !== epochRef.current) return
+        // Diagnostics only: no progress messages interrupt reading or selection.
+        root.dataset.preloadRange = `${state.start}-${state.end}`
+        root.dataset.preloadReady = state.ready.join(',')
+        root.dataset.preloadBitmaps = state.ready.filter((number) => Boolean(cache.get(number)?.canvas)).join(',')
+        root.dataset.preloadActive = String(state.active ?? '')
+      },
+    })
+    preloaderRef.current = cache
+    cache.update(currentPageRef.current, doc.numPages)
+    const pause = () => cache.setPaused(true)
+    const resume = () => cache.setPaused(false)
+    const scroller = scrollerRef.current
+    scroller?.addEventListener('pointerdown', pause, { passive: true })
+    window.addEventListener('pointerup', resume, { passive: true })
+    window.addEventListener('pointercancel', resume, { passive: true })
+    return () => {
+      scroller?.removeEventListener('pointerdown', pause)
+      window.removeEventListener('pointerup', resume)
+      window.removeEventListener('pointercancel', resume)
+      cache.dispose()
+      if (preloaderRef.current === cache) preloaderRef.current = null
+    }
+  }, [status, src, assetBase, attempt, renderDpr])
+
+  useEffect(() => {
+    if (status === 'ready') preloaderRef.current?.update(currentPage, numPages)
+  }, [status, currentPage, numPages])
 
   /* ── page registration (stable ref callback; children queried from DOM) ─ */
   const registerPage = useCallback((element: HTMLDivElement | null) => {
@@ -2157,10 +2268,12 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     let frame = 0
     const onScroll = () => {
       scrollingRef.current = true
+      preloaderRef.current?.setPaused(true)
       if (scrollIdleTimerRef.current !== null) window.clearTimeout(scrollIdleTimerRef.current)
       scrollIdleTimerRef.current = window.setTimeout(() => {
         scrollIdleTimerRef.current = null
         scrollingRef.current = false
+        preloaderRef.current?.setPaused(false)
         // Warm pages rendered during scrolling at the readable resolution.
         setQualityVersion((value) => value + 1)
       }, 220)

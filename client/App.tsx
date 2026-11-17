@@ -40,6 +40,7 @@ import type {
 import type { SettingsPatch, SettingsPayload } from './api.js'
 import { api, ApiError } from './api.js'
 import { readLastPaper, writeLastPaper } from './lastPaper.js'
+import { optimisticMetaPatch } from './metaForm.js'
 import { cleanUserPrompt } from './chatText.js'
 import { renderPageImages } from './pageImages.js'
 import { ResearchView } from './ResearchView.js'
@@ -1140,15 +1141,16 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     async (patch: Partial<PaperMeta>, options?: { silent?: boolean }): Promise<void> => {
       const paperId = selectedId
       if (paperId === null) return
-      // Apply status/rating immediately; waiting for the round trip plus a
-      // full list reload made the header controls feel unresponsive.
+      // Keep the previous reading status until the server confirms the save.
+      // Other form fields retain their existing optimistic behavior.
+      const immediate = optimisticMetaPatch(patch)
       setDetail((previous) =>
         previous !== null && previous.meta.id === paperId
-          ? { ...previous, meta: { ...previous.meta, ...patch } }
+          ? { ...previous, meta: { ...previous.meta, ...immediate } }
           : previous,
       )
       setPapers((previous) =>
-        previous.map((paper) => (paper.id === paperId ? { ...paper, ...patch } : paper)),
+        previous.map((paper) => (paper.id === paperId ? { ...paper, ...immediate } : paper)),
       )
       try {
         const result = await api.patchPaper(paperId, patch)

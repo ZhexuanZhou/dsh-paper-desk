@@ -11,7 +11,7 @@ const check = (label, actual, expected) => { assert.deepEqual(actual, expected, 
 try {
   const file = path.join(root, 'state.mjs')
   await build({ stdin: { contents: "export * from './client/metaForm.ts'; export * from './client/lastPaper.ts'", resolveDir: process.cwd() }, bundle: true, format: 'esm', platform: 'node', outfile: file })
-  const { toMetaForm, reconcileMetaForm, readLastPaper, writeLastPaper } = await import(pathToFileURL(file))
+  const { toMetaForm, reconcileMetaForm, optimisticMetaPatch, readLastPaper, writeLastPaper } = await import(pathToFileURL(file))
   const meta = { id: 'paper-a', title: 'Title', authors: ['Author'], year: 2026, venue: '', doi: '', url: '', abstract: '', keywords: [], tags: [], status: 'unread', rating: 0 }
   const filled = { ...meta, abstract: 'Generated abstract', keywords: ['attention'], tags: ['fast-weights'] }
   check('pristine form adopts all generated fields', reconcileMetaForm(toMetaForm(meta), meta, filled), toMetaForm(filled))
@@ -21,6 +21,8 @@ try {
   check('header changes also merge without dropping the draft', reconcileMetaForm(draft, meta, { ...meta, status: 'read', rating: 4 }), { ...draft, status: 'read', rating: 4 })
   check('switching papers starts with the new paper values', reconcileMetaForm(draft, meta, { ...filled, id: 'paper-b' }), toMetaForm({ ...filled, id: 'paper-b' }))
   check('an intentional user deletion remains an edit', reconcileMetaForm({ ...toMetaForm(filled), abstract: '' }, filled, { ...filled, abstract: 'Updated server abstract' }).abstract, '')
+  check('pending status is not presented as a persisted reading state', optimisticMetaPatch({ status: 'read' }), {})
+  check('other form fields retain their existing immediate updates', optimisticMetaPatch({ status: 'archived', rating: 4, tags: ['tag'] }), { rating: 4, tags: ['tag'] })
 
   const values = new Map()
   const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) }
