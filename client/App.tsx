@@ -44,12 +44,13 @@ import { cleanUserPrompt } from './chatText.js'
 import { renderPageImages } from './pageImages.js'
 import { ResearchView } from './ResearchView.js'
 import { DiscoverView } from './DiscoverView.js'
+import { ImportDialog } from './ImportDialog.js'
 import { createAiThread } from './aiSession.js'
 import type { AiRow } from './aiSession.js'
 import { defaultLibraryPath, openHostPath, openSessionInShell, pickLibraryDirectory } from './agent.js'
 import { errorText, I18nProvider, useT } from './i18n.js'
 import type { Lang } from './i18n.js'
-import { IconBook, IconClose, IconGear, IconImport, IconLang, IconLink, IconSearch, IconSync } from './icons.js'
+import { IconBook, IconClose, IconGear, IconImport, IconLang, IconSearch, IconSync } from './icons.js'
 import { cardToNotesMarkdown } from './CardsPanel.js'
 import type { CardDraft } from './CardsPanel.js'
 import { CompareView } from './CompareView.js'
@@ -61,7 +62,7 @@ import type { ReaderBusy } from './ReaderView.js'
 import { SettingsView } from './SettingsView.js'
 import { CSS, STYLE_ATTR } from './styles.js'
 import { SyncView } from './SyncView.js'
-import { Button, Modal, Spinner, TextInput, Toast } from './ui.js'
+import { Button, IconButton, Modal, Spinner, TextInput, Toast } from './ui.js'
 import type { ToastItem, ToastKind } from './ui.js'
 
 type Nav = 'library' | 'sync' | 'settings' | 'research' | 'discover'
@@ -328,7 +329,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   /* imports */
   const [importing, setImporting] = useState(false)
-  const [urlOpen, setUrlOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [urlValue, setUrlValue] = useState('')
   const [urlBusy, setUrlBusy] = useState(false)
   const [urlError, setUrlError] = useState<string | null>(null)
@@ -1646,12 +1647,13 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   /* ── imports ─────────────────────────────────────────────────────────── */
 
-  const openImportPicker = useCallback(() => {
-    fileInputRef.current?.click()
+  const openImportDialog = useCallback(() => {
+    setImportOpen(true)
   }, [])
 
   const importFiles = useCallback(
     async (files: File[]): Promise<void> => {
+      if (importing || urlBusy) return
       const pdfs = files.filter(
         (file) => file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf',
       )
@@ -1684,6 +1686,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       }
       setImporting(false)
       if (lastId !== null) {
+        setImportOpen(false)
         const targetId: string = lastId
         await loadPapers()
         setNav('library')
@@ -1700,12 +1703,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         maybeSyncCitations(importedIds)
       }
     },
-    [status, loadPapers, pushToast, reportError, loadStatus, requestAction, maybeSyncCitations],
+    [status, importing, urlBusy, loadPapers, pushToast, reportError, loadStatus, requestAction, maybeSyncCitations],
   )
 
   const importFromUrl = useCallback(async (): Promise<void> => {
     const value = urlValue.trim()
-    if (value === '' || urlBusy) {
+    if (value === '' || urlBusy || importing) {
       if (value === '') setUrlError(tRef.current('import.urlRequired'))
       return
     }
@@ -1713,7 +1716,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
     setUrlError(null)
     try {
       const result = await api.importUrl(value)
-      setUrlOpen(false)
+      setImportOpen(false)
       setUrlValue('')
       setNav('library')
       await loadPapers()
@@ -1728,10 +1731,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       void loadStatus(true)
     } catch (error) {
       setUrlError(errorText(error) || tRef.current('import.urlFailed'))
+      reportError(error, 'import.urlFailed')
     } finally {
       setUrlBusy(false)
     }
-  }, [urlValue, urlBusy, loadPapers, requestAction, pushToast, loadStatus])
+  }, [urlValue, urlBusy, importing, loadPapers, requestAction, pushToast, loadStatus, reportError])
 
   const onDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
@@ -2237,30 +2241,21 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         </div>
 
         <div className="pd-top-actions">
-          {nav === 'library' && listCollapsed ? (
-            <Button variant="ghost" icon={<IconBook />} onClick={toggleListCollapsed}>
-              {t('list.restore')}
+          {nav === 'library' ? (
+            <Button className="pd-list-mobile-toggle" variant={listCollapsed ? 'ghost' : 'default'} icon={<IconBook />} onClick={toggleListCollapsed}
+              aria-expanded={!listCollapsed} aria-controls="pd-paper-list"
+              aria-label={t(listCollapsed ? 'list.restore' : 'list.collapse')} title={t(listCollapsed ? 'list.restore' : 'list.collapse')}>
+              {t('list.toggle')}
             </Button>
           ) : null}
           <Button
             variant="primary"
-            icon={<IconImport />}
-            loading={importing}
-            onClick={openImportPicker}
-            title={t('import.hint')}
+            icon={importing || urlBusy ? <Spinner size={14} /> : <IconImport />}
+            aria-busy={importing || urlBusy}
+            onClick={openImportDialog}
+            title={t('import.intro')}
           >
-            {importing ? t('import.importing') : t('import.button')}
-          </Button>
-          <Button
-            variant="ghost"
-            icon={<IconLink />}
-            onClick={() => {
-              setUrlError(null)
-              setUrlOpen(true)
-            }}
-            title={t('import.urlHint')}
-          >
-            {t('import.urlButton')}
+            {importing || urlBusy ? t('import.busyButton') : t('import.button')}
           </Button>
           <Button
             variant={nav === 'library' ? 'default' : 'ghost'}
@@ -2294,18 +2289,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         </div>
       </header>
 
-      <div className="pd-body">
-        {nav === 'library' && listCollapsed ? (
-          <button
-            type="button"
-            className="pd-list-restore"
-            title={t('list.restore')}
-            aria-label={t('list.restore')}
-            onClick={toggleListCollapsed}
-          >
-            ›
-          </button>
-        ) : null}
+      <div className={`pd-body${nav === 'library' ? ' pd-body-library' : ''}`}>
+        {nav === 'library' && listCollapsed ? <div className="pd-list-divider pd-list-divider-closed">
+          <IconButton className="pd-list-arrow" label={t('list.restore')} aria-expanded={false}
+            aria-controls="pd-paper-list" onClick={toggleListCollapsed}><span aria-hidden="true">›</span></IconButton>
+        </div> : null}
         {nav === 'library' ? (
           <>
             <LibraryView
@@ -2328,7 +2316,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onTagFilter={setTagFilter}
               onSort={setSort}
               onSelect={selectPaper}
-              onImport={openImportPicker}
+              onImport={openImportDialog}
               onRetry={() => void loadPapers()}
               onCompare={openCompareOverlay}
               onRelations={openRelationsOverlay}
@@ -2411,7 +2399,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onCopyCard={handleCopyCard}
               onToast={pushToast}
               onRetry={() => setDetailNonce((value) => value + 1)}
-              onImport={openImportPicker}
+              onImport={openImportDialog}
             />
           </>
         ) : nav === 'research' ? (
@@ -2455,43 +2443,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         </div>
       ) : null}
 
-      <Modal
-        open={urlOpen}
-        title={t('import.urlTitle')}
-        description={t('import.urlHint')}
-        onClose={() => {
-          if (!urlBusy) setUrlOpen(false)
-        }}
-        footer={
-          <>
-            <Button disabled={urlBusy} onClick={() => setUrlOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button variant="primary" loading={urlBusy} onClick={() => void importFromUrl()}>
-              {urlBusy ? t('import.urlImporting') : t('import.urlSubmit')}
-            </Button>
-          </>
-        }
-      >
-        <label className="pd-field-label" htmlFor="pd-import-url">
-          {t('import.urlLabel')}
-        </label>
-        <TextInput
-          id="pd-import-url"
-          value={urlValue}
-          placeholder={t('import.urlPlaceholder')}
-          disabled={urlBusy}
-          onChange={(event) => {
-            setUrlValue(event.target.value)
-            setUrlError(null)
-          }}
-        />
-        {urlError !== null ? (
-          <div className="pd-detail-error" role="alert">
-            <span>{urlError}</span>
-          </div>
-        ) : null}
-      </Modal>
+      <ImportDialog open={importOpen} importing={importing} urlBusy={urlBusy} url={urlValue} error={urlError}
+        onClose={() => setImportOpen(false)} onPickFiles={() => fileInputRef.current?.click()}
+        onFiles={(files) => void importFiles(files)} onUrlSubmit={() => void importFromUrl()}
+        onUrlChange={(value) => { setUrlValue(value); setUrlError(null) }} />
 
       <Modal
         open={unsavedPrompt !== null}

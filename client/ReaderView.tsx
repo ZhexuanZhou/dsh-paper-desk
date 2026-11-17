@@ -5,6 +5,7 @@
  * agent-assist bar. Presentational only — all data and API calls come from App.
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { topDialog } from './dialogFocus.js'
 import type { CSSProperties } from 'react'
 import type {
   AnnotationDocument,
@@ -620,7 +621,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return
       }
       /* A modal (Confirm delete / Ask / unsaved notes) owns the keyboard while open. */
-      if (document.querySelector('.pd-overlay') !== null) return
+      if (topDialog() !== null) return
       const meta = event.metaKey || event.ctrlKey
       if (meta && !event.shiftKey && (event.key === 'z' || event.key === 'Z')) {
         event.preventDefault()
@@ -739,11 +740,9 @@ function ReaderViewImpl(props: ReaderViewProps) {
       noteHighlight: t('ai.noteHighlight'),
       noteCommentPlaceholder: t('ai.noteCommentPlaceholder'),
       noteAskPlaceholder: t('ai.noteAskPlaceholder'),
-      noteAsk: t('ai.noteAsk'),
       noteSave: t('ai.noteSave'),
       noteCancel: t('ai.noteCancel'),
       noteCount: t('ai.noteCount'),
-      noteAskAll: t('ai.noteAskAll'),
       noteDelete: t('ai.noteDelete'),
       noteQuoteHint: t('ai.noteQuoteHint'),
       selectionTitle: t('ai.selectionTitle'),
@@ -1045,18 +1044,12 @@ function ReaderViewImpl(props: ReaderViewProps) {
     }
   }
 
-  const deleteCardFromEditor = async (): Promise<void> => {
+  const requestDeleteCardFromEditor = (): void => {
     const editor = cardEditor
     if (editor === null || editor.cardId === null) return
-    setCardSaving(true)
-    try {
-      await onDeleteCard(editor.cardId, editor.expectedUpdatedAt)
-      setCardEditor(null)
-    } catch {
-      // Parent reports the error; preserve the editor/confirmation and its draft.
-    } finally {
-      setCardSaving(false)
-    }
+    const target = cards?.items.find((card) => card.id === editor.cardId)
+    if (!target) { onToast('warn', t('cards.deleteFailed')); return }
+    setPendingCardDelete({ ...target, updatedAt: editor.expectedUpdatedAt ?? target.updatedAt })
   }
 
   const confirmDeleteCard = async (): Promise<void> => {
@@ -1066,6 +1059,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
     try {
       await onDeleteCard(target.id, target.updatedAt)
       setPendingCardDelete(null)
+      if (cardEditor?.cardId === target.id) setCardEditor(null)
     } catch {
       // Parent reports the error; preserve the editor/confirmation and its draft.
     } finally {
@@ -1714,22 +1708,22 @@ function ReaderViewImpl(props: ReaderViewProps) {
         open={cardEditor !== null}
         mode={cardEditor?.mode ?? 'create'}
         initial={cardEditor?.initial ?? null}
-        busy={cardSaving}
+        busy={cardSaving || deletingCard}
         availableTurns={cardEditor?.availableTurns}
         onSynthesize={onSynthesizeCard}
         onClose={() => setCardEditor(null)}
         onSave={(draft) => void saveCard(draft)}
-        onDelete={cardEditor?.mode === 'edit' ? () => void deleteCardFromEditor() : undefined}
+        onDelete={cardEditor?.mode === 'edit' ? requestDeleteCardFromEditor : undefined}
       />
 
       <Modal
         open={pendingCardDelete !== null}
         title={t('cards.deleteTitle')}
         description={t('cards.deleteDesc')}
-        onClose={() => setPendingCardDelete(null)}
+        onClose={() => { if (!deletingCard) setPendingCardDelete(null) }}
         footer={
           <>
-            <Button onClick={() => setPendingCardDelete(null)}>{t('cards.cancel')}</Button>
+            <Button disabled={deletingCard} onClick={() => setPendingCardDelete(null)}>{t('cards.cancel')}</Button>
             <Button variant="danger" loading={deletingCard} onClick={() => void confirmDeleteCard()}>
               {t('cards.deleteConfirm')}
             </Button>

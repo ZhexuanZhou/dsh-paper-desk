@@ -45,7 +45,7 @@ function jsonText(value: unknown): string {
 function libraryOrError(settings: EffectiveSettings): { root: string } | ToolResult {
   if (settings.libraryPath.length === 0) {
     return failure(
-      'PaperDesk is not configured yet: no paper library directory is set. Ask the user to open the PaperDesk panel and choose a library directory.',
+      'Paper Companion is not configured yet: no paper library directory is set. Ask the user to open the Paper Companion panel and choose a library directory.',
     )
   }
   return { root: settings.libraryPath }
@@ -86,7 +86,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_list',
       description:
-        'List papers in the user\'s local PaperDesk library, newest first. Use status/tag filters to narrow the result. Returns id, title, authors, year, status, tags and whether notes exist.',
+        'List papers in the user\'s local Paper Companion library, newest first. Use status/tag filters to narrow the result. Returns id, title, authors, year, status, tags and whether notes exist.',
       parameters: {
         status: {
           type: 'string',
@@ -117,7 +117,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           },
         },
         render: (_args, value) => {
-          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
+          if (!value.ok) return textResult(`Paper Companion unavailable: ${String(value.error ?? 'unknown error')}`)
           const rows = Array.isArray(value.papers) ? value.papers : []
           const lines = rows.map((row) => {
             const paper = row as Record<string, unknown>
@@ -129,7 +129,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           const tags = Array.isArray(value.tags)
             ? (value.tags as { tag?: unknown }[]).map((entry) => String(entry.tag ?? '')).filter((tag) => tag.length > 0)
             : []
-          const header = `PaperDesk library: ${rows.length} paper(s)${tags.length > 0 ? `; tags: ${tags.join(', ')}` : ''}.`
+          const header = `Paper Companion library: ${rows.length} paper(s)${tags.length > 0 ? `; tags: ${tags.join(', ')}` : ''}.`
           return textResult([header, ...lines].join('\n'))
         },
       },
@@ -168,7 +168,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_search',
       description:
-        "Search the user's PaperDesk library across titles, authors, tags, abstracts, notes and extracted PDF text. Returns matching papers with the field that matched and a context snippet.",
+        "Search the user's Paper Companion library across titles, authors, tags, abstracts, notes and extracted PDF text. Returns matching papers with the field that matched and a context snippet.",
       parameters: {
         query: { type: 'string', required: true, description: 'Literal substring, e.g. format term. Pass the text itself without wrapping quotes or search-engine syntax.' },
         limit: { type: 'number', description: 'Maximum hits (default 10, max 30).' },
@@ -186,13 +186,13 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           },
         },
         render: (_args, value) => {
-          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
+          if (!value.ok) return textResult(`Paper Companion unavailable: ${String(value.error ?? 'unknown error')}`)
           const hits = Array.isArray(value.hits) ? value.hits : []
           const lines = hits.map((hit) => {
             const row = hit as Record<string, unknown>
             return `- ${String(row.paperId)} · ${String(row.title)} · ${String(row.field)} · ${String(row.snippet ?? '')}`
           })
-          return textResult([`PaperDesk search: ${hits.length} hit(s).`, ...lines].join('\n'))
+          return textResult([`Paper Companion search: ${hits.length} hit(s).`, ...lines].join('\n'))
         },
       },
       async execute(args, exec) {
@@ -222,7 +222,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_info',
       description:
-        'Read one paper\'s metadata and note status from PaperDesk (title, authors, year, venue, DOI, abstract, tags, page count, whether notes exist). Use it before reading text.',
+        'Read one paper\'s metadata and note status from Paper Companion (title, authors, year, venue, DOI, abstract, tags, page count, whether notes exist). Use it before reading text.',
       parameters: { paperId: { type: 'string', required: true, description: 'Paper id from paper_list/paper_search.' } },
       output: {
         schema: {
@@ -242,7 +242,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           textResult(
             value.ok
               ? jsonText({ paper: value.paper, notes: value.notes, annotations: value.annotations, cards: value.cards, relations: value.relations })
-              : `PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`,
+              : `Paper Companion unavailable: ${String(value.error ?? 'unknown error')}`,
           ),
       },
       async execute(args, exec) {
@@ -296,7 +296,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_text',
       description:
-        'Read extracted text of one PaperDesk paper, page by page. Extraction is cached; the first call may take a few seconds. Omit pages to get pages 1-3. Always read page 1 first, then request the pages you need.',
+        'Read extracted text of one Paper Companion paper, page by page. Extraction is cached; the first call may take a few seconds. Omit pages to get pages 1-3. Always read page 1 first, then request the pages you need.',
       parameters: {
         paperId: { type: 'string', required: true, description: 'Paper id.' },
         page: { type: 'number', description: 'Single page number to read (1-based).' },
@@ -317,13 +317,13 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           },
         },
         render: (_args, value) => {
-          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
+          if (!value.ok) return textResult(`Paper Companion unavailable: ${String(value.error ?? 'unknown error')}`)
           const pages = Array.isArray(value.pages) ? value.pages : []
           const blocks = pages.map((entry) => {
             const page = entry as Record<string, unknown>
             return `--- page ${String(page.page)} ---\n${String(page.text ?? '')}`
           })
-          const meta = `PaperDesk text: ${pages.length} page(s) of ${String(value.pageCount ?? '?')}${value.lowText === true ? ' (little extractable text; likely a scanned PDF)' : ''}${value.truncated === true ? ' (truncated by maxChars)' : ''}.`
+          const meta = `Paper Companion text: ${pages.length} page(s) of ${String(value.pageCount ?? '?')}${value.lowText === true ? ' (little extractable text; likely a scanned PDF)' : ''}${value.truncated === true ? ' (truncated by maxChars)' : ''}.`
           return textResult([meta, ...blocks].join('\n\n'))
         },
       },
@@ -380,7 +380,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
   add(
     defineTool({
       name: 'paper_notes_read',
-      description: "Read the user's markdown notes for one PaperDesk paper, including the notes hash and whether the text is truncated.",
+      description: "Read the user's markdown notes for one Paper Companion paper, including the notes hash and whether the text is truncated.",
       parameters: { paperId: { type: 'string', required: true, description: 'Paper id.' }, offset: { type: 'number', description: 'Character offset for reading the remaining notes (default 0).' } },
       output: {
         schema: {
@@ -424,7 +424,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_note_append',
       description:
-        "Append a dated bullet to one PaperDesk paper's notes. Safe against cloud-sync conflicts (never overwrites concurrent edits). Use this to persist summaries and conclusions you produced.",
+        "Append a dated bullet to one Paper Companion paper's notes. Safe against cloud-sync conflicts (never overwrites concurrent edits). Use this to persist summaries and conclusions you produced.",
       parameters: {
         paperId: { type: 'string', required: true, description: 'Paper id.' },
         text: { type: 'string', required: true, description: 'Markdown text to append (one or more lines).' },
@@ -476,7 +476,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_add',
       description:
-        'Import a PDF on the user\'s machine into the PaperDesk library. Provide the absolute path. Metadata is extracted automatically (and enriched through Crossref when the paper has a DOI).',
+        'Import a PDF on the user\'s machine into the Paper Companion library. Provide the absolute path. Metadata is extracted automatically (and enriched through Crossref when the paper has a DOI).',
       parameters: {
         path: { type: 'string', required: true, description: 'Absolute path of the PDF file on the Host.' },
         title: { type: 'string', description: 'Override the detected title.' },
@@ -541,7 +541,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
   add(
     defineTool({
       name: 'paper_update',
-      description: 'Update metadata, tags, reading status or rating of one PaperDesk paper. Only the fields you pass change.',
+      description: 'Update metadata, tags, reading status or rating of one Paper Companion paper. Only the fields you pass change.',
       parameters: {
         paperId: { type: 'string', required: true, description: 'Paper id.' },
         title: { type: 'string' },
@@ -610,7 +610,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_annotations',
       description:
-        "Read the reader's PDF annotations for one PaperDesk paper: highlights, underlines, notes and questions with page numbers, the selected quote and the reader's comment. Use this to see what the user already marked or asked before explaining or summarizing.",
+        "Read the reader's PDF annotations for one Paper Companion paper: highlights, underlines, notes and questions with page numbers, the selected quote and the reader's comment. Use this to see what the user already marked or asked before explaining or summarizing.",
       parameters: {
         paperId: { type: 'string', required: true, description: 'Paper id.' },
         kind: {
@@ -634,14 +634,14 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           },
         },
         render: (_args, value) => {
-          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
+          if (!value.ok) return textResult(`Paper Companion unavailable: ${String(value.error ?? 'unknown error')}`)
           const items = Array.isArray(value.annotations) ? value.annotations : []
           const lines = items.map((entry) => {
             const item = entry as Record<string, unknown>
             const comment = typeof item.comment === 'string' && item.comment.trim().length > 0 ? ` — 批注: ${item.comment}` : ''
             return `- p.${String(item.page)} [${String(item.kind)}] “${String(item.quote ?? '').slice(0, 300)}”${comment}`
           })
-          return textResult([`PaperDesk annotations: ${items.length} item(s). ${jsonText(value.stats)}`, ...lines].join('\n'))
+          return textResult([`Paper Companion annotations: ${items.length} item(s). ${jsonText(value.stats)}`, ...lines].join('\n'))
         },
       },
       async execute(args, exec) {
@@ -678,7 +678,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_cards',
       description:
-        "Read the note cards the user distilled for one PaperDesk paper (cards are shown in the Cards tab). Each card has a title, Markdown body, tags and page references.",
+        "Read the note cards the user distilled for one Paper Companion paper (cards are shown in the Cards tab). Each card has a title, Markdown body, tags and page references.",
       parameters: {
         paperId: { type: 'string', required: true, description: 'Paper id.' },
         limit: { type: 'number', description: 'Maximum cards (default 200, max 200). Use 200 when organizing all cards.' },
@@ -883,13 +883,13 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           },
         },
         render: (_args, value) => {
-          if (!value.ok) return textResult(`PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`)
+          if (!value.ok) return textResult(`Paper Companion unavailable: ${String(value.error ?? 'unknown error')}`)
           const relations = Array.isArray(value.relations) ? value.relations : []
           const lines = relations.map((entry) => {
             const relation = entry as Record<string, unknown>
             return `- [${String(relation.kind)}] ${String(relation.fromTitle ?? relation.from)} ↔ ${String(relation.toTitle ?? relation.to)}${relation.label ? ` (${String(relation.label)})` : ''}${relation.note ? ` — ${String(relation.note)}` : ''}`
           })
-          return textResult([`PaperDesk relations: ${relations.length} edge(s).`, ...lines].join('\n'))
+          return textResult([`Paper Companion relations: ${relations.length} edge(s).`, ...lines].join('\n'))
         },
       },
       async execute(args, exec) {
@@ -937,7 +937,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     defineTool({
       name: 'paper_sync',
       description:
-        'Report PaperDesk library sync health: cloud drive provider, files changed by other devices since the last scan, notes/meta conflict copies, and PDFs not downloaded locally (iCloud placeholders).',
+        'Report Paper Companion library sync health: cloud drive provider, files changed by other devices since the last scan, notes/meta conflict copies, and PDFs not downloaded locally (iCloud placeholders).',
       parameters: {},
       output: {
         schema: {
@@ -950,7 +950,7 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
           },
         },
         render: (_args, value) =>
-          textResult(value.ok ? jsonText(value.status) : `PaperDesk unavailable: ${String(value.error ?? 'unknown error')}`),
+          textResult(value.ok ? jsonText(value.status) : `Paper Companion unavailable: ${String(value.error ?? 'unknown error')}`),
       },
       async execute(_args, exec) {
         exec.signal.throwIfAborted()

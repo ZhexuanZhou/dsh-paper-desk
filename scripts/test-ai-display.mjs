@@ -5,19 +5,25 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 const root = await mkdtemp(path.join(os.tmpdir(), 'paperdesk-ai-display-'))
+let checks = 0
+const check = (name, actual, expected) => { assert.deepEqual(actual, expected, name); checks++; console.log(`ok ${name}`) }
 try {
   const file = path.join(root, 'display.mjs')
   await build({ entryPoints: ['client/aiDisplay.ts'], bundle: true, platform: 'node', format: 'esm', outfile: file })
-  const { groupProcessingRows } = await import(pathToFileURL(file))
-  const row = (id, kind) => ({ id, kind, text: `${kind} ${id}` })
-  const input = [row('u1','user'),row('r1','reasoning'),row('t1','tool'),row('r2','reasoning'),row('t2','tool'),row('a1','assistant'),row('u2','user'),row('r3','reasoning'),row('err','error'),row('t3','tool'),row('a2','assistant')]
-  const out = groupProcessingRows(input)
-  assert.equal(out.filter(item => item.kind === 'process').length, 3)
-  assert.deepEqual(out[1].rows.map(row => row.id), ['r1','t1','r2','t2'])
-  assert.deepEqual(out.flatMap(item => item.kind === 'row' ? [item.row] : item.rows), input)
-  assert.equal(out[1].id, 'r1')
-  assert.equal(groupProcessingRows([...input.slice(0,4), row('r4','reasoning')])[1].id, 'r1')
-  assert.deepEqual(groupProcessingRows([]), [])
-  assert.deepEqual(groupProcessingRows([row('a','assistant')]), [{kind:'row',row:row('a','assistant')}])
-  console.log('7 AI display checks passed: grouping, boundaries, order, stable streaming identity and empty input')
+  const { groupConversationTurns } = await import(pathToFileURL(file))
+  const row = (id, kind, text = `${kind} ${id}`) => ({ id, kind, text })
+  const input = [row('u1','user'),row('r1','reasoning'),row('a0','assistant'),row('t1','tool'),row('a1','assistant'),row('u2','user'),row('r2','reasoning'),row('err','error'),row('s','status'),row('a2','assistant')]
+  const original = JSON.stringify(input)
+  const out = groupConversationTurns(input)
+  check('each question begins one turn', out.length, 2)
+  check('process and intermediate answers remain in the same turn', out[0].rows.map(row => row.id), ['r1','a0','t1','a1'])
+  check('all events preserve their original order', out.flatMap(turn => [...(turn.question ? [turn.question] : []), ...turn.rows]), input)
+  check('input transcript is never mutated', JSON.stringify(input), original)
+  check('turn identity survives streaming appends', groupConversationTurns([...input, row('t2','tool')])[1].id, out[1].id)
+  check('empty input stays empty', groupConversationTurns([]), [])
+  check('leading events without a question are retained', groupConversationTurns([row('s0','status'),row('a','assistant')])[0], {id:'s0',question:null,rows:[row('s0','status'),row('a','assistant')]})
+  check('an unanswered question stays visible', groupConversationTurns([row('u','user')]), [{id:'u',question:row('u','user'),rows:[]}])
+  check('consecutive questions are not merged', groupConversationTurns([row('u1','user'),row('u2','user')]).length, 2)
+  check('errors and statuses remain visible reply events', out[1].rows.filter(row => row.kind !== 'reasoning' && row.kind !== 'tool').map(row => row.id), ['err','s','a2'])
+  console.log(`${checks} AI display checks passed`)
 } finally { await rm(root, { recursive: true, force: true }) }

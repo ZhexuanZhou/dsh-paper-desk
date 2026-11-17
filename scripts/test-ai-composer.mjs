@@ -11,7 +11,7 @@ const check = (name, actual, expected) => { assert.deepEqual(actual, expected, n
 try {
   const file = path.join(root, 'composer.mjs')
   await build({ entryPoints: ['client/aiComposer.ts'], bundle: true, platform: 'node', format: 'esm', outfile: file })
-  const { parseImagePages, readComposerOptions, writeComposerOptions, clearAcceptedDraft } = await import(pathToFileURL(file))
+  const { appendQuotedComment, parseImagePages, readComposerOptions, writeComposerOptions, clearAcceptedDraft } = await import(pathToFileURL(file))
   check('attaching without a list freezes the current page', parseImagePages('', 6, 17), [6])
   check('Chinese commas, spaces and duplicates resolve to actual page images', parseImagePages('1，3 3, 17', 6, 17), [1, 3, 17])
   for (const input of ['0', '-1', '1.5', '1e1', 'NaN', '18', '9007199254740993', '1,2,3,4']) {
@@ -56,5 +56,15 @@ try {
   check('unavailable storage falls back to an ordinary text question', readComposerOptions(denied, keyA, 17), { pages: [] })
   assert.doesNotThrow(() => { writeComposerOptions(denied, keyA, options); clearAcceptedDraft(denied, keyA, 'text', options) }); checks++
   check('no chat scope never reads another chat draft', readComposerOptions(storage, null, 17), { pages: [] })
+  check('selected answer text goes into an editable ordinary draft', appendQuotedComment('', 'a passage', 'explain this', 'Selected text'), 'Selected text：\n> a passage\n\nexplain this')
+  check('existing question and formula source are preserved', appendQuotedComment('Compare $x_t$ first.', '$x_{t+1}=x_t+h v_t$', 'Is this Euler?', 'Selected text'), 'Compare $x_t$ first.\n\nSelected text：\n> $x_{t+1}=x_t+h v_t$\n\nIs this Euler?')
+  check('each line including a paragraph break stays quoted', appendQuotedComment('', 'one\r\n\r\ntwo', '', '选中内容'), '选中内容：\n> one\n> \n> two')
+  check('empty comment does not invent a user question', appendQuotedComment('My question', 'evidence', '  ', 'Selected text'), 'My question\n\nSelected text：\n> evidence')
+  check('missing quoted content leaves an existing draft alone', appendQuotedComment('keep me', '  ', 'comment', 'Selected text'), 'keep me')
+  check('another passage can be added without replacing the prior one', appendQuotedComment(appendQuotedComment('', 'first', 'why?', '选中内容'), 'second', 'compare', '选中内容'), '选中内容：\n> first\n\nwhy?\n\n选中内容：\n> second\n\ncompare')
+  const existingCommentDraft = appendQuotedComment('Original question', 'evidence', 'old comment', 'Selected text')
+  check('editing a saved comment updates its unmodified draft context once', appendQuotedComment(existingCommentDraft, 'evidence', 'new comment', 'Selected text', 'old comment'), 'Original question\n\nSelected text：\n> evidence\n\nnew comment')
+  check('reopening without edits does not duplicate the current context', appendQuotedComment(existingCommentDraft, 'evidence', 'old comment', 'Selected text', 'old comment'), existingCommentDraft)
+  check('editing a comment does not replace user-edited question text', appendQuotedComment('Original question\n\nSelected text：\n> evidence\n\nuser changed this', 'evidence', 'new comment', 'Selected text', 'old comment'), 'Original question\n\nSelected text：\n> evidence\n\nuser changed this\n\nSelected text：\n> evidence\n\nnew comment')
   console.log(`${checks} AI composer checks passed`)
 } finally { await rm(root, { recursive: true, force: true }) }

@@ -30,6 +30,7 @@ import { createAiThread } from './aiSession.js'
 import type { AiRow } from './aiSession.js'
 import { Markdown } from './markdown.js'
 import { Button, Chip, Spinner, Tabs, TextInput } from './ui.js'
+import { topDialog, useDialogFocus } from './dialogFocus.js'
 
 export type Lang = 'zh' | 'en'
 
@@ -644,10 +645,10 @@ const CMP_FG = 'var(--dsw-alias-label-primary)'
 const CMP_FG2 = 'var(--dsw-alias-label-secondary)'
 const CMP_L1 = 'var(--dsw-alias-bg-layer-1)'
 const CMP_L2 = 'var(--dsw-alias-bg-layer-2)'
-const CMP_OVERLAY = 'var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2))'
+const CMP_OVERLAY = 'var(--dsw-alias-bg-base)'
 const CMP_B1 = 'var(--dsw-alias-border-l1)'
 const CMP_B4 = 'var(--dsw-alias-border-l4, var(--dsw-alias-border-l2))'
-const CMP_BRAND = 'var(--dsw-alias-brand-primary)'
+const CMP_BRAND = 'var(--pd-accent, var(--dsw-alias-brand-primary))'
 const CMP_ERR = 'var(--dsw-alias-state-error-primary)'
 const CMP_OK = 'var(--dsw-alias-state-success-primary)'
 const CMP_WARN = 'var(--dsw-alias-state-warn-primary)'
@@ -1377,20 +1378,14 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
   }, [notice])
 
   /* Dialog focus + Escape (Escape first closes the innermost transient state). */
-  useEffect(() => {
-    if (!open) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const timer = window.setTimeout(() => panelRef.current?.focus(), 0)
-    return () => {
-      window.clearTimeout(timer)
-      if (previous !== null && previous.isConnected) previous.focus()
-    }
-  }, [open])
+  useDialogFocus(open, panelRef)
 
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      const activeDialog = topDialog()
+      if (activeDialog && !panelRef.current?.contains(activeDialog)) return
       event.stopPropagation()
       if (saveOpen) {
         setSaveOpen(false)
@@ -2266,14 +2261,11 @@ export function CompareView(props: CompareViewProps): ReactElement | null {
   return (
     <div
       className="pd-cmp-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('compare.title')}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div className="pd-cmp-panel" ref={panelRef} tabIndex={-1}>
+      <div className="pd-cmp-panel" ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t('compare.title')}>
         <header className="pd-cmp-head">
           <div className="pd-cmp-head-text">
             <h2 className="pd-cmp-title">{t('compare.title')}</h2>

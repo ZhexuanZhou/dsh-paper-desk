@@ -40,3 +40,20 @@ export function clearAcceptedDraft(storage: StorageLike, key: string | null, sen
     if (JSON.stringify(stored.pages) === JSON.stringify(options.pages)) storage.removeItem(`${key}:options`)
   } catch { /* Keep the in-memory composer usable when storage is unavailable. */ }
 }
+
+/** Bring an answer passage into the ordinary editable composer; never send it here. */
+export function appendQuotedComment(draft: string, quote: string, comment: string, label: string, previousComment?: string): string {
+  if (!quote.trim()) return draft
+  const quoted = quote.trim().replace(/\r\n?/g, '\n').split('\n').map((line) => `> ${line}`).join('\n')
+  const context = `${label}：\n${quoted}${comment.trim() ? `\n\n${comment.trim()}` : ''}`
+  if (previousComment !== undefined) {
+    const previous = `${label}：\n${quoted}${previousComment.trim() ? `\n\n${previousComment.trim()}` : ''}`
+    const index = draft.indexOf(previous)
+    if (index >= 0 && draft.indexOf(previous, index + previous.length) < 0) {
+      const startsBlock = index === 0 || draft.slice(0, index).endsWith('\n\n')
+      const rest = draft.slice(index + previous.length)
+      if (startsBlock && (!rest || rest.startsWith('\n\n'))) return draft.slice(0, index) + context + rest
+    }
+  }
+  return draft.trim() ? `${draft}\n\n${context}` : context
+}

@@ -209,7 +209,7 @@ function requireConfigured(config: Config): EffectiveSettings {
   if (settings.libraryPath.length === 0) {
     throw new HttpError(
       400,
-      '论文库尚未配置：请打开「论文库 PaperDesk」面板，在设置里选择一个论文库目录后再试。',
+      '论文库尚未配置：请打开「知页 · 论文助手」面板，在设置里选择一个论文库目录后再试。',
     )
   }
   if (!isDirectory(settings.libraryPath)) {

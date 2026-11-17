@@ -30,7 +30,7 @@ const OK = 'var(--dsw-alias-state-success-primary)'
 const WARN = 'var(--dsw-alias-state-warn-primary)'
 const IDLE = 'var(--dsw-alias-state-idle-primary)'
 const SHADOW = 'var(--dsw-shadow-lv1, 0 6px 24px color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent))'
-const PRIMARY_FILL = 'var(--pd-accent, var(--dsw-alias-button-primary-fill))'
+const PRIMARY_FILL = 'var(--pd-accent-fill, var(--pd-accent, var(--dsw-alias-button-primary-fill)))'
 const PRIMARY_FG = 'var(--pd-accent-foreground, white)'
 const SIDEBAR_FILL = 'var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-layer-1))'
 const RING = `0 0 0 3px color-mix(in srgb, ${BRAND} 22%, transparent)`
@@ -38,10 +38,11 @@ const RING = `0 0 0 3px color-mix(in srgb, ${BRAND} 22%, transparent)`
 import { relationsCss } from './RelationsGraph.js'
 import { compareCss } from './CompareView.js'
 import { aiReadingCss } from './aiReadingStyles.js'
+import { importCss } from './importStyles.js'
 
 
 const readingCss = `
-.pd-root { --pd-accent: #637b69; font-size: 15px; line-height: 1.6; background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, #c8bca3); }
+.pd-root { --pd-accent-fill: #637b69; --pd-accent-foreground: white; --pd-accent: color-mix(in srgb, #637b69 72%, var(--dsw-alias-label-primary)); font-size: 15px; line-height: 1.6; background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, #c8bca3); }
 .pd-topbar { min-height: 56px; padding: 8px 24px; gap: 20px; background: transparent; }
 .pd-brand-title { font-size: 23px; font-weight: 650; letter-spacing: -.04em; }
 .pd-brand-sub { display: none; }
@@ -224,6 +225,7 @@ const readingCss = `
 .pd-cards-workspace .pd-card-select { top: 26px; right: 24px; }
 .pd-cards-workspace .pd-card-meta { gap: 8px; }
 .pd-cards-workspace .pd-card-actions { padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l1); flex-wrap: wrap; gap: 8px; }
+.pd-cards-workspace .pd-card-actions .pd-btn { min-height: 30px; padding: 4px 8px; font-size: 12px; }
 @container pd (max-width: 1050px) { .pd-notebook-reference { flex-basis: 180px; padding-left: 16px; } .pd-notebook-outline { flex-basis: 130px; } .pd-notebook-editor .pd-notes-preview { padding-inline: 28px; } .pd-cards-directory { flex-basis: 180px; } }
 @container pd (max-width: 850px) { .pd-notebook-reference { display: none; } .pd-notebook-editor .pd-notes-preview { padding-inline: 24px; } }
 @container pd (max-width: 600px) { .pd-cards-workspace .pd-cards-rail { flex-direction: column; } .pd-cards-directory { flex: 0 0 auto; padding: 8px; } .pd-cards-directory button { max-width: 250px; } .pd-notebook-editor { flex-direction: column; } .pd-notebook-outline { flex: 0 0 auto; display: flex; gap: 6px; padding: 8px 0; border-right: 0; border-bottom: 1px solid var(--dsw-alias-border-l1); overflow-x: auto; } .pd-notebook-outline h3 { display: none; } .pd-notebook-outline button { width: auto; flex: 0 0 auto; margin: 0; padding: 7px 12px; } .pd-notebook-editor .pd-notes-toolbar { padding: 14px 16px; } .pd-notebook-editor .pd-md { font-size: 16px; } .pd-notebook-editor .pd-md h1 { font-size: 24px; } .pd-cards-workspace .pd-cards-scroll { padding: 16px 8px 40px; } .pd-cards-workspace .pd-card-item { padding: 24px 20px; } .pd-cards-workspace .pd-cards-head { flex-wrap: wrap; padding: 16px; } }
@@ -356,8 +358,8 @@ export const CSS = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -390,73 +392,22 @@ export const CSS = `
 }
 .pd-pane-list {
   position: relative;
-  flex: 0 0 320px;
-  width: 320px;
+  flex: 0 0 var(--pd-list-width, 320px);
+  width: var(--pd-list-width, 320px);
   min-width: 240px;
   max-width: 560px;
   overflow: visible;
 }
-.pd-list-resizer {
-  position: absolute;
-  top: 0;
-  right: -12px;
-  bottom: 0;
-  z-index: 20;
-  width: 12px;
-  cursor: col-resize;
-  touch-action: none;
-}
-.pd-list-resizer::after {
-  content: '';
-  position: absolute;
-  bottom: 34vh;
-  left: 50%;
-  width: 2px;
-  height: 36px;
-  border-radius: 999px;
-  background: color-mix(in srgb, ${FG} 24%, transparent);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-.pd-list-resizer:hover { background: color-mix(in srgb, ${FG} 7%, transparent); }
+.pd-body.pd-body-library { column-gap: 24px; }
+.pd-list-divider { position: absolute; top: 0; right: -24px; bottom: 0; z-index: 20; width: 24px; }
+.pd-list-divider-closed { position: relative; top: auto; right: auto; bottom: auto; flex: 0 0 24px; align-self: stretch; }
+.pd-list-resizer { position: absolute; inset: 0; cursor: col-resize; touch-action: none; }
+.pd-list-resizer::after { content: ''; position: absolute; inset-block: 0; left: 50%; width: 1px; background: ${B1}; pointer-events: none; }
+.pd-list-resizer:hover { background: color-mix(in srgb, ${FG} 5%, transparent); }
 .pd-list-resizer:hover::after { background: ${BRAND}; }
-.pd-list-restore {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  z-index: 4;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 56px;
-  border: 1px solid ${B1};
-  border-left: 0;
-  border-radius: 0 7px 7px 0;
-  background: ${L1};
-  color: ${FG_2};
-  font-family: inherit;
-  font-size: 20px;
-  cursor: pointer;
-}
-.pd-list-restore:hover { color: ${FG}; background: ${L2}; }
-.pd-list-collapse {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  z-index: 4;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 56px;
-  border: 1px solid ${B1};
-  border-right: 0;
-  border-radius: 7px 0 0 7px;
-  background: ${L1};
-  color: ${FG_2};
-  font-family: inherit;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-}
-.pd-list-collapse:hover { color: ${FG}; background: ${L2}; }
+.pd-list-arrow.pd-btn-icon { position: absolute; top: 50%; left: 2px; z-index: 1; transform: translateY(-50%); width: 20px; height: 36px; min-height: 36px; border: 1px solid ${B1}; border-radius: 6px; background: ${BG}; font-size: 20px; line-height: 1; cursor: pointer; }
+.pd-list-arrow:hover { background: ${L2}; color: ${FG}; }
+.pd-list-mobile-toggle { display: none; }
 .pd-pane-detail { flex: 1 1 auto; min-width: 0; position: relative; }
 .pd-pane-single { flex: 1 1 auto; min-width: 0; overflow: auto; }
 
@@ -469,10 +420,13 @@ export const CSS = `
   padding: 10px 10px 9px;
   border-bottom: 1px solid ${B1};
 }
-.pd-list-title-row { display: flex; align-items: center; gap: 8px; }
+.pd-list-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .pd-list-title { margin: 0; font-size: 13px; font-weight: 600; }
 .pd-list-count { font-size: 11.5px; color: ${FG_2}; }
 .pd-list-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.pd-list-sort > .pd-btn { border-color: transparent; background: transparent; color: ${FG_2}; gap: 7px; }
+.pd-list-sort > .pd-btn:hover { background: ${HOVER}; color: ${FG}; }
+.pd-list-sort .pd-menu-panel { min-width: 160px; }
 .pd-select-sm {
   min-height: 26px;
   padding: 2px 7px;
@@ -619,70 +573,6 @@ export const CSS = `
   font-size: 10px;
   line-height: 1.7;
 }
-/* ── library: table view + tag colouring ───────────────────────────────── */
-.pd-table-scroll { width: 100%; overflow-x: auto; }
-.pd-table {
-  width: 100%;
-  min-width: 340px;
-  border-collapse: collapse;
-  font-size: 11.5px;
-}
-.pd-table th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 5px 6px;
-  border-bottom: 1px solid ${B1};
-  background: ${L1};
-  color: ${FG_2};
-  font-size: 10.5px;
-  font-weight: 600;
-  text-align: left;
-  white-space: nowrap;
-}
-.pd-table-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.pd-table-sort:hover { color: ${FG}; }
-.pd-table td {
-  padding: 4px 6px;
-  border-bottom: 1px solid color-mix(in srgb, ${FG} 6%, transparent);
-  vertical-align: middle;
-}
-.pd-table-row { cursor: pointer; }
-.pd-table-row:hover td { background: ${HOVER}; }
-.pd-table-row[data-active="true"] td { background: color-mix(in srgb, ${BRAND} 9%, transparent); }
-.pd-table-row:focus-visible { outline: 2px solid ${BRAND}; outline-offset: -2px; }
-.pd-table .pd-dot { display: inline-block; margin: 0 5px 0 0; vertical-align: middle; }
-.pd-table-title {
-  display: inline-block;
-  max-width: 170px;
-  overflow: hidden;
-  color: ${FG};
-  font-weight: 550;
-  text-overflow: ellipsis;
-  vertical-align: middle;
-  white-space: nowrap;
-}
-.pd-table-cell-authors {
-  max-width: 120px;
-  overflow: hidden;
-  color: ${FG_2};
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pd-table-cell-year { color: ${FG_2}; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pd-table-cell-tags { white-space: nowrap; }
-.pd-table .pd-tag { max-width: 84px; overflow: hidden; font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
-
 /* Stable per-tag colour: hue derived from the tag name, never persisted. */
 .pd-tag-hue {
   border: 1px solid hsl(var(--pd-tag-hue, 210) 55% 52% / 0.34);
@@ -729,10 +619,10 @@ export const CSS = `
   color: ${PRIMARY_FG};
 }
 .pd-btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, ${PRIMARY_FILL} 88%, ${FG});
+  background: color-mix(in srgb, ${PRIMARY_FILL} 88%, black);
 }
 .pd-btn-primary:active:not(:disabled) {
-  background: color-mix(in srgb, ${PRIMARY_FILL} 80%, ${FG});
+  background: color-mix(in srgb, ${PRIMARY_FILL} 80%, black);
 }
 .pd-btn-danger {
   border-color: color-mix(in srgb, ${ERR} 38%, ${B1});
@@ -742,15 +632,15 @@ export const CSS = `
 .pd-btn-ghost { border-color: transparent; background: transparent; }
 .pd-btn-ghost:hover:not(:disabled) { background: ${HOVER}; }
 .pd-btn-sm {
-  min-height: 24px;
-  padding: 2px 8px;
+  min-height: 28px;
+  padding: 4px 9px;
   border-radius: 6px;
   font-size: 11.5px;
 }
 .pd-btn-icon {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
   padding: 0;
   border-radius: 7px;
   color: ${FG_2};
@@ -1601,7 +1491,7 @@ export const CSS = `
 }
 .pd-ai-assistant { color: ${FG}; font-size: 12.5px; line-height: 1.6; }
 ::highlight(paperdesk-answer-note) {
-  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent);
+  background-color: color-mix(in srgb, var(--pd-accent-fill, var(--dsw-alias-brand-primary)) 20%, transparent);
   color: inherit;
 }
 .pd-ai-note-menu {
@@ -2073,7 +1963,7 @@ export const CSS = `
   max-height: min(86vh, 720px);
   border: 1px solid ${B4};
   border-radius: 12px;
-  background: ${OVERLAY};
+  background: ${BG};
   box-shadow: ${SHADOW};
   overflow: hidden;
   outline: none;
@@ -2084,19 +1974,19 @@ export const CSS = `
   align-items: center;
   gap: 10px;
   flex: 0 0 auto;
-  padding: 13px 15px;
+  padding: 18px 20px;
   border-bottom: 1px solid ${B1};
 }
-.pd-modal-title { flex: 1 1 auto; margin: 0; font-size: 14px; font-weight: 600; }
+.pd-modal-title { flex: 1 1 auto; margin: 0; font-size: 18px; line-height: 1.5; font-weight: 600; }
 .pd-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   min-height: 0;
   overflow: auto;
-  padding: 14px 15px;
+  padding: 18px 20px;
 }
-.pd-modal-desc { color: ${FG_2}; font-size: 12px; line-height: 1.6; }
+.pd-modal-desc { margin: 0; color: ${FG_2}; font-size: 13px; line-height: 1.75; }
 .pd-modal-foot {
   display: flex;
   flex-wrap: wrap;
@@ -2104,7 +1994,7 @@ export const CSS = `
   justify-content: flex-end;
   gap: 8px;
   flex: 0 0 auto;
-  padding: 11px 15px;
+  padding: 14px 20px;
   border-top: 1px solid ${B1};
 }
 
@@ -2291,10 +2181,13 @@ export const CSS = `
   .pd-brand-sub { display: none; }
   .pd-search { order: 4; flex-basis: 100%; max-width: none; }
   .pd-body { flex-direction: column; overflow: auto; }
-  .pd-list-resizer, .pd-list-collapse, .pd-list-restore { display: none; }
+  .pd-list-divider { display: none; }
+  .pd-list-mobile-toggle { display: inline-flex; }
   .pd-pane-list {
     flex: 0 0 auto;
     width: auto;
+    min-width: 0;
+    max-width: none;
     max-height: 46%;
     min-height: 180px;
   }
@@ -2310,7 +2203,7 @@ export const CSS = `
 }
 ` +
   relationsCss +
-  compareCss + readingCss + aiReadingCss
+  compareCss + readingCss + aiReadingCss + importCss
 
 /** Value of the injected `<style data-plugin-css="...">` attribute. */
 export const STYLE_ATTR = 'paper-desk'

@@ -43,8 +43,8 @@ export function ResearchView({
   useEffect(() => () => ai.dispose(), [ai])
   useEffect(() => {
     if (!topic) return
-    void ai.openThread(topic.id, { workspacePath, title: `PaperDesk · ${topic.title}` }).catch((err: unknown) => setError(errorText(err)))
-  }, [ai, topic?.id, topic?.title, workspacePath])
+    void ai.openThread(topic.id, { workspacePath, title: `${t('app.title')} · ${topic.title}` }).catch((err: unknown) => setError(errorText(err)))
+  }, [ai, topic?.id, topic?.title, workspacePath, t])
   const dirty =
     title !== (topic?.title ?? '') ||
     question !== (topic?.question ?? '') ||
@@ -121,7 +121,7 @@ export function ResearchView({
     setError('')
     try {
       const payload = await api.topicPrompt(topic.id, ask)
-      await ai.openThread(topic.id, { workspacePath, title: `PaperDesk · ${title}` })
+      await ai.openThread(topic.id, { workspacePath, title: `${t('app.title')} · ${title}` })
       const result = await ai.run(payload.prompt)
       if (!result.ok) throw new Error(result.error)
       setAsk('')

@@ -8,13 +8,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import type { AssistTask } from '../src/types.js'
 import type { AiRow, AiThreadController } from './aiSession.js'
-import { groupProcessingRows } from './aiDisplay.js'
-import { cleanUserPrompt } from './chatText.js'
+import { groupConversationTurns } from './aiDisplay.js'
+import { AssistantAnswer, AssistantIdentity, UserQuestion } from './ConversationMessages.js'
+import { topDialog } from './dialogFocus.js'
 import { Markdown } from './markdown.js'
 import { Button, IconButton, Spinner } from './ui.js'
 import type { MenuItemDef } from './ui.js'
 import { IconClose, IconCopy, IconNote, IconPlus, IconSpark } from './icons.js'
-import { clearAcceptedDraft, parseImagePages, readComposerOptions, writeComposerOptions } from './aiComposer.js'
+import { appendQuotedComment, clearAcceptedDraft, parseImagePages, readComposerOptions, writeComposerOptions } from './aiComposer.js'
 import type { ComposerOptions } from './aiComposer.js'
 
 /** Every string the panel renders (owned by i18n, zh + en). */
@@ -62,11 +63,9 @@ export interface AiPanelLabels {
   noteHighlight: string
   noteCommentPlaceholder: string
   noteAskPlaceholder: string
-  noteAsk: string
   noteSave: string
   noteCancel: string
   noteCount: string
-  noteAskAll: string
   noteDelete: string
   noteQuoteHint: string
   selectionTitle: string
@@ -200,16 +199,6 @@ function findQuoteRange(root: HTMLElement, quote: string): Range | null {
   return range
 }
 
-function UserQuestion({ text, label, expand, collapse }: { text: string; label: string; expand: string; collapse: string }): ReactElement {
-  const body = cleanUserPrompt(text)
-  return <div className="pd-ai-user">
-    <span className="pd-ai-user-label">{label}</span>
-    {body.length > 100 || body.split('\n').length > 3
-      ? <details className="pd-ai-question"><summary><span>{body}</span><small><span className="pd-ai-question-expand">{expand}</span><span className="pd-ai-question-collapse">{collapse}</span></small></summary><p>{body}</p></details>
-      : <p className="pd-ai-question-text">{body}</p>}
-  </div>
-}
-
 export function AiPanel(props: AiPanelProps) {
   const { ai, history, labels, onAsk, onReset, onStop, onCopy, onOpenInSession, onJumpPage, onSourcePage } = props
 
@@ -286,7 +275,9 @@ export function AiPanel(props: AiPanelProps) {
     })
   }
 
-  const displayItems = useMemo(() => groupProcessingRows(rows), [rows])
+  const turns = useMemo(() => groupConversationTurns(rows.length > 0 ? rows : history.map((message, index) => ({
+    id: `history-${index}`, kind: message.role, text: message.text,
+  }))), [rows, history])
 
 
   useEffect(() => {
@@ -482,7 +473,7 @@ export function AiPanel(props: AiPanelProps) {
   useEffect(() => {
     if (noteDraft === null) return
     const onEscape = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.isComposing) return
+      if (event.key !== 'Escape' || event.isComposing || topDialog() !== null) return
       const target = event.target
       if (target !== document.body && (!(target instanceof Node) || !panelRef.current?.contains(target))) return
       event.preventDefault()
@@ -494,32 +485,27 @@ export function AiPanel(props: AiPanelProps) {
     return () => document.removeEventListener('keydown', onEscape, true)
   }, [noteDraft !== null])
 
-  const askAboutDraft = async (): Promise<void> => {
-    if (!noteDraft || disabled) return
-    const draft = noteDraft
-    const question = draft.comment.trim() || labels.selectionExplain
-    const accepted = await onAsk(`${labels.selectionTitle}：\n> ${draft.quote.replace(/\n/g, '\n> ')}\n\n${question}`)
-    if (accepted) closeNoteDraft()
-  }
-
-  const saveNoteDraft = (): void => {
-    const draft = noteDraft
-    if (draft === null) return
-    const comment = draft.comment.trim()
-    if (draft.noteId !== null) {
-      updateAnswerNote(draft.noteId, { comment })
-    } else if (comment !== '') {
-      const note: AnswerNote = {
-        id: makeNoteId(),
-        quote: draft.quote,
-        comment,
-        rowId: draft.rowId,
-        createdAt: new Date().toISOString(),
-      }
-      persistNotes([...notes, note])
+  const completeAnswerComment = (): void => {
+    if (!noteDraft || attaching || sending) return
+    const previous = notes.find((note) => note.id === noteDraft.noteId)
+    const comment = noteDraft.comment.trim()
+    const next = appendQuotedComment(draft, noteDraft.quote, comment, labels.selectionTitle, previous?.comment)
+    if (previous) updateAnswerNote(previous.id, { comment })
+    else persistNotes([...notes, {
+      id: makeNoteId(), quote: noteDraft.quote, comment, rowId: noteDraft.rowId,
+      createdAt: new Date().toISOString(),
+    }])
+    setDraft(next)
+    if (draftStoreKey !== null) {
+      try { localStorage.setItem(draftStoreKey, next) } catch { /* Keep the editable draft in memory. */ }
     }
-    setNoteDraft(null)
-    window.getSelection()?.removeAllRanges()
+    closeNoteDraft()
+    window.requestAnimationFrame(() => {
+      const input = inputRef.current
+      if (!input) return
+      input.focus()
+      input.setSelectionRange(next.length, next.length)
+    })
   }
 
   const deleteNoteDraft = (): void => {
@@ -557,22 +543,6 @@ export function AiPanel(props: AiPanelProps) {
     setFollow(false)
   }
 
-  const askWithAllNotes = (): void => {
-    if (disabled) return
-    const withComments = notes.filter((note) => note.comment.trim() !== '')
-    if (withComments.length === 0) return
-    const lines = [
-      `请统一解答我在你上一条回答中做的 ${withComments.length} 条批注。`,
-      '',
-      ...withComments.map((note, index) => [
-        `${index + 1}. 原文：${note.quote.replace(/\n+/g, ' ')}`,
-        `   我的评论/问题：${note.comment.trim()}`,
-      ].join('\n')),
-      '',
-      '请逐条回应，并说明它们之间是否有联系。',
-    ]
-    void onAsk(lines.join('\n'))
-  }
 
   /* Auto-follow the stream unless the user scrolled away from the bottom. */
   useEffect(() => {
@@ -673,12 +643,7 @@ export function AiPanel(props: AiPanelProps) {
       case 'user':
         return <UserQuestion text={row.text} label={labels.you} expand={labels.expandQuestion} collapse={labels.collapseQuestion} />
       case 'assistant':
-        return (
-          <div key={row.id} className="pd-ai-assistant">
-            <Markdown markdown={row.text} />
-            {row.streaming === true ? <span className="pd-ai-caret" aria-hidden="true" /> : null}
-          </div>
-        )
+        return <AssistantAnswer text={row.text} streaming={row.streaming === true} />
       case 'reasoning':
         return (
           <details key={row.id} className="pd-ai-reasoning">
@@ -751,24 +716,7 @@ export function AiPanel(props: AiPanelProps) {
 
 
 
-          {rows.length === 0 && history.length > 0 ? (
-            <div className="pd-ai-history">
-              <div className="pd-ai-history-title">{labels.historyTitle}</div>
-              {history.map((message, index) =>
-                message.role === 'user' ? (
-                  <UserQuestion key={`history-${index}`} text={message.text} label={labels.you} expand={labels.expandQuestion} collapse={labels.collapseQuestion} />
-                ) : (
-                  <div key={`history-${index}`} className="pd-ai-row" data-ai-row-id={`history-${index}`}>
-                    <div className="pd-ai-assistant">
-                      <Markdown markdown={message.text} />
-                    </div>
-                    {renderCitations({ id: `history-${index}`, kind: 'assistant', text: message.text })}
-                    {answerActions({ id: `history-${index}`, kind: 'assistant', text: message.text })}
-                  </div>
-                ),
-              )}
-            </div>
-          ) : null}
+          {rows.length === 0 && history.length > 0 ? <div className="pd-ai-history-title">{labels.historyTitle}</div> : null}
 
           {rows.length === 0 && history.length === 0 && !attaching && snapshot.status !== 'error' ? (
             <div className="pd-ai-empty">
@@ -779,28 +727,31 @@ export function AiPanel(props: AiPanelProps) {
             </div>
           ) : null}
 
-          {displayItems.map((item) => item.kind === 'process' ? (
-            <details key={`process-${item.id}`} className="pd-ai-process">
-              <summary>
-                <span>{labels.processTitle}</span>
-                <small>{[
-                  item.rows.some((row) => row.kind === 'reasoning') ? labels.processThoughts.replace('{n}', String(item.rows.filter((row) => row.kind === 'reasoning').length)) : '',
-                  item.rows.some((row) => row.kind === 'tool') ? labels.processTools.replace('{n}', String(item.rows.filter((row) => row.kind === 'tool').length)) : '',
-                ].filter(Boolean).join(' · ')}</small>
-              </summary>
-              <div className="pd-ai-process-content">
-                {item.rows.map((row) => <div key={row.id} className="pd-ai-process-step">
-                  {row.kind === 'reasoning' ? <Markdown markdown={row.text} /> : renderRow(row)}
+          {turns.map((turn) => {
+            const processing = turn.rows.filter((row) => row.kind === 'reasoning' || row.kind === 'tool')
+            const visible = turn.rows.filter((row) => row.kind !== 'reasoning' && row.kind !== 'tool')
+            const answers = visible.filter((row) => row.kind === 'assistant')
+            const combined: AiRow = { id: turn.id, kind: 'assistant', text: answers.map((row) => row.text).join('\n\n') }
+            return <div key={turn.id} className="pd-ai-turn">
+              {turn.question ? renderRow(turn.question) : null}
+              {turn.rows.length > 0 ? <div className="pd-ai-reply">
+                <AssistantIdentity label={labels.title} />
+                {processing.length > 0 ? <details className="pd-ai-process">
+                  <summary><span>{labels.processTitle}</span>{processing.some((row) => row.kind === 'tool') ? <small>{labels.processTools.replace('{n}', String(processing.filter((row) => row.kind === 'tool').length))}</small> : null}</summary>
+                  <div className="pd-ai-process-content">
+                    {processing.map((row) => <div key={row.id} className="pd-ai-process-step">
+                      {row.kind === 'reasoning' ? <Markdown markdown={row.text} /> : renderRow(row)}
+                    </div>)}
+                  </div>
+                </details> : null}
+                {visible.map((row) => <div key={row.id} className="pd-ai-row" data-ai-row-id={row.id}>
+                  {renderRow(row)}
                 </div>)}
-              </div>
-            </details>
-          ) : (
-            <div key={item.row.id} className="pd-ai-row" data-ai-row-id={item.row.id}>
-              {renderRow(item.row)}
-              {item.row.kind === 'assistant' ? renderCitations(item.row) : null}
-              {item.row.kind === 'assistant' && item.row.streaming !== true ? answerActions(item.row) : null}
+                {answers.length > 0 ? renderCitations(combined) : null}
+                {answers.length > 0 && !answers.some((row) => row.streaming === true) ? answerActions(combined) : null}
+              </div> : null}
             </div>
-          ))}
+          })}
 
           {noResponse ? (
             <div className="pd-ai-error" role="alert">
@@ -834,14 +785,6 @@ export function AiPanel(props: AiPanelProps) {
                   </button>
                 ))}
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={disabled || notes.every((note) => note.comment.trim() === '')}
-                onClick={askWithAllNotes}
-              >
-                {labels.noteAskAll}
-              </Button>
               </div>
             </details>
           ) : null}
@@ -873,8 +816,7 @@ export function AiPanel(props: AiPanelProps) {
           <div className="pd-ai-selection-actions">
             {noteDraft.noteId !== null ? <Button size="sm" variant="ghost" onClick={deleteNoteDraft}>{labels.noteDelete}</Button> : null}
             <Button size="sm" variant="ghost" onClick={closeNoteDraft}>{labels.noteCancel}</Button>
-            <Button size="sm" disabled={noteDraft.comment.trim() === ''} onClick={saveNoteDraft}>{labels.noteSave}</Button>
-            <Button size="sm" variant="primary" disabled={disabled} onClick={() => void askAboutDraft()}>{labels.noteAsk}</Button>
+            <Button size="sm" variant="primary" disabled={attaching || sending} onClick={completeAnswerComment}>{labels.noteSave}</Button>
           </div>
         </section>
       ) : null}

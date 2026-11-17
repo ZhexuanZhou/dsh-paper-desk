@@ -1,10 +1,10 @@
-# PaperDesk · 论文管理与 AI 助读
+# 知页 · 论文助手
 
-PaperDesk 是 DeepSeek Harness 的论文库插件。导入 PDF，在同一工作台阅读、批注、提问和整理笔记，再围绕研究专题比较与发现文献。
+知页是 DeepSeek Harness 的论文管理与 AI 研读助手。导入 PDF，在同一工作台阅读、批注、提问和整理笔记，再围绕研究专题比较与发现文献。
 
 论文库直接保存在你选择的目录中：PDF、Markdown 笔记和 JSON 元数据都是普通文件，可以交给自己的网盘客户端同步。
 
-**当前源码版本：0.5.2** · [本版更新说明](docs/RELEASE-v0.5.2.md) · [安装与发布说明](docs/PUBLISHING.md)
+**当前版本：1.0.0** · [本版更新说明](docs/RELEASE-v1.0.0.md) · [安装与发布说明](docs/PUBLISHING.md)
 
 ## 功能概览
 
@@ -21,18 +21,19 @@ PaperDesk 是 DeepSeek Harness 的论文库插件。导入 PDF，在同一工作
 | 对比与图谱 | 对比 2–6 篇论文，保存对比报告；管理引用、相关、方法、对比等论文关系。 |
 | 本地管理 | 阅读状态、评分、标签、BibTeX 导出、文件定位、冲突副本和中英文界面。 |
 
-下方截图使用公开合成演示库，并逐张标注界面版本。0.4.7 截图中的问答和卡片为手写演示；演示内容不作为真实研究结论。
+下方截图来自本轮 1.0 界面审查，使用合成演示库；文献发现展示公开 OpenAlex 结果。AI 助读图包含一次真实的只读模型回答，演示内容不作为研究结论。截图的来源和裁切记录见 [截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。本版按 macOS 桌面工作台验收；验证范围与未覆盖边界见 [发布说明](docs/RELEASE-v1.0.0.md)。
 
-![0.4.7 论文库与 PDF 阅读](docs/screenshots/v0.4.7/library.jpg)
+![1.0 论文库与 PDF 阅读](docs/screenshots/v1.0.0/library.jpg)
 
-## 0.5.0 的主要变化
+## 1.0 的主要变化
 
-- **编辑原内容**：通过对话重写或局部修改笔记，合并、拆分、删除、排序卡片。明确要求整理即授权相应编辑，不再固定追加笔记或另建替代卡片。
-- **可恢复版本**：修改前自动保存原内容。笔记、卡片页可预览并恢复历史；恢复前也会保存当前内容，支持撤销本次恢复。也可以直接在对话中要求恢复。
-- **完整提交**：卡片批量重组先完整校验再一次写入；过期版本不能覆盖新内容，失败会明确提示。
-- **统一对话面板**：使用与论文库一致的菜单、按钮和确认弹窗；会话切换、新建、重命名、删除分工清楚。生成期间可准备下一条草稿，表格独立滚动，“回到最新”不遮正文。
+- **知页 · 论文助手**：中文名称直观表达论文阅读与整理用途，英文为 Paper Companion。原有安装标识和论文库继续兼容。
+- **左右对话**：用户问题在右侧气泡，AI 回答在左侧；正文统一字号，长问题默认完整显示，每轮只保留一个过程入口和一次原文复制。
+- **统一导入**：一个“导入论文”入口支持本地多份 PDF、拖放与论文链接；导入状态和失败重试集中显示。
+- **编辑与恢复**：通过对话重写笔记，合并、拆分、删除或排序卡片。修改前保留历史，可预览、恢复和撤销恢复。
+- **一致的操作方式**：统一弹窗、按钮和低饱和配色，补齐键盘导航、焦点返回与删除确认。左侧统一使用纵向论文列表，排序使用与整体一致的菜单。
 
-此前的自然语言入口、原文复制与选区交互见 [0.4.8](docs/RELEASE-v0.4.8.md)，公式和 Markdown 渲染修复见 [0.4.7](docs/RELEASE-v0.4.7.md)。
+![1.0 统一导入：本地 PDF](docs/screenshots/v1.0.0/import-pdf.jpg)
 
 ## 安装与快速开始
 
@@ -55,13 +56,13 @@ dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 
 ### 从 GitHub Release 安装
 
-从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前正式 Release 为 0.4.7；0.5.2 可按上方源码步骤使用。命令行维护的 profile 可安装 0.4.7：
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.0.0。命令行维护的 profile 可安装：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v0.4.7/dsh-paper-desk-0.4.7.tgz
+dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.0.0/dsh-paper-desk-1.0.0.tgz
 ```
 
-Release 同时提供合成演示库和 SHA-256 校验文件。
+Release 同时提供安装包的 `SHA256SUMS` 校验文件；合成演示库位于源码的 `demo/library/`。
 
 ### 从 npm 安装
 
@@ -75,26 +76,27 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 ### 创建论文库
 
-1. 打开侧边栏的 PaperDesk 论文库入口。
+1. 打开侧边栏的“知页 · 论文助手”入口。
 2. 在设置中选择论文库目录，也可以使用默认目录。若要多设备同步，可选择自己的网盘目录。
-3. 上传或拖入 PDF，等待导入完成后阅读。也可以把文件放入 `<库>/_inbox/`，再扫描收件箱。
+3. 点击“导入论文”，选择“本地 PDF”上传或拖入文件，也可切换“论文链接”粘贴 arXiv 页面、编号或公开 PDF 直链。导入在后台完成，失败会保留链接供重试。也可以把文件放入 `<库>/_inbox/`，再扫描收件箱。
 4. 在“信息”页核对元数据；空的摘要、关键词或标签可以点击“用 LLM 补全空项”重试补全。
 
 ## AI 助读
 
 在阅读器中打开 **AI 助读**，即可一边看 PDF，一边讨论当前论文。
 
-![0.5.0 统一助读对话面板（合成论文，真实模型演示）](docs/screenshots/v0.5.0/ai-conversation-v0.5.0.jpg)
+![1.0 AI 助读：合成论文的真实只读问答](docs/screenshots/v1.0.0/ai-reading.jpg)
 
 - **提问**：在输入框直接输入问题，点击发送。Enter 发送，Shift+Enter 换行；输入法选词期间 Enter 用于完成选词。
+- **对话阅读**：你的消息显示在右侧气泡，AI 回答在左侧。每轮回答只显示一次 AI 标识，思考和工具收进一个过程入口，整轮提供一次 Markdown 复制。两者使用同一正文字号和低饱和配色。问题默认显示全文；超过八行时可手动收起为四行，再展开查看。调整面板宽度后，已不需要折叠的问题会自动恢复完整显示。
 - **直接说需求**：输入“总结方案”“将结论记入笔记”“保存为卡片”或“整理所有卡片”，由 Agent 选择工具执行。普通总结和讨论只读；明确要求记录时直接保存，并反馈结果。“重新整理笔记”会更新原笔记；“合并、拆分、删除或整理卡片”会按要求重组原卡片。默认处理当前论文，跨论文时请指定范围。
 - **原页图片**：通过输入框的附件入口添加页码，最多 3 个不同页面。附件会显示明确页码，可编辑或逐个移除；翻动 PDF 不会改变已附页码。
 - **阅读回答**：支持 Markdown、公式、列表、表格和代码；推理与工具过程可展开查看。生成中可以停止，向上阅读时不会强行跟随滚动，可点击“跳到最新”返回。
 - **核对引用**：每条回答独立列出引用页面。点击后查看 PDF 原页或提取文本，再跳回阅读器。页码来自回答中的引用标记，有页码不代表结论已核实。
 - **复制与记录**：“复制 Markdown”保留回答的原始公式和格式。需要保存时直接输入“将这段结论记入笔记”或“保存为卡片”，Agent 写入后会说明结果。
-- **回答批注**：划词只保留正常选区，不自动打开编辑区。需要操作时，选中回答文字，再点击输入框下方的“批注选中内容”，查看引用、写问题或评论。可直接提问、保存批注、取消或按 Esc 关闭；已有批注可重新编辑或统一提问。
+- **回答批注**：划词只保留正常选区，不自动打开编辑区。选中回答文字后，点击输入框下方的“批注选中内容”，写问题或评论。编辑后点击“完成”，会保存评论并将引用和评论带入正常输入框，保留已有草稿；可以继续修改，再自行发送。已保存的评论可在对话底部展开“N 条回答批注 · 查看”重新编辑。本轮评论随当前草稿发送，历史评论不自动附加到以后的每条问题。这些回答评论仅保存在当前浏览器或 Harness 的本地存储，不写入论文笔记、卡片或 PDF 批注，也不随论文库同步。需要长期保存时，请让 Agent 整理进笔记或卡片。
 
-原页以最长边 2000px 的 JPEG 发送给当前会话模型。普通文字提问不自动附图；选区提问会附上对应原页。图片处理或模型请求失败会提示错误，不静默改成纯文字请求。
+原页以最长边 2000px 的 JPEG 发送给当前会话模型。普通文字提问不自动附图；“加入提问”先把 PDF 选段和页码带入正常输入框，原页图片可通过附件入口添加。使用已有 PDF 批注中的提问入口时，会附上其对应原页。图片处理或模型请求失败会提示错误，不静默改成纯文字请求。
 
 ### 对话与草稿
 
@@ -121,7 +123,7 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 “笔记”页默认显示排版后的 Markdown：分节目录用于定位，正文旁可核对引用原页。支持编辑、自动保存和 `Cmd/Ctrl+S`；保存冲突会提示处理，不覆盖其他设备的修改。
 
-![0.4.7 整页笔记与分节目录](docs/screenshots/v0.4.7/notes.jpg)
+![1.0 整页笔记与来源核对](docs/screenshots/v1.0.0/notes.jpg)
 
 ### 通过对话保存卡片
 
@@ -129,13 +131,12 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 卡片阅读页和编辑预览使用相同的字体、标题层级和表格字号，正文与卡片标题左对齐。正文开头若是同名标题或独立同名段落，仅展示时隐藏一次；编辑源码、复制、插入笔记和已保存内容保持原样。编辑预览可切换源码模式，标题、标签、来源页码和上下文按需展开。
 
-![0.5.2 卡片编辑与正文预览](docs/screenshots/v0.5.2/card-preview-v0.5.2.jpg)
 
 在卡片编辑器中，“根据对话生成”会调用模型，依据所选上下文重新整理标题和正文；手工编辑后点击保存不会额外调用模型。
 
 保存后，在独立“卡片”页按目录阅读全文，或编辑、核对页码、复制、插入笔记和删除。卡片保存在 `cards.json`，不会自动写入论文笔记。
 
-![0.5.2 卡片目录与完整正文](docs/screenshots/v0.5.2/cards-reader-v0.5.2.jpg)
+![1.0 卡片目录与完整正文](docs/screenshots/v1.0.0/cards-reader.jpg)
 
 ## 编辑与版本恢复
 
@@ -143,9 +144,9 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 在“笔记”或“卡片”页点击 **版本历史**，选择一个版本先预览，再点击 **恢复此版本**。卡片历史对应整个卡片集合。恢复后可点击 **撤销本次恢复**，或从最新历史找回恢复前状态。若内容又被其他操作修改，旧的恢复/撤销请求会被拒绝，需要重新核对。
 
-![0.5.0 版本历史与恢复预览](docs/screenshots/v0.5.0/version-history-v0.5.0.jpg)
+![1.0 卡片版本历史与恢复预览](docs/screenshots/v1.0.0/card-history.jpg)
 
-历史从本版开始记录，保存于 `<库>/.paperdesk/history/<论文ID>/notes/` 或 `cards/`。已有笔记第一次修改时会先保存当前内容；更早且从未记录的编辑无法重建。历史保存原始 Markdown/JSON，不自动清理版本，存储占用会随修改增加。导入时创建的初始模板不视为一次用户编辑。
+历史仅覆盖启用版本记录后的修改，保存于 `<库>/.paperdesk/history/<论文ID>/notes/` 或 `cards/`。已有笔记第一次修改时会先保存当前内容；更早且从未记录的编辑无法重建。历史保存原始 Markdown/JSON，不自动清理版本，存储占用会随修改增加。导入时创建的初始模板不视为一次用户编辑。
 
 笔记重写和卡片重组使用读取时的版本进行校验。单个 Host 内写入串行执行，写入前再次检查外部修改；这不等同于跨设备分布式事务。检测到冲突时保留已有内容并报告；不要用重复提交绕过冲突。
 
@@ -155,13 +156,13 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 
 新建专题按“研究问题 → 参考论文 → 保存”组织。保存后围绕所选论文讨论，专题笔记可以后续补充。
 
-![0.4.7 研究专题与参考论文](docs/screenshots/v0.4.7/research.jpg)
+![1.0 研究专题与参考论文](docs/screenshots/v1.0.0/research-topic.jpg)
 
 讨论参考所选论文已有的摘要、笔记、卡片和已保存对比；正文通过 `paper_text` 按需读取，节选不等同于全文证据。回答只有明确加入专题笔记并保存后才写入。
 
 ### 文献发现
 
-![0.4.7 文献发现与来源选择](docs/screenshots/v0.4.7/discovery.jpg)
+![1.0 文献发现：OpenAlex 检索结果](docs/screenshots/v1.0.0/discovery-openalex.jpg)
 
 - arXiv 按提交时间排序，OpenAlex 按相关度排序，每次最多返回 20 篇。
 - 检索词可保存为带来源的订阅，通过手动刷新检查更新；当前没有后台定时轮询或任意 RSS URL 接入。
@@ -189,7 +190,10 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 | `paper_info` / `paper_text` | 读取元数据或指定页的正文；首次抽取会缓存文本。 |
 | `paper_annotations` / `paper_cards` | 读取批注与笔记卡片。 |
 | `paper_relations` | 只读查询论文关系。 |
-| `paper_notes_read` / `paper_note_append` | 读笔记或追加内容。 |
+| `paper_notes_read` / `paper_note_append` | 读取笔记或追加内容。 |
+| `paper_notes_write` / `paper_notes_replace` | 重写笔记或替换指定段落，校验读取版本并保留历史。 |
+| `paper_card_create` / `paper_card_update` / `paper_cards_edit` | 新建、编辑卡片，或批量合并、拆分、删除和排序。 |
+| `paper_history_list` / `paper_history_read` / `paper_history_restore` | 列出、预览和恢复笔记或卡片历史。 |
 | `paper_add` / `paper_update` | 导入本地 PDF，或修改元数据、标签、状态与评分。 |
 | `paper_sync` | 检查外部变更、网盘文件状态与冲突。 |
 
@@ -272,6 +276,6 @@ node scripts/make-demo-library.mjs --out /path/to/demo-library
 
 ## English summary
 
-PaperDesk is a paper-management and AI reading plugin for DeepSeek Harness. Import PDFs, read and annotate them beside a persistent per-paper conversation, attach original page images, and save useful answers as notes or cards. Research topics organize multiple papers around a question; discovery supports arXiv and OpenAlex, while comparison reports and a typed relation graph connect the library.
+Paper Companion (知页) is a paper-management and AI reading plugin for DeepSeek Harness. Import PDFs, read and annotate them beside a persistent per-paper conversation, attach original page images, and save useful answers as notes or cards. Research topics organize multiple papers around a question; discovery supports arXiv and OpenAlex, while comparison reports and a typed relation graph connect the library.
 
 All library content lives in ordinary PDF, Markdown and JSON files under a directory you choose. Your cloud-drive client handles synchronization. AI requests use the host's configured model service; Crossref and discovery requests send the metadata or search terms described above. The source version and npm release version may differ. See [publishing](docs/PUBLISHING.md) for package and distribution details.

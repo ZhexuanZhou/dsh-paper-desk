@@ -11,6 +11,7 @@ import type {
 } from 'react'
 import { IconCheck, IconClose, IconInfo, IconMore, IconWarning } from './icons.js'
 import { useT } from './i18n.js'
+import { topDialog, useDialogFocus } from './dialogFocus.js'
 
 function classes(...parts: (string | false | null | undefined)[]): string {
   return parts.filter((part): part is string => typeof part === 'string' && part.length > 0).join(' ')
@@ -286,6 +287,18 @@ export function Tabs({ tabs, value, onChange, ariaLabel, className }: TabsProps)
           className="pd-tab"
           data-on={tab.id === value ? 'true' : 'false'}
           aria-selected={tab.id === value}
+          tabIndex={tab.id === value ? 0 : -1}
+          onKeyDown={(event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey) return
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const index = tabs.findIndex((item) => item.id === tab.id)
+            const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+            const next = tabs[nextIndex]
+            if (!next) return
+            onChange(next.id)
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
+          }}
           onClick={() => onChange(tab.id)}
         >
           {tab.icon}
@@ -349,9 +362,11 @@ export function Menu({ label, items, icon, disabled = false, className, triggerL
 
   return (
     <span className={classes('pd-menu', className)} ref={rootRef} onKeyDown={(event) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return
       const direction = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
       if (!direction && (!open || (event.key !== 'Home' && event.key !== 'End'))) return
       event.preventDefault()
+      event.stopPropagation()
       setOpen(true)
       const key = event.key
       window.requestAnimationFrame(() => {
@@ -458,24 +473,23 @@ export function Modal({ open, title, description, children, footer, onClose, wid
   const panelRef = useRef<HTMLDivElement | null>(null)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  useDialogFocus(open, panelRef)
 
   useEffect(() => {
     if (!open) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && topDialog() === panelRef.current) {
+        // A menu is a transient layer inside the dialog; its own listener closes it first.
+        if (Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[role="menu"]') ?? []).some((menu) => menu.getClientRects().length > 0)) return
+        event.preventDefault()
         event.stopPropagation()
+        event.stopImmediatePropagation()
         closeRef.current()
       }
     }
     document.addEventListener('keydown', onKeyDown, true)
-    const timer = window.setTimeout(() => {
-      panelRef.current?.focus()
-    }, 0)
     return () => {
       document.removeEventListener('keydown', onKeyDown, true)
-      window.clearTimeout(timer)
-      if (previous !== null && previous.isConnected) previous.focus()
     }
   }, [open])
 

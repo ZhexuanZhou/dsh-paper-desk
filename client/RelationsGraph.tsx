@@ -41,6 +41,7 @@ import type {
 } from '../src/types.js'
 import { createAiThread } from './aiSession.js'
 import type { AiThreadState } from './aiSession.js'
+import { topDialog, useDialogFocus } from './dialogFocus.js'
 import { api } from './api.js'
 import type { DiscoveryScope } from './api.js'
 
@@ -389,11 +390,11 @@ const FG_2 = 'var(--dsw-alias-label-secondary)'
 const BG = 'var(--dsw-alias-bg-base)'
 const L1 = 'var(--dsw-alias-bg-layer-1)'
 const L2 = 'var(--dsw-alias-bg-layer-2)'
-const OVERLAY = 'var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2))'
+const OVERLAY = 'var(--dsw-alias-bg-base)'
 const B1 = 'var(--dsw-alias-border-l1)'
 const B2 = 'var(--dsw-alias-border-l2)'
 const B4 = 'var(--dsw-alias-border-l4, var(--dsw-alias-border-l2))'
-const BRAND = 'var(--dsw-alias-brand-primary)'
+const BRAND = 'var(--pd-accent, var(--dsw-alias-brand-primary))'
 const OK = 'var(--dsw-alias-state-success-primary)'
 const WARN = 'var(--dsw-alias-state-warn-primary)'
 const ERR = 'var(--dsw-alias-state-error-primary)'
@@ -401,8 +402,8 @@ const HOVER = 'var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--ds
 const ACTIVE = 'var(--dsw-alias-interactive-bg-active, color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent))'
 const SHADOW = 'var(--dsw-shadow-lv1, 0 10px 30px color-mix(in srgb, var(--dsw-alias-label-primary) 16%, transparent))'
 const MASK = 'var(--dsw-alias-bg-mask-1, color-mix(in srgb, var(--dsw-alias-label-primary) 26%, transparent))'
-const PRIMARY_FILL = 'var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary))'
-const PRIMARY_FG = 'var(--dsw-alias-label-primary-foreground, var(--dsw-alias-bg-base))'
+const PRIMARY_FILL = 'var(--pd-accent-fill, var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary)))'
+const PRIMARY_FG = 'var(--pd-accent-foreground, var(--dsw-alias-label-primary-foreground, var(--dsw-alias-bg-base)))'
 const SANS = 'var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)'
 const RING = `0 0 0 3px color-mix(in srgb, ${BRAND} 22%, transparent)`
 
@@ -529,7 +530,7 @@ export const relationsCss = `
 .pd-rel-btn:active:not(:disabled) { background: ${ACTIVE}; }
 .pd-rel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .pd-rel-btn-primary { border-color: transparent; background: ${PRIMARY_FILL}; color: ${PRIMARY_FG}; }
-.pd-rel-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, ${PRIMARY_FILL} 88%, ${FG}); }
+.pd-rel-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, ${PRIMARY_FILL} 88%, black); }
 .pd-rel-btn-danger { border-color: color-mix(in srgb, ${ERR} 38%, ${B1}); color: ${ERR}; }
 .pd-rel-btn-danger:hover:not(:disabled) { background: color-mix(in srgb, ${ERR} 10%, transparent); }
 .pd-rel-btn-ghost { border-color: transparent; background: transparent; }
@@ -2528,22 +2529,16 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
   }, [open, focusPaperId])
 
   /* focus the panel on open and restore the previous focus on close */
-  useEffect(() => {
-    if (!open) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const timer = window.setTimeout(() => panelRef.current?.focus(), 0)
-    return () => {
-      window.clearTimeout(timer)
-      if (previous !== null && previous.isConnected) previous.focus()
-    }
-  }, [open])
+  useDialogFocus(open, panelRef)
 
   /* ── Escape: innermost modal/form → popover → overlay ────────────────── */
 
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      const activeDialog = topDialog()
+      if (activeDialog && !panelRef.current?.contains(activeDialog)) return
       if (discoverOpen) {
         event.preventDefault()
         event.stopPropagation()
@@ -3917,7 +3912,18 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
               </span>
             </div>
           </div>
-          <div className="pd-rel-tabs" role="tablist" aria-label={t('relations.aria.tabs')}>
+          <div className="pd-rel-tabs" role="tablist" aria-label={t('relations.aria.tabs')}
+            onKeyDown={(event) => {
+              if (event.altKey || event.ctrlKey || event.metaKey || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+              const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[role="tab"]') : null
+              const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+              const index = button ? buttons.indexOf(button) : -1
+              if (index < 0) return
+              event.preventDefault()
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : (index + 1) % 2
+              setTab(next === 0 ? 'graph' : 'list')
+              buttons[next]?.focus()
+            }}>
             <button
               type="button"
               role="tab"
@@ -3925,6 +3931,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
               className="pd-rel-tab"
               data-on={tab === 'graph' ? 'true' : 'false'}
               aria-selected={tab === 'graph'}
+              tabIndex={tab === 'graph' ? 0 : -1}
               aria-controls="pd-rel-panel-graph"
               onClick={() => setTab('graph')}
             >
@@ -3937,6 +3944,7 @@ export function RelationsGraph(props: RelationsGraphProps): ReactElement | null 
               className="pd-rel-tab"
               data-on={tab === 'list' ? 'true' : 'false'}
               aria-selected={tab === 'list'}
+              tabIndex={tab === 'list' ? 0 : -1}
               aria-controls="pd-rel-panel-list"
               onClick={() => setTab('list')}
             >

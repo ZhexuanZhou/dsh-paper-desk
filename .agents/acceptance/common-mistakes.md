@@ -36,3 +36,9 @@ LLM流的`finish.reason`可能为error或aborted，不能把它们当正常结�
 真实0.5.0 `paper_cards_edit`已经原子写入，但返回的卡片对象含`context: undefined`，DSH实际SDK拒绝为`INVALID_TOOL_OUTPUT: value is not lossless JSON`。不能只用JSON.stringify后能落盘来证明工具返回契约正确，也不能看到错误就盲目重放写操作。应先读回核对，修复字段构造不引入undefined；专项通过实际SDK的snapshotJsonValue、validateJsonSchemaValue和output.render检查每种返回。修后真实move成功返回与文件一致。保留修前失败来源，勿将单元stub当真实模型成功。
 
 本地lh报告以round目录排序选择最新轮。同日后续轮名称须排在既有轮之后；本轮改为`20261116-versions-followup-0.5.0`后，render实际返回5项/10证据，避免误把上一轮6项/12证据报成本轮覆盖。
+
+### 2026-11-16 · 合成对话历史与隔离Web profile
+
+- PaperDesk 会话ID必须匹配`chat-<8位小写十六进制>`。用主包`lib/chats.js`的`addChat(root, paperId, { title })`与`updateChat(root, paperId, chatId, { messages })`写合成会话；不要手拼任意slug。消息结构为`{ role, text, at }`，每项使用`user`或`assistant`角色。
+- 助读面板优先显示当前live session的`snapshot.rows`。只有rows为空时才读论文历史fallback。因此，直接追加当前会话的`chats.json`不会替换已缓存的live rows；这不是服务端文件缓存。测试历史fallback时用合法新会话ID，并从论文会话选择器打开它。结束后恢复fixture原始`chats.json`。
+- 隔离Web服务只用直接core `runCli` launcher，不通过`dsh` shell wrapper启动。核验PROFILE package dependency实际`realpath`指向目标插件后，再检查监听PID/启动参数；只停止本轮owned的core进程，不碰native Desktop Host。

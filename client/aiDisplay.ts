@@ -1,18 +1,25 @@
 import type { AiRow } from './aiSession.js'
 
-export type DisplayItem = { kind: 'row'; row: AiRow } | { kind: 'process'; id: string; rows: AiRow[] }
+export interface ConversationTurn {
+  id: string
+  question: AiRow | null
+  rows: AiRow[]
+}
 
-/** Fold adjacent processing events without crossing a user/answer/error boundary. */
-export function groupProcessingRows(rows: readonly AiRow[]): DisplayItem[] {
-  const items: DisplayItem[] = []
+/** Keep each question and its reply together without discarding or mutating events. */
+export function groupConversationTurns(rows: readonly AiRow[]): ConversationTurn[] {
+  const turns: ConversationTurn[] = []
   for (const row of rows) {
-    if (row.kind !== 'reasoning' && row.kind !== 'tool') {
-      items.push({ kind: 'row', row })
-      continue
+    if (row.kind === 'user') {
+      turns.push({ id: row.id, question: row, rows: [] })
+    } else {
+      let turn = turns[turns.length - 1]
+      if (!turn) {
+        turn = { id: row.id, question: null, rows: [] }
+        turns.push(turn)
+      }
+      turn.rows.push(row)
     }
-    const previous = items[items.length - 1]
-    if (previous?.kind === 'process') previous.rows.push(row)
-    else items.push({ kind: 'process', id: row.id, rows: [row] })
   }
-  return items
+  return turns
 }

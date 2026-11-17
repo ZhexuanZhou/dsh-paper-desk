@@ -31,6 +31,12 @@ import type { AnnotationColor, AnnotationItem, AnnotationKind, AnnotationRect } 
 import { configurePdfjsRenderer } from './pdf-engine.js'
 import { loadPdfjs, pdfjsAsset } from './pdfjs.js'
 import type { PdfDocumentLike, PdfPageLike, PdfjsModule, PdfViewportLike } from './pdfjs.js'
+import { topDialog } from './dialogFocus.js'
+
+function blockedByDialog(root: HTMLElement | null): boolean {
+  const dialog = topDialog()
+  return dialog !== null && (root === null || (!root.contains(dialog) && !dialog.contains(root)))
+}
 
 /* ── labels / props (contract — do not change) ───────────────────────────── */
 
@@ -145,7 +151,7 @@ const UI_DEFAULTS = {
   hand: 'Pan tool',
   darkPaper: 'Dark paper',
   lightPaper: 'Light paper',
-  addToAi: 'Add to AI',
+  addToAi: 'Add to question',
 } as const
 
 type UiLabelKey = keyof typeof UI_DEFAULTS
@@ -2649,7 +2655,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     if (selection === null && !askOpen) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || blockedByDialog(rootRef.current)) return
       event.preventDefault()
       event.stopPropagation()
       dismissSelection(true)
@@ -3009,6 +3015,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     if (status !== 'ready') return
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || blockedByDialog(rootRef.current)) return
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'f') return
       event.preventDefault()
       setFindOpen(true)
@@ -3025,7 +3032,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     if (!outlineOpen) return
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOutlineOpen(false)
+      if (event.key === 'Escape' && !blockedByDialog(rootRef.current)) setOutlineOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -3035,7 +3042,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     if (!findOpen) return
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') closeFind()
+      if (event.key === 'Escape' && !blockedByDialog(rootRef.current)) closeFind()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -3048,7 +3055,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       target instanceof HTMLElement &&
       target.closest('input, textarea, select, [contenteditable="true"]') !== null
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== 'Space' || event.repeat || isEditable(event.target)) return
+      if (event.defaultPrevented || blockedByDialog(rootRef.current) || event.code !== 'Space' || event.repeat || isEditable(event.target)) return
       event.preventDefault()
       setSpaceHeld(true)
     }
@@ -3193,7 +3200,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const root = rootRef.current
     if (root === null || status !== 'ready') return
     const handler = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.isComposing) return
+      if (event.defaultPrevented || event.isComposing || blockedByDialog(root)) return
       if (event.key === 'Escape') {
         if (showHelp) {
           event.preventDefault()
@@ -3761,9 +3768,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
           >
             {labels.note}
           </button>
-          <button type="button" aria-label={labels.ask} disabled={busy} onClick={openAsk}>
+          {props.onAddToAi === undefined ? <button type="button" aria-label={labels.ask} disabled={busy} onClick={openAsk}>
             {labels.ask}
-          </button>
+          </button> : null}
           {props.onAddToAi !== undefined ? (
             <button
               type="button"

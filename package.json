@@ -1,7 +1,7 @@
 {
   "name": "dsh-paper-desk",
-  "version": "0.5.2",
-  "description": "PaperDesk: a paper-management and AI reading plugin for DeepSeek Harness — import PDFs, annotate, organize notes, discuss papers, and sync your library through a cloud drive.",
+  "version": "1.0.0",
+  "description": "知页 · 论文助手 (Paper Companion): a local paper library and AI reading workspace for DeepSeek Harness — import PDFs, read, annotate, organize notes and cards, and follow research topics.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -46,6 +46,7 @@
     "test:document-history": "node scripts/test-document-history.mjs",
     "test:agent-actions": "node scripts/test-agent-actions.mjs",
     "test:ai-composer": "node scripts/test-ai-composer.mjs",
+    "test:ai-messages": "node scripts/test-ai-messages.mjs",
     "test:markdown": "node scripts/test-markdown.mjs"
   },
   "devDependencies": {

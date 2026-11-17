@@ -136,3 +136,58 @@ final result: passed（2项隔离Web局部验收）
 同名首heading或独立段落仅展示省略，原编辑body/卡片文件字节保留；复制沿用来源wrapper且保留完整原body与TeX。不同标题、代码、quote保留实测；含link/inlinecode首块新边界由主agent85项delivered Markdown检查补证，另typecheck/build通过。不新模型、不改notes/真实库。9d92窄屏/原文证据保留原出处，仅bullet补验与公共图用最终58dd。
 
 两张最终公共JPEG仅公开合成fixture，裁掉完整宿主个人侧栏，无身份、旧业务、路径或鉴权URL；1701×913裁为1421×913并重编码，UI内容未改，逐张亲检。manifest位于本轮results/public-candidates-manifest.json。2/2项共4份required evidence。native初态已见界面v0.5.2/后台缓存v0.5.0；只读卡片动作后用户切业务页即停，未独立确认原生卡片布局，未写真实内容。
+
+
+## 2026-11-16 · v1.0.0 全局界面审查
+
+### 范围与结论
+
+本轮唯一UI owner通过隔离的真实 DSH Web 宿主审查知页 · 论文助手。界面和后台报告均显示 v1.0.0，fixture为4篇合成论文、5张合成卡片。所有可逆写入只针对本轮fixture；没有改真实资料。一次只读模型问答和一次OpenAlex检索/订阅均按本轮授权执行。
+
+`lh acceptance run validate` 对8项criteria和8个case校验有效。离线报告包含51项证据，没有缺失或失效证据。总评为 partial；这不表示8项全部通过。通过2项，另6项有未验证边界：
+
+| 审查面 | 结果 | 实测与边界 |
+|---|---|---|
+| 论文库、比较、图谱 | blocked | 4篇库与4节点/11关系全图可读；Compare焦点环复验通过。Graph第一次CUA Escape没有出现在DOM事件trace，第二次到达handler并关闭；原因未知，不能据此归因产品或宿主。 |
+| PDF阅读与批注 | blocked | 合成PDF高亮新增、Cmd+Z撤销，暗/白纸张可切换；窄屏和浏览器缩放未测。 |
+| AI助读对话 | blocked | 1次只读合成论文问答；长问题初始完整显示，手动折叠/展开已测。剪贴板读取为空，精确复制字节未证实；模型调用时的provider/model身份未确认；未单测重载后的折叠状态。 |
+| 笔记、卡片、历史 | pass | 合成笔记marker通过版本历史恢复；卡片删除确认、取消和历史预览可达，原笔记哈希恢复。 |
+| 论文信息与研究专题 | pass | 两篇合成论文专题保存并重载后保留。 |
+| 文献发现与订阅 | blocked | OpenAlex公开检索返回20条；创建/重开/删除测试订阅通过；外部来源错误恢复未测。 |
+| 统一导入 | blocked | URL与DOI错误反馈保留输入；锁屏时未打开原生PDF chooser，没有新建导入。 |
+| 设置、同步、响应式 | blocked | 本地扫描19个跟踪文件、4个PDF，新增/变更/移除均0；Harness浅色外观检查后恢复跟随系统。窄屏/缩放无受支持的CUA viewport控制。 |
+
+没有据此声明完整WCAG符合性、真实模型质量、云端同步或真实资料导入。
+
+### 截图候选
+
+本轮真实v1.0.0 UI图已裁掉Harness个人侧栏并重新编码为JPEG。8张候选位于[`docs/screenshots/v1.0.0/`](docs/screenshots/v1.0.0/)，逐张的原图SHA、候选SHA、构建来源和隐私处理见[`public-candidates-manifest.json`](docs/screenshots/v1.0.0/public-candidates-manifest.json)。截图展示合成fixture；文献发现图展示公开OpenAlex结果。未使用私有Escape probe或旧0.5.2截图。
+
+没有干净的卡片编辑器after图；现存图片只有删除确认弹窗，故未冒充编辑器图。链接tab截图仍显示修正文案前的元数据说明，未作为import-link候选。本轮提供统一导入的本地PDF弹窗图，不将其称为链接导入图。8张已加入`screenshots.json`，README 已引用本轮截图。
+
+### 可复核报告
+
+本轮离线报告：本地忽略目录中的 `.acceptances/standalone-paperdesk-redesign/report.html`。最终键盘焦点与hover配色改动已构建，client SHA256为 `5da6c8f994c3058bfa750b0a369b40ab170c92428b39cbd7d44a975da001a9b9`。本轮截图保留各自构建来源，不声称全部来自最终构建。解锁后需补验受影响交互、原生文件选择与本地插件重载，以及窄屏、缩放和复制原文。
+
+### 2026-11-17 最终补验修订
+
+上一节的补验待办已部分完成。最终候选为 client SHA256 `a19b5251062ef3a4f8044a567964f59c9791ddfcf57729a8868754c0bd8ab04b`，版本 `1.0.0`；真实隔离页面的前端与后台均报告 `1.0.0`。`lh acceptance run validate` 对 8 个 criteria / 8 个 case 验证有效；补入最终截图与文本后共有 61 项有效证据。整体仍为 **partial**，不表示8项全通过。
+
+- 已通过最终界面复验：Native插件管理器开关从 off 到 on，退出管理器后插件重载成功；native真实库未改，仅只读查看。隔离 fixture 显示4篇合成论文。
+- Native PDF chooser 选择的文件与库内合成 PDF SHA256 完全相同；界面提示论文已在库中并重新选择原 paperId，库仍为4篇。此为重复检测，不触发新 PDF 元数据模型处理。
+- PDF选择工具栏新增“加入提问”实测通过。选中文本后，正常 composer 收到页码与引用；复测保留原有草稿并追加第二段引用。未自动发送，回答/批注数量未变化，测试草稿已清空。
+- Chrome原生QA标签 Zoom=125%时，最终a19b界面截图为1360×730，工具栏、列表、PDF区仍可见，未发现水平溢出；随后原生Reset回100%。这不是390 CSS px或实际DOM scrollWidth验证。Graph在原生按键调用后窗口仍开，焦点回页面根节点，未证明按键到达DOM；用“取消”正常关闭。首个事件缺失仍不归因插件。
+- 外部来源失败/冷却UI本轮未重测，但0.4.2轮有真实arXiv成功和独立API边界5秒冷却禁用/恢复、切OpenAlex后返回20篇的记录；该证据按历史版本引用，不称本轮真实429。导入busy未测，src/urlImport.ts拒绝loopback/私网URL，没有用本地代理造慢响应。
+- 长问题折叠、答案复制精确 Markdown、专题/笔记历史、PDF高亮撤销、OpenAlex订阅、同步扫描沿用有效真实UI结果。自动检查676项由主执行者报告，未计为人工UI证据。
+- Chrome原生窗口仍包含用户其他tabs；我通过tabstrip选中唯一明确的“DeepSeek Harness”QA标签，但不调共享窗口边界。原生125%缩放已测并恢复100%；CUA viewport override不可用，宽窗口侧栏约320px的旧证据不等于390px viewport。最终390 CSS px/实际DOM尺寸未验证。Graph按键送达DOM与导入busy状态仍未确认。
+- 最终补验的详细行为、SHA和局限见本轮 `results/qa-observations.md`；本地验收报告入口为 `.acceptances/standalone-paperdesk-redesign/report.html`。没有具体模型路由证据，不猜 provider/model；没有声称完整 WCAG 合规。
+- 我亲检并更新 `docs/screenshots/v1.0.0/library.jpg` 与 `ai-reading.jpg` 两张公开合成UI候选，均来自 a19b525 新截图；manifest记录 source/candidate SHA 和去除Harness侧栏的裁切。无新的合格 card-editor 或 import-link 截图，仍保留这两项缺口。
+
+
+### 2026-11-17 桌面 1.0 发布判断
+
+主执行者按用户要求的 macOS 桌面插件范围接受本版核心交付。依据包括实际8个功能面的操作、原生文件选择去重、本地前后端1.0.0、125%浏览器缩放、侧栏两种宽度、统一使用正常输入框的草稿流程，以及类型检查、构建和676项自动检查通过。最终client仍为 `a19b5251062ef3a4f8044a567964f59c9791ddfcf57729a8868754c0bd8ab04b`。
+
+最终离线报告为8个检查面、61份证据，缺失和失效证据均为0。报告保留partial：390px极窄视口、慢速导入后台延续和空搜索框Escape是否送达仍有验证限制。它们作为补充边界公开记录，没有伪称通过，也没有把未送达输入定性为产品处理错误。本次发布不宣称移动版或完整WCAG符合性；界面检查和功能结果的范围见上文逐项记录。
+
+验证只在合成库写入；本地真实库只读。本轮隔离设置已恢复，草稿与评论测试数据已清理，仅停止本轮自建服务，真实应用保持启用。

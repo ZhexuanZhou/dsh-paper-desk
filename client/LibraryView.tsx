@@ -3,12 +3,12 @@
  * tag filter, sort control, import entry point and drag & drop affordances.
  * Purely presentational — all data and callbacks come from `App`.
  */
-import { memo, useRef, useState } from 'react'
+import { memo, useRef } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type { PaperStatus, PaperSummary } from '../src/types.js'
-import { IconBook, IconImport } from './icons.js'
+import { IconBook, IconCheck, IconImport } from './icons.js'
 import { useT } from './i18n.js'
-import { Button, Chip, EmptyState, Select, Spinner } from './ui.js'
+import { Button, Chip, EmptyState, IconButton, Menu, Select, Spinner } from './ui.js'
 
 export type SortKey = 'added' | 'title' | 'year' | 'updated'
 
@@ -16,27 +16,6 @@ const STATUS_FILTERS: readonly (PaperStatus | 'all')[] = ['all', 'unread', 'read
 
 function statusText(status: PaperStatus | 'all'): string {
   return status === 'all' ? 'status.all' : `status.${status}`
-}
-
-/** Local (not synced) preference for the library list presentation. */
-const VIEW_STORAGE_KEY = 'paperdesk:library-view'
-
-type LibraryViewMode = 'list' | 'table'
-
-function readStoredViewMode(): LibraryViewMode {
-  try {
-    return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'table' ? 'table' : 'list'
-  } catch {
-    return 'list'
-  }
-}
-
-function storeViewMode(mode: LibraryViewMode): void {
-  try {
-    window.localStorage.setItem(VIEW_STORAGE_KEY, mode)
-  } catch {
-    /* Private mode / storage disabled: the toggle still works for this mount. */
-  }
 }
 
 /** Stable hue (0..359) per tag name — presentation only, never persisted. */
@@ -121,22 +100,6 @@ function LibraryViewImpl(props: LibraryViewProps) {
   const resizeFrameRef = useRef<number | null>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
   const dragWidthRef = useRef(width)
-  const [dragging, setDragging] = useState(false)
-  const [viewMode, setViewMode] = useState<LibraryViewMode>(readStoredViewMode)
-
-  const toggleViewMode = (): void => {
-    const next: LibraryViewMode = viewMode === 'list' ? 'table' : 'list'
-    setViewMode(next)
-    storeViewMode(next)
-  }
-
-  const sortAria = (field: 'title' | 'year'): 'ascending' | 'descending' | 'none' =>
-    sort === field ? (field === 'title' ? 'ascending' : 'descending') : 'none'
-
-  const toggleSort = (field: 'title' | 'year'): void => {
-    onSort(sort === field ? 'added' : field)
-  }
-
   /**
    * Resize the pane by writing its width directly. Updating App state on every
    * pointermove re-rendered the whole library + reader (including the PDF
@@ -150,14 +113,11 @@ function LibraryViewImpl(props: LibraryViewProps) {
     const startX = event.clientX
     const startWidth = width
     dragWidthRef.current = startWidth
-    element.style.width = `${startWidth}px`
-    element.style.flexBasis = `${startWidth}px`
-    setDragging(true)
+    element.style.setProperty('--pd-list-width', `${startWidth}px`)
 
     const apply = (next: number): void => {
       dragWidthRef.current = next
-      element.style.width = `${next}px`
-      element.style.flexBasis = `${next}px`
+      element.style.setProperty('--pd-list-width', `${next}px`)
     }
     const onMove = (moveEvent: PointerEvent): void => {
       if (resizeFrameRef.current !== null) return
@@ -166,14 +126,15 @@ function LibraryViewImpl(props: LibraryViewProps) {
         apply(Math.min(560, Math.max(240, startWidth + moveEvent.clientX - startX)))
       })
     }
-    const onUp = (): void => {
+    const onUp = (upEvent: PointerEvent): void => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       if (resizeFrameRef.current !== null) {
         window.cancelAnimationFrame(resizeFrameRef.current)
         resizeFrameRef.current = null
       }
-      setDragging(false)
+      // Commit the pointer's final position even if its last animation frame was cancelled.
+      apply(Math.min(560, Math.max(240, startWidth + upEvent.clientX - startX)))
       onWidthChange(dragWidthRef.current)
     }
     window.addEventListener('pointermove', onMove)
@@ -183,8 +144,9 @@ function LibraryViewImpl(props: LibraryViewProps) {
   return (
     <section
       ref={sectionRef}
+      id="pd-paper-list"
       className="pd-pane pd-pane-list"
-      style={collapsed ? { display: 'none' } : dragging ? undefined : { width, flexBasis: width }}
+      style={{ '--pd-list-width': `${width}px`, ...(collapsed ? { display: 'none' } : {}) } as CSSProperties}
       aria-label={t('list.title')}
     >
       <div className="pd-list-head">
@@ -194,23 +156,15 @@ function LibraryViewImpl(props: LibraryViewProps) {
           <span className="pd-list-count">{t('list.count', { n: count })}</span>
           <div className="pd-list-tools">
             {loading ? <Spinner size={12} label={t('list.loading')} /> : null}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={toggleViewMode}
-              aria-pressed={viewMode === 'table'}
-              title={t('list.view.toggle')}
-            >
-              {viewMode === 'list' ? t('list.view.table') : t('list.view.list')}
-            </Button>
-            <Select
-              small
-              value={sort}
-              options={sortOptions}
-              onChange={(value) => onSort(value as SortKey)}
-              ariaLabel={t('aria.sort')}
-              title={t('sort.label')}
-            />
+            <Menu className="pd-list-sort"
+              label={`${t('aria.sort')}：${sortOptions.find((option) => option.value === sort)?.label ?? ''}`}
+              triggerLabel={sortOptions.find((option) => option.value === sort)?.label}
+              icon={<span aria-hidden="true">⌄</span>}
+              items={sortOptions.map((option) => ({
+                id: option.value, label: option.label,
+                icon: sort === option.value ? <IconCheck size={13} /> : <span style={{ width: 13 }} />,
+                onSelect: () => onSort(option.value),
+              }))} />
           </div>
         </div>
         <div className="pd-chips" role="group" aria-label={t('aria.statusFilter')}>
@@ -281,7 +235,7 @@ function LibraryViewImpl(props: LibraryViewProps) {
           )
         ) : null}
 
-        {papers.length > 0 && viewMode === 'list' ? (
+        {papers.length > 0 ? (
           <ul className="pd-list" role="list">
             {papers.map((paper) => (
               <li key={paper.id}>
@@ -350,81 +304,6 @@ function LibraryViewImpl(props: LibraryViewProps) {
           </ul>
         ) : null}
 
-        {papers.length > 0 && viewMode === 'table' ? (
-          <div className="pd-table-scroll">
-            <table className="pd-table">
-              <thead>
-                <tr>
-                  <th scope="col" aria-sort={sortAria('title')}>
-                    <button
-                      type="button"
-                      className="pd-table-sort"
-                      onClick={() => toggleSort('title')}
-                      title={t('list.sortTitle')}
-                    >
-                      {t('list.col.title')}
-                      {sort === 'title' ? <span aria-hidden="true"> ↑</span> : null}
-                    </button>
-                  </th>
-                  <th scope="col">{t('list.col.authors')}</th>
-                  <th scope="col" aria-sort={sortAria('year')}>
-                    <button
-                      type="button"
-                      className="pd-table-sort"
-                      onClick={() => toggleSort('year')}
-                      title={t('list.sortYear')}
-                    >
-                      {t('list.col.year')}
-                      {sort === 'year' ? <span aria-hidden="true"> ↓</span> : null}
-                    </button>
-                  </th>
-                  <th scope="col">{t('list.col.tags')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {papers.map((paper) => (
-                  <tr
-                    key={paper.id}
-                    className="pd-table-row"
-                    data-active={paper.id === selectedId ? 'true' : 'false'}
-                    tabIndex={0}
-                    aria-label={paper.title}
-                    onClick={() => onSelect(paper.id)}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter' && event.key !== ' ') return
-                      event.preventDefault()
-                      onSelect(paper.id)
-                    }}
-                  >
-                    <td>
-                      <span
-                        className="pd-dot"
-                        data-status={paper.status}
-                        title={t(`status.${paper.status}`)}
-                        aria-hidden="true"
-                      />
-                      <span className="pd-table-title" title={paper.title}>
-                        {paper.title}
-                      </span>
-                    </td>
-                    <td className="pd-table-cell-authors" title={paper.authors.join(', ')}>
-                      {paper.authors.length > 0 ? paper.authors.join(', ') : '—'}
-                    </td>
-                    <td className="pd-table-cell-year">{paper.year ?? '—'}</td>
-                    <td className="pd-table-cell-tags">
-                      {paper.tags.slice(0, 2).map((tag) => (
-                        <span key={`${paper.id}-table-${tag}`} className="pd-tag pd-tag-hue" style={tagStyle(tag)}>
-                          {tag}
-                        </span>
-                      ))}
-                      {paper.tags.length > 2 ? <span className="pd-tag">+{paper.tags.length - 2}</span> : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
       </div>
 
       <div className="pd-list-note">
@@ -433,24 +312,14 @@ function LibraryViewImpl(props: LibraryViewProps) {
           {t('list.importHint')}
         </span>
       </div>
-      <button
-        type="button"
-        className="pd-list-collapse"
-        title={t('list.collapse')}
-        aria-label={t('list.collapse')}
-        onClick={onToggleCollapsed}
-      >
-        ‹
-      </button>
-      <div
-        className="pd-list-resizer"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('list.resize')}
-        onPointerDown={beginResize}
-        onDoubleClick={onToggleCollapsed}
-        title={t('list.collapse')}
-      />
+      <div className="pd-list-divider">
+        <div className="pd-list-resizer" role="separator" aria-orientation="vertical"
+          aria-label={t('list.resize')} onPointerDown={beginResize} title={t('list.resize')} />
+        <IconButton className="pd-list-arrow" label={t('list.collapse')}
+          onPointerDown={(event) => event.stopPropagation()} onClick={onToggleCollapsed}>
+          <span aria-hidden="true">‹</span>
+        </IconButton>
+      </div>
     </section>
   )
 }

@@ -95,7 +95,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
   const zh = isZh(settings)
   if (zh) {
     return [
-      `用户有一个名为 PaperDesk 的本地论文库，根目录：${settings.libraryPath}。`,
+      `用户有一个名为「知页 · 论文助手」的本地论文库，根目录：${settings.libraryPath}。`,
       '处理论文相关问题时的约定：',
       '- 先用 `paper_list` / `paper_search` 定位论文，再用 `paper_info`、`paper_text` 读取元数据与正文（按页读取，避免一次读入全文）。',
       '- 回答时尽量标注页码或图表编号；不确定的内容明确说明是推断。',
@@ -107,7 +107,7 @@ export function systemPromptText(settings: EffectiveSettings): string {
     ].join('\n')
   }
   return [
-    `The user keeps a local paper library named PaperDesk at: ${settings.libraryPath}.`,
+    `The user keeps a local paper library named Paper Companion at: ${settings.libraryPath}.`,
     'When working on papers:',
     '- Locate papers with `paper_list` / `paper_search`, then read metadata and text with `paper_info` and `paper_text` (page by page; avoid loading whole papers).',
     '- Cite page numbers or figure/table numbers; mark anything uncertain as inference.',
@@ -217,7 +217,7 @@ export function assistPayload(
         instruction,
         '',
         'Suggested reading order: `paper_info`, then `paper_text` for page 1, then the method and experiment pages as needed. Follow the user’s request: discussion is read-only, explicit saving requests use the write tools.',
-        'Output: your answer is rendered in the PaperDesk AI side panel. Use Markdown (headings/lists/equations), lead with the conclusion, cite pages as p.N (e.g. p.3), and keep tool-call narration out of the final answer.',
+        'Output: your answer is rendered in the Paper Companion AI side panel. Use Markdown (headings/lists/equations), lead with the conclusion, cite pages as p.N (e.g. p.3), and keep tool-call narration out of the final answer.',
         extra.length > 0 ? `Additional requirements: ${extra}` : '',
       ]
 
