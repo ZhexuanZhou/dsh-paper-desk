@@ -3,17 +3,17 @@ export const importCss = `
 .pd-import-results { margin-top: 20px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 14px; }
 .pd-import-results header { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .pd-import-results header > span { flex: 1; color: var(--dsw-alias-label-secondary); }
-.pd-import-results ol { list-style: none; padding: 0; margin: 8px 0 0; max-height: 230px; overflow: auto; }
+.pd-import-results ol { list-style: none; padding: 0; margin: 8px 0 0; max-height: 230px; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 .pd-import-results li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--dsw-alias-border-l1); }
 .pd-import-results li > div { flex: 1; min-width: 0; }
 .pd-import-results li span { display: block; font-size: 13px; overflow-wrap: anywhere; }
-.pd-import-results li small { display: block; margin-top: 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.pd-import-results li small { display: block; margin-top: 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .pd-import-results li[data-state="error"] small { color: var(--dsw-alias-state-error-primary); }
 
 .pd-import-dialog { width: min(560px, calc(100vw - 32px)); height: min(720px, calc(100dvh - 32px)); max-height: calc(100dvh - 32px); }
 .pd-import-dialog .pd-modal-head { padding: 20px 24px 16px; }
 .pd-import-dialog .pd-modal-title { font-size: 19px; }
-.pd-import-dialog .pd-modal-body { flex: 1 1 auto; padding: 0 24px 22px; gap: 0; scrollbar-gutter: stable; overflow-anchor: none; }
+.pd-import-dialog .pd-modal-body { flex: 1 1 auto; padding: 0 24px 22px; gap: 0; overflow-x: hidden; scrollbar-gutter: stable; overflow-anchor: none; }
 .pd-import-dialog .pd-modal-body > * { flex-shrink: 0; }
 .pd-import-dialog .pd-modal-foot { padding: 14px 24px; min-height: 80px; flex-wrap: nowrap; }
 .pd-import-results li > .pd-import-result-action { flex: 0 0 68px; display: flex; align-items: center; justify-content: flex-end; }
@@ -23,7 +23,10 @@ export const importCss = `
 .pd-import-tabs > button[aria-selected="true"] { border-bottom-color: var(--pd-accent); color: var(--dsw-alias-label-primary); font-weight: 600; }
 .pd-import-tabs > button:focus-visible { outline: 2px solid var(--pd-accent); outline-offset: 3px; border-radius: 2px; }
 .pd-import-tabs > button:disabled { opacity: .6; cursor: wait; }
-.pd-import-panel { padding-top: 22px; }
+.pd-import-panel { padding-top: 22px; min-width: 0; }
+.pd-import-data-hint { margin-top: 16px; font-size: 12px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
+.pd-import-data-hint summary { cursor: pointer; }
+.pd-import-data-hint p { margin: 6px 0 0; }
 .pd-import-dropzone { display: flex; flex-direction: column; align-items: center; padding: 30px 20px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 10px; text-align: center; background: color-mix(in srgb, var(--dsw-alias-label-primary) 2%, transparent); }
 .pd-import-dropzone[data-dragging="true"] { border-color: var(--pd-accent); background: color-mix(in srgb, var(--pd-accent) 8%, transparent); }
 .pd-import-mark { display: flex; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--pd-accent) 8%, transparent); color: var(--pd-accent); }

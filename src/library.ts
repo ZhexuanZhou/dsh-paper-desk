@@ -10,6 +10,7 @@
  *   - one corrupt paper can never fail `listPapers`.
  */
 
+import { METADATA_FIELDS, MetadataConflict, metadataHash, readMetadataRevision, snapshotMetadata } from './metadataHistory.js'
 import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -569,6 +570,7 @@ export async function createPaper(
     let keywords = stringArray(explicit.keywords)
     const explicitTags = stringArray(explicit.tags)
     let tags = explicitTags
+    const beforeAutomatic = { abstract, keywords: [...keywords], tags: [...tags] }
     let enrichmentWarning: string | undefined
     if (opts.autoMetadata && (!abstract || keywords.length === 0 || tags.length === 0)) {
       try {
@@ -637,6 +639,7 @@ export async function createPaper(
       source: opts.source,
       sourceUrl: opts.sourceUrl?.trim() || explicit.sourceUrl?.trim() || '',
     }
+    await snapshotMetadata(root, { ...meta, ...beforeAutomatic }, meta)
     await writeMeta(root, meta)
 
     if (!(await notesDisposition(root, id)).exists) {
@@ -695,7 +698,7 @@ function applyMetaPatch(meta: PaperMeta, patch: Partial<PaperMeta>): void {
  */
 const metadataWrites = new Map<string, Promise<PaperMeta>>()
 
-async function editMeta(root: string, paperId: string, edit: (meta: PaperMeta) => void | boolean): Promise<PaperMeta> {
+async function editMeta(root: string, paperId: string, edit: (meta: PaperMeta) => void | boolean | Promise<void | boolean>, action: 'edit' | 'undo' | 'redo' = 'edit'): Promise<PaperMeta> {
   assertPaperId(paperId)
   const key = `${path.resolve(root)}:${paperId}`
   const previous = metadataWrites.get(key) ?? Promise.resolve()
@@ -703,7 +706,9 @@ async function editMeta(root: string, paperId: string, edit: (meta: PaperMeta) =
     const current = await readMeta(root, paperId)
     if (current === null) throw new Error(`paper not found: ${paperId}`)
     const next = { ...current, authors: [...current.authors], keywords: [...current.keywords], tags: [...current.tags] }
-    if (edit(next) === false) return current
+    if (await edit(next) === false || JSON.stringify(next) === JSON.stringify(current)) return current
+    await snapshotMetadata(root, current, next, action)
+    if (JSON.stringify(await readMeta(root, paperId)) !== JSON.stringify(current)) throw new MetadataConflict('元数据在保存期间变化，未覆盖其他修改。')
     next.updatedAt = nowIso()
     await writeMeta(root, next)
     return next
@@ -713,8 +718,19 @@ async function editMeta(root: string, paperId: string, edit: (meta: PaperMeta) =
   finally { if (metadataWrites.get(key) === task) metadataWrites.delete(key) }
 }
 
-export async function updateMeta(root: string, paperId: string, patch: Partial<PaperMeta>): Promise<PaperMeta> {
-  return editMeta(root, paperId, (meta) => applyMetaPatch(meta, patch))
+export async function updateMeta(root: string, paperId: string, patch: Partial<PaperMeta>, expected?: Partial<PaperMeta>): Promise<PaperMeta> {
+  return editMeta(root, paperId, (meta) => {
+    if (expected && METADATA_FIELDS.some((key) => Object.hasOwn(expected, key) && JSON.stringify(meta[key]) !== JSON.stringify(expected[key]))) throw new MetadataConflict('元数据已在其他位置修改；请重新加载后核对，当前草稿仍保留。')
+    applyMetaPatch(meta, patch)
+  })
+}
+
+export async function undoMetadata(root: string, paperId: string, revisionId: string, expectedHash: string): Promise<PaperMeta> {
+  const revision = await readMetadataRevision(root, paperId, revisionId)
+  return editMeta(root, paperId, (meta) => {
+    if (metadataHash(meta) !== expectedHash || expectedHash !== revision.afterHash) throw new MetadataConflict('元数据已变化，不能覆盖后续修改。请重新加载后再撤销。')
+    applyMetaPatch(meta, Object.fromEntries(METADATA_FIELDS.map((key) => [key, revision.before[key]])) as Partial<PaperMeta>)
+  }, revision.action === 'undo' ? 'redo' : 'undo')
 }
 
 /** Activity never reopens read or archived papers; check inside the metadata write queue. */

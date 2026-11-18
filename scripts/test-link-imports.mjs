@@ -10,7 +10,7 @@ const check = (label, actual, expected) => { assert.deepEqual(actual, expected, 
 try {
  const file = path.join(root, 'links.mjs')
  await build({entryPoints:['client/linkImports.ts'],bundle:true,platform:'node',format:'esm',outfile:file})
- const {parseImportLinks,runLinkImports}=await import(pathToFileURL(file))
+ const {parseImportLinks,runLinkImports,allLinkImportsResolved}=await import(pathToFileURL(file))
  check('batch ignores blank lines and duplicate entries',parseImportLinks('  https://example.org/a.pdf\r\n\n2601.00001\n https://example.org/a.pdf '),['https://example.org/a.pdf','2601.00001'])
  check('URL query punctuation is not split',parseImportLinks('https://example.org/a.pdf?q=a,b&v=1'),['https://example.org/a.pdf?q=a,b&v=1'])
  const states=[], calls=[];let active=0,peak=0
@@ -23,5 +23,13 @@ try {
  check('duplicate is explicit rather than another saved record',states.find(item=>item.url==='duplicate'&&item.state!=='running').state,'duplicate')
  const retry=[];await runLinkImports(['bad'],async(url)=>({duplicated:false,meta:{title:url}}),item=>retry.push(item))
  check('retry touches only the requested failed entry',retry.map(item=>[item.url,item.state]),[['bad','running'],['bad','success']])
+ check('whole successful batch can close immediately',allLinkImportsResolved([],['a','b'],2),true)
+ check('partial success keeps the dialog open',allLinkImportsResolved([],['a','b'],1),false)
+ const prior=[{url:'a',state:'success'},{url:'b',state:'error'},{url:'c',state:'error'}]
+ check('retrying one failed item cannot hide another failure',allLinkImportsResolved(prior,['b'],1),false)
+ check('retrying all failed items can close after success',allLinkImportsResolved(prior,['b','c'],2),true)
+ check('already resolved duplicates do not keep the dialog open',allLinkImportsResolved([{url:'a',state:'duplicate'},{url:'b',state:'error'}],['b'],1),true)
+ check('queued work prevents closing after a partial retry',allLinkImportsResolved([{url:'a',state:'queued'},{url:'b',state:'error'}],['b'],1),false)
+ check('empty batches do not imply successful completion',allLinkImportsResolved([],[],0),false)
  console.log(`${count} link batch checks passed`)
 } finally {await rm(root,{recursive:true,force:true})}

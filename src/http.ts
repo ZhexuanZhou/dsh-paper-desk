@@ -3,6 +3,7 @@
  * browser panel (and only that). Every filesystem access is confined to the
  * configured library root by the modules below; ids are validated here.
  */
+import { metadataUndoState } from './metadataHistory.js'
 import { readTopic, editTopicDocument, restoreTopicDocument } from './topicDocuments.js'
 import { listTopicRevisions, readTopicRevision, topicDocumentHash, type TopicDocumentKind } from './topicHistory.js'
 import { documentState, listRevisions, readRevision, restoreRevision } from './history.js'
@@ -43,6 +44,7 @@ import {
   readMeta,
   stats,
   updateMeta,
+  undoMetadata,
 } from './library.js'
 import { crossrefByDoi, crossrefSearch } from './metadata.js'
 import { appendToNotes, readNotes, writeNotes } from './notes.js'
@@ -248,7 +250,7 @@ async function buildStatus(config: Config): Promise<StatusPayload> {
   return {
     ok: true,
     plugin: 'dsh-paper-desk',
-    features: { topicAnalysis: true, topicDiscussion: true },
+    features: { metadataUndo: true, topicAnalysis: true, topicDiscussion: true },
     version: pkg?.version ?? '0.0.0',
     configured: settings.libraryPath.length > 0 && libraryExists,
     libraryExists,
@@ -380,7 +382,7 @@ async function enrichPaper(settings: EffectiveSettings, paperId: string): Promis
     patch.abstract = record.abstract
     changed.push('abstract')
   }
-  const updated = changed.length > 0 ? await updateMeta(settings.libraryPath, paperId, patch) : meta
+  const updated = changed.length > 0 ? await updateMeta(settings.libraryPath, paperId, patch, Object.fromEntries(Object.keys(patch).map((key) => [key, meta[key as keyof PaperMeta]])) as Partial<PaperMeta>) : meta
   return {
     meta: updated,
     enrich: { ok: true, changed, source: meta.doi.length > 0 ? 'doi' : 'bibliographic' },
@@ -653,7 +655,10 @@ async function handle(
         const body = await readJsonBody(req)
         const patch = pickMetaPatch(body)
         if (Object.keys(patch).length === 0) throw new HttpError(400, 'no editable field provided')
-        const meta = await updateMeta(root, id, patch)
+        const rawExpected = body['expected']
+        const expected = rawExpected && typeof rawExpected === 'object' && !Array.isArray(rawExpected) ? pickMetaPatch(rawExpected as Record<string, unknown>) : undefined
+        if (typeof body['libraryPath'] === 'string' && path.resolve(body['libraryPath']) !== path.resolve(root)) throw new HttpError(409, '论文库已切换，原草稿没有写入新论文库。')
+        const meta = await updateMeta(root, id, patch, expected)
         json(res, 200, { meta })
         return
       }
@@ -661,6 +666,21 @@ async function handle(
         const result = await deletePaper(root, id)
         json(res, 200, result)
         return
+      }
+      return methodNotAllowed(res)
+    }
+
+    if (route === 'paper/undo') {
+      const id = requirePdfId(q['id'] ?? null)
+      const current = await readMeta(root, id)
+      if (!current) throw new HttpError(404, 'paper not found')
+      if (method === 'GET') { json(res, 200, await metadataUndoState(root, current)); return }
+      if (method === 'POST') {
+        const body = await readJsonBody(req)
+        if (typeof body['revisionId'] !== 'string' || typeof body['expectedHash'] !== 'string') throw new HttpError(400, 'revisionId and expectedHash are required')
+        if (typeof body['libraryPath'] === 'string' && path.resolve(body['libraryPath']) !== path.resolve(root)) throw new HttpError(409, '论文库已切换，请重新加载。')
+        const meta = await undoMetadata(root, id, body['revisionId'], body['expectedHash'])
+        json(res, 200, { meta, undo: await metadataUndoState(root, meta) }); return
       }
       return methodNotAllowed(res)
     }

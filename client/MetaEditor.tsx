@@ -1,12 +1,11 @@
-/**
- * Editable metadata form for the reader's 信息 tab. The form is local until
- * saved; `App` performs the PATCH and refreshes both the reader and list rows.
- */
-import { reconcileMetaForm, toMetaForm } from './metaForm.js'
+/** Automatically persisted metadata with a reversible, server-checked last edit. */
+import { createMetadataAutosave } from './metadataAutosave.js'
 import type { MetaForm } from './metaForm.js'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PaperMeta, PaperStatus } from '../src/types.js'
-import { IconExternal, IconRefresh, IconSave } from './icons.js'
+import type { MetadataUndo } from '../src/types.js'
+import { api } from './api.js'
+import { IconExternal, IconRefresh } from './icons.js'
 import { errorText, formatBytes, formatDateTime, sourceLabel, statusLabel, useLang, useT } from './i18n.js'
 import { Button, Field, Rating, Select, TextInput, Textarea } from './ui.js'
 
@@ -14,20 +13,14 @@ type ToastKind = 'info' | 'success' | 'error' | 'warn'
 type ToastPush = (kind: ToastKind, message: string) => void
 
 
-function splitList(value: string): string[] {
-  return value
-    .split(/[,，;；]/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-}
-
-
 export interface MetaEditorProps {
   meta: PaperMeta
   pdfBytes: number
   pdfEvicted: boolean
   busy: boolean
-  onSave: (patch: Partial<PaperMeta>) => Promise<void>
+  libraryPath: string
+  supported: boolean
+  onApplied: (meta: PaperMeta, libraryPath: string) => void
   onEnrich: () => Promise<void>
   onLlmEnrich: () => Promise<void>
   onToast: ToastPush
@@ -35,72 +28,54 @@ export interface MetaEditorProps {
 
 const STATUSES: readonly PaperStatus[] = ['unread', 'reading', 'read', 'archived']
 
-export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich, onLlmEnrich, onToast }: MetaEditorProps) {
+export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, libraryPath, supported, onApplied, onEnrich, onLlmEnrich, onToast }: MetaEditorProps) {
   const t = useT()
   const lang = useLang()
-  const baseline = useMemo(() => toMetaForm(meta), [meta])
-  const [form, setForm] = useState<MetaForm>(baseline)
-  const [yearError, setYearError] = useState<string | null>(null)
-  const previousMetaRef = useRef(meta)
-
-  const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(baseline), [form, baseline])
-  /* Compare to the previous server values; incoming results are not user edits. */
+  const applied = useRef(onApplied)
+  applied.current = onApplied
+  const save = useMemo(() => createMetadataAutosave(meta, {
+    save: async (patch, expected) => (await api.patchPaper(meta.id, patch, expected, libraryPath)).meta,
+    applied: (incoming) => applied.current(incoming, libraryPath),
+    draftKey: supported ? `paperdesk:metadata-draft:${libraryPath}:${meta.id}` : undefined,
+  }), [meta.id, libraryPath, supported])
+  const state = useSyncExternalStore(save.subscribe, save.getSnapshot)
+  const form = state.form
+  const dirty = state.phase !== 'saved'
+  const saving = state.phase === 'saving' || state.phase === 'pending'
+  const [undo, setUndo] = useState<MetadataUndo | null>(null)
+  const [undoing, setUndoing] = useState(false)
+  const [undoError, setUndoError] = useState('')
+  useEffect(() => { save.receive(meta) }, [save, meta])
+  useEffect(() => () => save.dispose(), [save])
   useEffect(() => {
-    const previous = previousMetaRef.current
-    previousMetaRef.current = meta
-    setForm((current) => reconcileMetaForm(current, previous, meta))
-    if (previous.id !== meta.id) setYearError(null)
-  }, [meta])
-
-  function update<K extends keyof MetaForm>(key: K, value: MetaForm[K]): void {
-    setForm((previous) => ({ ...previous, [key]: value }))
-  }
-
-  const submit = async (): Promise<void> => {
-    const yearText = form.year.trim()
-    let year: number | null = null
-    if (yearText !== '') {
-      const parsed = Number(yearText)
-      if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1000 || parsed > 3000) {
-        setYearError(t('meta.yearInvalid'))
-        return
-      }
-      year = parsed
-    }
-    setYearError(null)
-    const patch: Partial<PaperMeta> = {
-      title: form.title.trim(),
-      authors: splitList(form.authors),
-      year,
-      venue: form.venue.trim(),
-      doi: form.doi.trim(),
-      url: form.url.trim(),
-      abstract: form.abstract.trim(),
-      keywords: splitList(form.keywords),
-      tags: splitList(form.tags),
-      status: form.status,
-      rating: form.rating,
-    }
+    if (!supported) return
+    let alive = true
+    void api.metadataUndo(meta.id).then((value) => { if (alive) { setUndo(value); setUndoError('') } }, (error: unknown) => { if (alive) setUndoError(errorText(error)) })
+    return () => { alive = false }
+  }, [meta, supported])
+  function update<K extends keyof MetaForm>(key: K, value: MetaForm[K]): void { save.update(key, value) }
+  const yearError = state.error === 'year' ? t('meta.yearInvalid') : null
+  const locked = busy || undoing || !supported
+  const restore = async () => {
+    if (!undo?.revisionId || !(await save.flush())) return
+    setUndoing(true); setUndoError('')
     try {
-      await onSave(patch)
-    } catch (error) {
-      onToast('error', errorText(error) || t('error.patch'))
-    }
+      const result = await api.undoMetadata(meta.id, undo.revisionId, undo.expectedHash, libraryPath)
+      save.receive(result.meta); applied.current(result.meta, libraryPath); setUndo(result.undo)
+    } catch (error) { setUndoError(errorText(error)) }
+    finally { setUndoing(false) }
   }
-
-  const enrich = async (): Promise<void> => {
-    try {
-      await onEnrich()
-    } catch (error) {
-      onToast('error', errorText(error) || t('meta.enrichFailed'))
-    }
+  const enrich = async (llm: boolean) => {
+    if (!(await save.flush())) return
+    try { await (llm ? onLlmEnrich() : onEnrich()) }
+    catch (error) { onToast('error', errorText(error) || t('meta.enrichFailed')) }
   }
 
   const statusOptions = STATUSES.map((status) => ({ value: status, label: statusLabel(t, status) }))
   const pageCountText = meta.pageCount === null ? '—' : t('meta.value.pages', { n: meta.pageCount })
 
   return (
-    <div className="pd-meta">
+    <div className="pd-meta" onBlurCapture={() => { if (supported) void save.flush() }}>
       <div className="pd-meta-head">
         <span className="pd-field-label">{t('reader.tab.info')}</span>
         <span className="pd-meta-hint">{t('reader.meta.tabHint')}</span>
@@ -111,7 +86,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
           id="pd-meta-title"
           value={form.title}
           onChange={(event) => update('title', event.target.value)}
-          disabled={busy}
+          disabled={locked}
         />
       </Field>
 
@@ -120,7 +95,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
           id="pd-meta-authors"
           value={form.authors}
           onChange={(event) => update('authors', event.target.value)}
-          disabled={busy}
+          disabled={locked}
         />
       </Field>
 
@@ -132,7 +107,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
             inputMode="numeric"
             invalid={yearError !== null}
             onChange={(event) => update('year', event.target.value.replace(/[^0-9]/g, ''))}
-            disabled={busy}
+            disabled={locked}
           />
         </Field>
         <Field label={t('meta.venue')} htmlFor="pd-meta-venue">
@@ -140,7 +115,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
             id="pd-meta-venue"
             value={form.venue}
             onChange={(event) => update('venue', event.target.value)}
-            disabled={busy}
+            disabled={locked}
           />
         </Field>
         <Field label={t('meta.status')} htmlFor="pd-meta-status">
@@ -148,12 +123,12 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
             value={form.status}
             options={statusOptions}
             onChange={(value) => update('status', value as PaperStatus)}
-            disabled={busy}
+            disabled={locked}
             ariaLabel={t('meta.status')}
           />
         </Field>
         <Field label={t('meta.rating')}>
-          <Rating value={form.rating} label={t('aria.rating')} onChange={(value) => update('rating', value)} disabled={busy} />
+          <Rating value={form.rating} label={t('aria.rating')} onChange={(value) => update('rating', value)} disabled={locked} />
         </Field>
       </div>
 
@@ -163,7 +138,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
             id="pd-meta-doi"
             value={form.doi}
             onChange={(event) => update('doi', event.target.value)}
-            disabled={busy}
+            disabled={locked}
           />
         </Field>
         <Field label={t('meta.url')} htmlFor="pd-meta-url">
@@ -172,7 +147,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
             value={form.url}
             inputMode="url"
             onChange={(event) => update('url', event.target.value)}
-            disabled={busy}
+            disabled={locked}
           />
         </Field>
       </div>
@@ -182,7 +157,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
           value={form.abstract}
           onChange={(value) => update('abstract', value)}
           rows={5}
-          disabled={busy}
+          disabled={locked}
           ariaLabel={t('meta.abstract')}
         />
       </Field>
@@ -193,7 +168,7 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
             id="pd-meta-keywords"
             value={form.keywords}
             onChange={(event) => update('keywords', event.target.value)}
-            disabled={busy}
+            disabled={locked}
           />
         </Field>
         <Field label={t('meta.tags')} hint={t('meta.tagsHint')} htmlFor="pd-meta-tags">
@@ -201,24 +176,25 @@ export function MetaEditor({ meta, pdfBytes, pdfEvicted, busy, onSave, onEnrich,
             id="pd-meta-tags"
             value={form.tags}
             onChange={(event) => update('tags', event.target.value)}
-            disabled={busy}
+            disabled={locked}
           />
         </Field>
       </div>
 
-      <p className="pd-field-hint">{t('meta.llmHint')}</p>
-      <div className="pd-meta-actions">
-        <Button icon={<IconRefresh />} loading={busy} disabled={dirty || Boolean(meta.abstract.trim() && meta.keywords.length && meta.tags.length)} onClick={() => void onLlmEnrich()} title={dirty ? t('meta.llmSaveFirst') : t('meta.llmHint')}>
-          {t('meta.llmEnrich')}
-        </Button>
-        <Button variant="primary" icon={<IconSave />} loading={busy} disabled={!dirty} onClick={() => void submit()}>
-          {t('meta.save')}
-        </Button>
-        <Button icon={<IconRefresh />} loading={busy} onClick={() => void enrich()}>
-          {t('meta.enrich')}
-        </Button>
-        {dirty ? <span className="pd-notes-dirty">{t('meta.dirty')}</span> : null}
+      <div className="pd-meta-toolbar">
+        <div className="pd-meta-save-status" data-state={state.phase} role="status" aria-live="polite">
+          {!supported ? t('meta.reloadAutosave') : state.phase === 'error' ? (state.error === 'year' ? t('meta.yearInvalid') : state.error === 'title' ? t('meta.titleRequired') : t('meta.autosaveFailed', { error: state.error || '' })) : t(saving ? 'meta.autosaving' : 'meta.autosaved')}
+        </div>
+        <div className="pd-meta-actions">
+          {state.phase === 'error' ? <Button size="sm" disabled={locked} onClick={() => void save.flush()}>{t('common.retry')}</Button> : null}
+          <Button size="sm" disabled={locked || saving || !undo?.revisionId} loading={undoing} onClick={() => void restore()}>{t(undo?.action === 'redo' ? 'meta.redo' : 'meta.undo')}</Button>
+          <Button size="sm" variant="ghost" icon={<IconRefresh size={13} />} disabled={locked || dirty || Boolean(meta.abstract.trim() && meta.keywords.length && meta.tags.length)} onClick={() => void enrich(true)} title={t('meta.llmHint')}>{t('meta.llmEnrich')}</Button>
+          <Button size="sm" variant="ghost" icon={<IconRefresh size={13} />} disabled={locked || dirty} onClick={() => void enrich(false)}>{t('meta.enrich')}</Button>
+        </div>
       </div>
+      {undoError ? <p className="pd-field-error" role="alert">{undoError}</p> : null}
+      {state.storageError ? <p className="pd-field-error">{t('meta.draftStorageFailed')}</p> : null}
+      <p className="pd-field-hint">{t('meta.llmHint')}</p>
 
       <div className="pd-meta-meta">
         <div className="pd-meta-meta-item">

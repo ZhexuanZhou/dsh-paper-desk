@@ -3,7 +3,7 @@ import type { LinkImportItem } from './linkImports.js'
 import { parseImportLinks } from './linkImports.js'
 import type { KeyboardEvent } from 'react'
 import { useT } from './i18n.js'
-import { IconImport, IconLink } from './icons.js'
+import { IconCheck, IconImport, IconLink } from './icons.js'
 import { Button, Modal, Spinner } from './ui.js'
 
 export interface ImportDialogProps {
@@ -29,6 +29,9 @@ export function ImportDialog(props: ImportDialogProps) {
   const [dragging, setDragging] = useState(false)
   const tabsRef = useRef<HTMLDivElement>(null)
   const busy = props.importing || props.urlBusy
+  const finished = !busy && props.results.length > 0 && props.results.every((item) => !['queued', 'running'].includes(item.state))
+  const failed = props.results.filter((item) => item.state === 'error').length
+  const completed = props.results.length - failed
   const switchByKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || busy) return
     event.preventDefault()
@@ -39,8 +42,8 @@ export function ImportDialog(props: ImportDialogProps) {
 
   return <Modal open={props.open} title={t('import.button')} className="pd-import-dialog" onClose={props.onClose}
     footer={<div className="pd-import-status" role="status" aria-live="polite" data-busy={busy}>
-      <span className="pd-import-status-mark" aria-hidden="true">{busy ? <Spinner size={14} /> : <IconImport size={14} />}</span>
-      <div>{busy ? <><strong>{t(props.urlBusy ? 'import.urlImporting' : 'import.importing')}</strong><p>{t('import.background')}</p></> : <p>{t('import.afterImport')}</p>}</div>
+      <span className="pd-import-status-mark" aria-hidden="true">{busy ? <Spinner size={14} /> : finished && !failed ? <IconCheck size={14} /> : <IconImport size={14} />}</span>
+      <div>{busy ? <><strong>{t(props.urlBusy ? 'import.urlImporting' : 'import.importing')}</strong><p>{t('import.background')}</p></> : finished ? <><strong>{t('import.finishedSummary', { ok: completed, n: props.results.length })}</strong><p>{t(failed ? 'import.finishedErrors' : 'import.finishedHint')}</p></> : <p>{t('import.readyHint')}</p>}</div>
     </div>}>
     <p className="pd-import-intro">{t('import.intro')}</p>
     <div ref={tabsRef} className="pd-import-tabs" role="tablist" aria-label={t('import.method')}>
@@ -74,6 +77,7 @@ export function ImportDialog(props: ImportDialogProps) {
         <Button type="submit" variant="primary" icon={<IconImport size={12} />} loading={props.urlBusy} disabled={busy || !props.url.trim()}>{t('import.batchSubmit', { n: parseImportLinks(props.url).length })}</Button>
       </form>}
     </div>
+    <details className="pd-import-data-hint"><summary>{t('import.metadataHint')}</summary><p>{t('import.afterImport')}</p></details>
     {props.results.length ? <section className="pd-import-results" aria-label={t('import.results')}>
       <header><strong>{t('import.results')}</strong><span>{props.results.filter((item) => item.state !== 'queued' && item.state !== 'running').length}/{props.results.length}</span>
         {props.results.some((item) => item.state === 'error') ? <Button size="sm" disabled={busy} onClick={props.onRetryFailed}>{t('import.retryFailed')}</Button> : null}</header>

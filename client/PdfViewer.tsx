@@ -9,7 +9,9 @@
  *
  * Contract: DESIGN-VIEWER.md §3.
  */
+import { pdfAnchorScrollDelta } from './pdfViewport.js'
 import { normaliseLinkRect } from './pdfLinkGeometry.js'
+import { moveSelectionCaret, moveSelectionVertically, selectionEndpointRect, visualCaretPosition, type VisualCaret } from './pdfVisualSelection.js'
 import { mergeTextItems, rangeTextRects, quoteTextRects } from './pdfTextSelection.js'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -66,6 +68,8 @@ export interface PdfViewerLabels {
   textLayerUnavailable: string
   visualMode: string
   visualHint: string
+  visualAnchor: string
+  visualFocus: string
   shortcuts: string
   shortcutsHint: string
   close: string
@@ -339,6 +343,12 @@ const VIEWER_CSS = `
   color: var(--dsw-alias-label-primary);
   font-size: 11px;
 }
+.pdv-visual-carets { position: absolute; inset: 0; overflow: hidden; z-index: 24; pointer-events: none; user-select: none; }
+.pdv-visual-caret { position: absolute; display: block; background: #526b5b; box-shadow: 0 0 0 1px white; }
+.pdv-visual-caret > span { position: absolute; top: 100%; left: 0; margin-top: 5px; padding: 2px 5px; white-space: nowrap; background: #526b5b; color: white; border-radius: 3px; font-size: 10px; line-height: 1.4; font-family: sans-serif; box-shadow: 0 0 0 1px #ffffffb3; }
+.pdv-visual-anchor { opacity: .65; background: transparent; border: 1px solid #526b5b; }
+.pdv-visual-anchor > span { top: auto; bottom: 100%; margin: 0 0 5px; }
+.pdv-visual-focus::after { content: ''; position: absolute; bottom: -2px; left: -2px; width: 6px; height: 6px; border-radius: 50%; background: #526b5b; box-shadow: 0 0 0 1px white; }
 .pdv-vim-hud strong { color: var(--dsw-alias-brand-primary); letter-spacing: .06em; }
 .pdv-vim-hud span { color: var(--dsw-alias-label-secondary); }
 .pdv-vim-help {
@@ -1434,6 +1444,8 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   const [busy, setBusy] = useState(false)
   const [flashId, setFlashId] = useState<string | null>(null)
   const [visualMode, setVisualMode] = useState(false)
+  const [visualCarets, setVisualCarets] = useState<{ anchor: VisualCaret | null; focus: VisualCaret | null }>({ anchor: null, focus: null })
+  const verticalCaretRef = useRef<{ x: number; node: Node | null; offset: number } | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [keymap, setKeymap] = useState<KeyMap>(() => loadKeyMap())
   const [outline, setOutline] = useState<OutlineEntry[]>([])
@@ -2495,7 +2507,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   useEffect(() => {
     if (status !== 'ready' || scrollingRef.current) return
     const key = renderKey(zoomRef.current, renderDpr())
-    for (const page of visibleRef.current) {
+    // IntersectionObserver can lag a pane/webview resize. The requested page
+    // still needs a foreground paint even before its next intersection event.
+    const foregroundPages = new Set([currentPageRef.current, ...visibleRef.current])
+    for (const page of foregroundPages) {
       const view = pagesRef.current.get(page)
       if (view === undefined || view.renderedKey === key || view.pendingKey === key) continue
       view.token += 1
@@ -2621,7 +2636,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     if (scroller === null || view === undefined) return
     const scrollRect = scroller.getBoundingClientRect()
     const pageRect = view.pageEl.getBoundingClientRect()
-    scroller.scrollTop += anchor.frac * pageRect.height - (pageRect.top - scrollRect.top)
+    scroller.scrollTop += pdfAnchorScrollDelta(pageRect.top, scrollRect.top, pageRect.height, anchor.frac)
   }, [zoom])
 
   /* ── focusPage / focusAnnotationId (external rail clicks) ─────────────── */
@@ -2640,9 +2655,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const scroller = scrollerRef.current
     const view = pagesRef.current.get(page)
     if (scroller === null || view === undefined) return
+    commitPage(page)
     void renderPage(page)
     scrollPageIntoView(scroller, view.pageEl, 'start', 'auto')
-    commitPage(page)
     // Deliberately do NOT depend on pageWindow: once the requested page has
     // been applied, scrolling/prev-next must not snap the reader back to the
     // page that opened the viewer. A page outside the window is handled by
@@ -2657,9 +2672,9 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     const view = pagesRef.current.get(target)
     if (scroller === null || view === undefined) return
     pendingScrollPageRef.current = null
+    commitPage(target)
     void renderPage(target)
     scrollPageIntoView(scroller, view.pageEl, 'start', 'auto')
-    commitPage(target)
   }, [pageWindow.start, pageWindow.end, status, renderPage, commitPage])
 
   useEffect(() => {
@@ -2819,11 +2834,11 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     }
     const scroller = scrollerRef.current
     const view = pagesRef.current.get(target)
-    // Start the target raster before the smooth scroll arrives; the loading
-    // placeholder covers the remaining gap instead of showing a blank sheet.
+    // The foreground guard must see the new target before rasterisation.
+    // Otherwise jumps beyond two pages are skipped until a second interaction.
+    commitPage(target)
     void renderPage(target)
     if (scroller !== null && view !== undefined) scrollPageIntoView(scroller, view.pageEl, 'start', 'auto')
-    commitPage(target)
   }
 
   const commitPageInput = () => {
@@ -3193,8 +3208,45 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     applyFindHighlights(root, findQuery, findActivePageRef.current)
   }, [findQuery, findMatches, findIndex, pageWindow.start, pageWindow.end, lowTextPages])
 
+  // The native text selection paints its range, but not a visible caret in a
+  // non-editable PDF text layer. Track both ends without changing the range.
+  useEffect(() => {
+    if (!visualMode) { setVisualCarets({ anchor: null, focus: null }); return }
+    const root = rootRef.current
+    const viewport = scrollerRef.current
+    if (!root || !viewport) return
+    let frame = 0
+    const measure = () => {
+      frame = 0
+      const dom = window.getSelection()
+      const rootBounds = root.getBoundingClientRect()
+      const viewportBounds = viewport.getBoundingClientRect()
+      const point = (node: Node | null, offset: number) => {
+        const rect = selectionEndpointRect(node, offset, root)
+        return rect ? visualCaretPosition(rect, rootBounds, viewportBounds) : null
+      }
+      setVisualCarets({ anchor: dom && !dom.isCollapsed ? point(dom.anchorNode, dom.anchorOffset) : null,
+        focus: dom ? point(dom.focusNode, dom.focusOffset) : null })
+    }
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(measure) }
+    schedule()
+    document.addEventListener('selectionchange', schedule)
+    root.addEventListener('scroll', schedule, true)
+    window.addEventListener('resize', schedule)
+    const observer = new ResizeObserver(schedule)
+    observer.observe(root)
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      document.removeEventListener('selectionchange', schedule)
+      root.removeEventListener('scroll', schedule, true)
+      window.removeEventListener('resize', schedule)
+      observer.disconnect()
+    }
+  }, [visualMode, zoom, qualityVersion])
+
   /* ── keyboard navigation / visual selection ───────────────────────────── */
   const beginVisualSelection = useCallback((): void => {
+    verticalCaretRef.current = null
     const root = rootRef.current
     if (root === null) return
     const dom = window.getSelection()
@@ -3244,12 +3296,32 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     root.focus()
   }, [])
 
+  const moveVisualLine = useCallback((dom: Selection, direction: 'forward' | 'backward', extend: boolean): boolean => {
+    const root = rootRef.current
+    if (!root) return false
+    const previous = verticalCaretRef.current
+    const x = moveSelectionVertically(dom, root, direction,
+      previous?.node === dom.focusNode && previous.offset === dom.focusOffset ? previous.x : undefined, extend)
+    if (x === null) return false
+    verticalCaretRef.current = { x, node: dom.focusNode, offset: dom.focusOffset }
+    const rect = selectionEndpointRect(dom.focusNode, dom.focusOffset, root)
+    const viewport = scrollerRef.current
+    if (rect && viewport) {
+      const bounds = viewport.getBoundingClientRect()
+      if (rect.top < bounds.top) viewport.scrollTop += rect.top - bounds.top - 8
+      else if (rect.bottom > bounds.bottom) viewport.scrollTop += rect.bottom - bounds.bottom + 8
+    }
+    return true
+  }, [])
+
   const extendVisualSelection = useCallback((granularity: 'character' | 'word' | 'line', direction: 'forward' | 'backward'): void => {
     let dom = window.getSelection()
     if (dom === null || dom.rangeCount === 0) {
       beginVisualSelection()
       dom = window.getSelection()
     }
+    if (dom && granularity === 'line') { moveVisualLine(dom, direction, true); return }
+    verticalCaretRef.current = null
     const modify = (dom as unknown as { modify?: (alter: string, direction: string, granularity: string) => void } | null)?.modify
     if (dom === null || typeof modify !== 'function') return
     try {
@@ -3257,9 +3329,24 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     } catch {
       // Selection.modify is best-effort across browser versions.
     }
-  }, [beginVisualSelection])
+  }, [beginVisualSelection, moveVisualLine])
+
+  const moveVisualCaret = useCallback((granularity: 'character' | 'line', direction: 'forward' | 'backward'): void => {
+    let dom = window.getSelection()
+    if (!dom?.rangeCount || !rootRef.current?.contains(dom.focusNode)) {
+      beginVisualSelection()
+      dom = window.getSelection()
+    }
+    if (granularity === 'line') {
+      if (dom && moveVisualLine(dom, direction, false)) dismissSelection(false)
+      return
+    }
+    verticalCaretRef.current = null
+    if (dom && moveSelectionCaret(dom, granularity, direction)) dismissSelection(false)
+  }, [beginVisualSelection, dismissSelection, moveVisualLine])
 
   const stopVisualMode = useCallback((clearNative: boolean): void => {
+    verticalCaretRef.current = null
     setVisualMode(false)
     if (clearNative) {
       const dom = window.getSelection()
@@ -3268,6 +3355,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
   }, [])
 
   const swapVisualSelection = useCallback((): void => {
+    verticalCaretRef.current = null
     const dom = window.getSelection()
     if (dom === null || dom.rangeCount === 0 || dom.isCollapsed) return
     const anchorNode = dom.anchorNode
@@ -3345,7 +3433,11 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
       }
       if (visualModeRef.current) {
         let handled = true
-        if (hit('selectLeft')) extendVisualSelection('character', 'backward')
+        if (hit('moveCaretLeft')) moveVisualCaret('character', 'backward')
+        else if (hit('moveCaretRight')) moveVisualCaret('character', 'forward')
+        else if (hit('moveCaretUp')) moveVisualCaret('line', 'backward')
+        else if (hit('moveCaretDown')) moveVisualCaret('line', 'forward')
+        else if (hit('selectLeft')) extendVisualSelection('character', 'backward')
         else if (hit('selectRight')) extendVisualSelection('character', 'forward')
         else if (hit('selectLineUp')) extendVisualSelection('line', 'backward')
         else if (hit('selectLineDown')) extendVisualSelection('line', 'forward')
@@ -3389,6 +3481,7 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
     applyZoom,
     chooseActualSize,
     extendVisualSelection,
+    moveVisualCaret,
     highlightVisualSelection,
     copyVisualSelection,
     scrollViewer,
@@ -3626,6 +3719,10 @@ export function PdfViewer(props: PdfViewerProps): ReactElement {
         </div>
       ) : null}
 
+      {visualMode ? <div className="pdv-visual-carets" aria-hidden="true">
+        {visualCarets.anchor ? <span className="pdv-visual-caret pdv-visual-anchor" style={visualCarets.anchor}><span>{labels.visualAnchor}</span></span> : null}
+        {visualCarets.focus ? <span className="pdv-visual-caret pdv-visual-focus" style={visualCarets.focus}><span>{labels.visualFocus}</span></span> : null}
+      </div> : null}
       {visualMode ? (
         <div className="pdv-vim-hud" role="status">
           <strong>{labels.visualMode}</strong>

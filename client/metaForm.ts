@@ -48,3 +48,27 @@ export function reconcileMetaForm(current: MetaForm, previous: PaperMeta, incomi
   for (const key of Object.keys(next) as (keyof MetaForm)[]) adopt(key)
   return merged
 }
+
+/** Normalize user input and send only changed fields, with their server baseline. */
+export function metadataFormPatch(form: MetaForm, baseline: PaperMeta): { patch: Partial<PaperMeta>; expected: Partial<PaperMeta> } {
+  const yearText = form.year.trim()
+  const year = yearText ? Number(yearText) : null
+  if (year !== null && (!Number.isInteger(year) || year < 1000 || year > 3000)) throw new Error('year')
+  if (!form.title.trim()) throw new Error('title')
+  const list = (text: string) => [...new Set(text.split(/[,，;；]/).map((value) => value.trim()).filter(Boolean))]
+  const values: Partial<PaperMeta> = { title: form.title.trim(), authors: list(form.authors), year, venue: form.venue.trim(), doi: form.doi.trim(), url: form.url.trim(), abstract: form.abstract.trim(), keywords: list(form.keywords), tags: list(form.tags), status: form.status, rating: form.rating }
+  const patch: Record<string, unknown> = {}, expected: Record<string, unknown> = {}
+  for (const key of Object.keys(values) as (keyof MetaForm)[]) {
+    if (JSON.stringify(values[key]) !== JSON.stringify(baseline[key])) { patch[key] = values[key]; expected[key] = baseline[key] }
+  }
+  return { patch, expected }
+}
+
+/** An acknowledgement adopts normalized values only if the user has not typed more. */
+export function acknowledgeMetadata(current: MetaForm, sent: MetaForm, incoming: PaperMeta): MetaForm {
+  const normalized = toMetaForm(incoming), next = { ...current }
+  for (const key of Object.keys(next) as (keyof MetaForm)[]) {
+    if (current[key] === sent[key]) Object.assign(next, { [key]: normalized[key] })
+  }
+  return next
+}

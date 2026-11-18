@@ -4,26 +4,40 @@
 
 论文库直接保存在你选择的目录中：PDF、Markdown 笔记和 JSON 元数据都是普通文件，可以交给自己的网盘客户端同步。
 
-**当前版本：1.1.2** · [本版更新说明](docs/RELEASE-v1.1.2.md) · [安装与发布说明](docs/PUBLISHING.md)
+**当前版本：1.2.0** · [本版更新说明](docs/RELEASE-v1.2.0.md) · [安装与发布说明](docs/PUBLISHING.md)
 
 ## 功能概览
 
 | 能力 | 说明 |
 | --- | --- |
 | 论文导入 | 上传、拖拽、多行链接批量导入、扫描 `_inbox/`，或通过 `paper_add` 按路径导入；相同 PDF 自动去重。 |
-| 元数据 | 提取标题、作者、年份、DOI 等信息；可用 Crossref 补全，并用当前配置的模型补齐空的摘要、关键词和标签。 |
+| 元数据 | 自动保存手动修改和补全结果，支持撤销与重做；Crossref 与当前配置的模型可补齐缺失信息。 |
 | PDF 阅读 | 连续滚动、按阅读进度后台预加载、缩放、目录、全文查找、页内与外部链接、手型拖动和深色纸张。 |
 | 高亮与批注 | 选中文字后高亮、划线、备注或提问；批注按页整理，可编辑、删除或交给 AI 解答。 |
 | AI 助读 | 在阅读器旁流式问答，支持独立对话、自然语言任务、原页图片附件、引用页核对和回答批注；按要求记录笔记或卡片。 |
 | 笔记与卡片 | Markdown 整页阅读、分节目录、自动保存；回答可保存为独立卡片，再编辑或插入论文笔记。 |
 | 研究专题 | 创建后自动解读预设问题；右侧继续讨论、编辑专题笔记和卡片、更新解读，并保留可恢复版本。 |
-| 文献发现 | 选择 arXiv 或 OpenAlex 搜索，保存检索订阅，手动检查新文献并确认入库。 |
+| 文献发现 | 用自然语言描述需求，Agent 联网查找并解释相关论文，展示可核对的来源；高级模式保留 arXiv、OpenAlex 和检索订阅。 |
 | 对比与图谱 | 对比 2–6 篇论文，保存对比报告；管理引用、相关、方法、对比等论文关系。 |
 | 本地管理 | 阅读状态、评分、标签、BibTeX 导出、文件定位、冲突副本和中英文界面。 |
 
-阅读头部截图来自 1.1.2 合成演示库，见 [截图记录](docs/screenshots/v1.1.2/manifest.json)。专题图来自 1.1.1；助读、导入及卡片等未修改页面保留 1.0 的版本标注和[截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。文献发现展示公开 OpenAlex 结果，AI 助读图包含真实只读模型回答；演示内容不作为研究结论。
+阅读头部截图来自 1.2.0 合成演示库，见 [截图记录](docs/screenshots/v1.2.0/manifest.json)。专题图来自 1.1.1；助读、导入及卡片等未修改页面保留 1.0 的版本标注和[截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。文献发现截图来自 1.2.0 的公开需求联网检索，见 [截图记录](docs/screenshots/v1.2.0/manifest.json)。AI 助读图包含真实只读模型回答；演示内容不作为研究结论。
 
-![1.1.2 论文阅读头部：轻量状态操作与分组元数据](docs/screenshots/v1.1.2/reader-header.jpg)
+![1.2.0 论文阅读头部：标题旁的阅读状态与可展开标签](docs/screenshots/v1.2.0/reader-header.jpg)
+
+## 1.2.0 的文献发现
+
+- 直接输入“小语种翻译”等研究需求。Agent 理解问题、扩展中英文检索词，使用 Harness 配置的通用联网搜索查找论文和相关资源。
+- 多行输入支持补充背景、语言、时间范围和部署条件。支持停止检索；切页后可继续查看，结果与草稿保存在当前浏览器中，历史由用户逐条删除或清空，并按论文库区分。
+- 上方展示检索解读，下方展示搜索工具实际返回的来源。没有成功联网或来源时明确提示，模型记忆中的内容不能视为联网结果。
+- 结果不会自动导入。可直接导入的 PDF 或 arXiv 来源需要手动点击；普通网页先查看原页获取 PDF，再通过“导入论文”加入库。
+- “高级检索与订阅”保留原有 arXiv、OpenAlex 查询方式和订阅。自然语言检索记录与指定来源订阅分开管理。
+- 联网使用现有 Harness 配置，不新增搜索服务或密钥要求。研究需求与扩展检索词会发送至模型和已配置的搜索服务。
+- 信息页自动保存修改和补全结果，提供最近一次修改的撤销与重做。保存期间继续输入的内容会保留；保存失败会提示并备份草稿。
+- 阅读状态跟在标题旁，标签在作者信息下方靠左显示，点击“+N”展开全部。PDF 选区用“起点/当前”标记位置；可视选择模式下，Shift+h/j/k/l 移动光标重新定位，h/j/k/l 扩展选区。
+- 链接全部导入成功后自动关闭窗口，有失败项才保留重试；加载图标在固定范围内绘制，避免横向滚动条闪烁。
+
+![1.2.0 文献发现：自然语言需求与可核验的联网来源](docs/screenshots/v1.2.0/discovery-agent.jpg)
 
 ## 1.1.2 的阅读改版
 
@@ -78,10 +92,10 @@ dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 
 ### 从 GitHub Release 安装
 
-从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.1.2。命令行维护的 profile 可安装：
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.2.0。命令行维护的 profile 可安装：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.1.2/dsh-paper-desk-1.1.2.tgz
+dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.2.0/dsh-paper-desk-1.2.0.tgz
 ```
 
 Release 同时提供安装包的 `SHA256SUMS` 校验文件；合成演示库位于源码的 `demo/library/`。
@@ -204,9 +218,21 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 - 在本次页面中切换功能，已启动的主解读仍会继续；刷新或关闭整个页面后不承诺自动恢复运行，需要检查已保存结果并按需重试。
 - 结束专题可选择把关联论文批量标记已读；默认只结束专题。已读论文不会因记笔记或重新加入活跃专题而退回在读，归档论文保持归档。
 
+### 元数据自动保存与撤销
+
+信息页停止输入约 0.8 秒后自动保存，离开输入框时立即尝试保存。只提交本次修改的字段；保存期间可以继续输入，较早的响应不会抹掉新内容。标题为空或年份无效时保留输入并提示修正。
+
+“撤销上次修改”和“重做”适用于手动编辑、LLM 补全以及 Crossref 补全。可编辑字段的前后版本保存在 `<库>/.paperdesk/metadata-history/<论文ID>/`；撤销不改变论文 ID、PDF 文件、来源路径或创建时间。检测到后续修改时拒绝用旧版本覆盖。历史不自动清理，当前界面提供最近一次匹配修改的撤销与重做。
+
+临时草稿按论文库和论文保存在当前浏览器。网络保存或浏览器存储失败时会提示；请确认已保存后再清除浏览器数据。新界面若连接旧版后台，会提示重新加载插件后启用自动保存。
+
 ### 文献发现
 
-![1.0 文献发现：OpenAlex 检索结果](docs/screenshots/v1.0.0/discovery-openalex.jpg)
+默认使用 Agent 联网发现。直接输入研究需求，Agent 扩展检索词并整理候选论文及相关资源。结果区分模型解读和实际来源；没有成功联网时会明确提示。检索不会自动导入或修改论文笔记。
+
+检索历史及草稿保存在当前浏览器，不按条数自动清理，按论文库区分；刷新后未完成的任务标记为已停止，不自动重试。可以清空本机检索记录；Agent 会话仍由 Harness 管理。
+
+需要固定来源或已有订阅时，打开“高级检索与订阅”：
 
 - arXiv 按提交时间排序，OpenAlex 按相关度排序，每次最多返回 20 篇。
 - 检索词可保存为带来源的订阅，通过手动刷新检查更新；当前没有后台定时轮询或任意 RSS URL 接入。
@@ -214,7 +240,7 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 - arXiv 不可用时可以手动选择 OpenAlex，不会自动更换检索来源。
 - 论文须确认后才入库。可按 arXiv ID 或 DOI 提示已在库内；同名仅作候选提示，不自动合并。没有可下载 PDF 的结果仍可打开论文链接。
 
-专题和订阅保存在 `<库>/.paperdesk/research.json`，关联现有论文 ID，不复制 PDF。
+专题和指定来源订阅保存在 `<库>/.paperdesk/research.json`，关联现有论文 ID，不复制 PDF。Agent 的最近检索记录不写入此文件，也不作为定时订阅。
 
 ## 论文对比与关系图谱
 
@@ -272,7 +298,7 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 - 笔记等内容写入使用哈希检查及冲突副本；跨设备同时编辑同一文件仍应尽量避免。
 - 导入时的 LLM 补全会把标题、已有摘要/关键词/标签及前 4 页最多 7000 字符的节选发给配置的模型。已有非空字段保留；模型不可用或结果不足时显示警告，论文仍保存。
 - AI 助读会把相关文字、笔记及你明确附上的原页图片交给宿主配置的模型服务。请依据该服务的数据处理规则使用。
-- Crossref 补全发送标题或 DOI；文献发现向所选 arXiv 或 OpenAlex 发送检索词，不发送本地论文全文。
+- Crossref 补全发送标题或 DOI。Agent 文献发现把研究需求交给配置的模型，并向 Harness 配置的搜索服务发送扩展查询；发现流程不读取本地论文全文。高级检索向所选 arXiv 或 OpenAlex 发送检索词。
 
 ## 设置与故障排查
 
@@ -322,6 +348,6 @@ node scripts/make-demo-library.mjs --out /path/to/demo-library
 
 ## English summary
 
-Paper Companion (知页) is a paper-management and AI reading plugin for DeepSeek Harness. Import PDFs, read and annotate them beside a persistent per-paper conversation, attach original page images, and save useful answers as notes or cards. Research topics organize multiple papers around a question; discovery supports arXiv and OpenAlex, while comparison reports and a typed relation graph connect the library.
+Paper Companion (知页) is a paper-management and AI reading plugin for DeepSeek Harness. Import PDFs, read and annotate them beside a persistent per-paper conversation, attach original page images, and save useful answers as notes or cards. Research topics organize multiple papers around a question; discovery accepts natural-language research requests and uses the host’s configured web-search tools, with direct arXiv/OpenAlex search and subscriptions available in advanced mode. Comparison reports and a typed relation graph connect the library.
 
 All library content lives in ordinary PDF, Markdown and JSON files under a directory you choose. Your cloud-drive client handles synchronization. AI requests use the host's configured model service; Crossref and discovery requests send the metadata or search terms described above. The source version and npm release version may differ. See [publishing](docs/PUBLISHING.md) for package and distribution details.

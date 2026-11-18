@@ -8,6 +8,13 @@ export interface LinkImportItem {
   title?: string
   error?: string
 }
+
+/** A successful retry closes the dialog only when no other unresolved items remain. */
+export function allLinkImportsResolved(previous: readonly LinkImportItem[], attempted: readonly string[], succeeded: number): boolean {
+  if (!attempted.length || succeeded !== attempted.length) return false
+  const touched = new Set(attempted)
+  return previous.every((item) => touched.has(item.url) || item.state === 'success' || item.state === 'duplicate')
+}
 /** Sequential requests preserve upstream rate limits; one failure never drops later links. */
 export async function runLinkImports<T extends { duplicated: boolean; meta: { title: string } }>(
   urls: readonly string[], run: (url: string) => Promise<T>, update: (item: LinkImportItem) => void,

@@ -41,6 +41,7 @@ import { aiReadingCss } from './aiReadingStyles.js'
 import { importCss } from './importStyles.js'
 import { topicWorkspaceCss } from './topicWorkspaceStyles.js'
 import { readerHeaderCss } from './readerHeaderStyles.js'
+import { discoveryCss } from './discoveryStyles.js'
 
 
 const readingCss = `
@@ -206,7 +207,9 @@ const readingCss = `
 .pd-reader[data-tab='notes'] .pd-reader-row-title,
 .pd-reader[data-tab='notes'] .pd-reader-row-meta,
 .pd-reader[data-tab='cards'] .pd-reader-row-title,
-.pd-reader[data-tab='cards'] .pd-reader-row-meta { display: none; }
+.pd-reader[data-tab='cards'] .pd-reader-row-meta,
+.pd-reader[data-tab='notes'] .pd-reader-row-tags,
+.pd-reader[data-tab='cards'] .pd-reader-row-tags { display: none; }
 .pd-reader[data-tab='notes'] .pd-reader-row-tabs,
 .pd-reader[data-tab='cards'] .pd-reader-row-tabs { padding: 0 18px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
 .pd-notebook-workspace { flex-direction: row; overflow: hidden; }
@@ -457,7 +460,6 @@ export const CSS = `
 .pd-list-resizer:hover::after { background: ${BRAND}; }
 .pd-list-arrow.pd-btn-icon { position: absolute; top: 50%; left: 2px; z-index: 1; transform: translateY(-50%); width: 20px; height: 36px; min-height: 36px; border: 1px solid ${B1}; border-radius: 6px; background: ${BG}; font-size: 20px; line-height: 1; cursor: pointer; }
 .pd-list-arrow:hover { background: ${L2}; color: ${FG}; }
-.pd-list-mobile-toggle { display: none; }
 .pd-pane-detail { flex: 1 1 auto; min-width: 0; position: relative; }
 .pd-pane-single { flex: 1 1 auto; min-width: 0; overflow: auto; }
 
@@ -789,19 +791,29 @@ export const CSS = `
 }
 
 /* ── spinner / empty / badge ───────────────────────────────────────────── */
+/* The stationary box contains transformed ink, so rotation cannot grow a scroll area. */
 .pd-spinner {
   display: inline-block;
+  position: relative;
   width: 14px;
   height: 14px;
+  overflow: hidden;
+  contain: paint;
+  flex: 0 0 auto;
+}
+.pd-spinner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
   border: 2px solid color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
   border-top-color: ${BRAND};
   border-radius: 50%;
   animation: pd-spin 800ms linear infinite;
-  flex: 0 0 auto;
 }
 @keyframes pd-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .pd-spinner { animation-duration: 2.4s; }
+  .pd-spinner::before { animation-duration: 2.4s; }
   .pd-btn, .pd-chip, .pd-row, .pd-tab { transition: none; }
 }
 
@@ -1781,6 +1793,12 @@ export const CSS = `
   gap: 8px;
 }
 .pd-meta-hint { color: ${FG_2}; font-size: 11.5px; }
+.pd-meta-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 14px 0; border-top: 1px solid ${B1}; }
+.pd-meta-save-status { color: ${BRAND}; font-size: 12px; line-height: 1.7; }
+.pd-meta-save-status[data-state='saving'], .pd-meta-save-status[data-state='pending'] { color: ${FG_2}; }
+.pd-meta-save-status[data-state='error'] { color: ${ERR}; }
+.pd-meta-toolbar .pd-btn { min-height: 30px; border-radius: 6px; font-size: 12px; }
+.pd-meta-toolbar .pd-btn-ghost { color: ${FG_2}; }
 .pd-meta-actions {
   display: flex;
   align-items: center;
@@ -2231,8 +2249,13 @@ export const CSS = `
   .pd-brand-sub { display: none; }
   .pd-search { order: 4; flex-basis: 100%; max-width: none; }
   .pd-body { flex-direction: column; overflow: auto; }
-  .pd-list-divider { display: none; }
-  .pd-list-mobile-toggle { display: inline-flex; }
+  .pd-body.pd-body-library { flex-direction: row; overflow: hidden; }
+  .pd-body-library .pd-pane-list { flex: 0 0 auto; width: min(var(--pd-list-width, 280px), 44cqi); min-width: 0; max-width: 44cqi; max-height: none; min-height: 0; }
+  .pd-body-library .pd-list-divider { display: block; }
+  .pd-body-library .pd-list-resizer { display: none; }
+  .pd-body-library .pd-pane-detail { min-height: 0; overflow: hidden; }
+  .pd-body-library .pd-reader { height: 100%; min-height: 0; }
+  .pd-body-library .pd-read-shell, .pd-body-library .pd-viewer-host { min-height: 0; }
   .pd-pane-list {
     flex: 0 0 auto;
     width: auto;
@@ -2253,7 +2276,7 @@ export const CSS = `
 }
 ` +
   relationsCss +
-  compareCss + readingCss + aiReadingCss + importCss + topicWorkspaceCss + readerHeaderCss
+  compareCss + readingCss + aiReadingCss + importCss + topicWorkspaceCss + readerHeaderCss + discoveryCss
 
 /** Value of the injected `<style data-plugin-css="...">` attribute. */
 export const STYLE_ATTR = 'paper-desk'

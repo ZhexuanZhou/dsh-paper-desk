@@ -25,7 +25,7 @@ export function ReaderStatus({ status, disabled, onChange }: {
     label={`${t('meta.status')} · ${statusLabel(t, status)}`}
     disabled={disabled || saving}
     triggerLabel={<span className="pd-reader-status-label"><span className="pd-reader-status-mark" aria-hidden="true">{saving ? <Spinner size={7} /> : <span />}</span><span>{statusLabel(t, status)}</span>{saving ? <span className="pd-reader-sr-only" role="status">{t('common.saving')}</span> : null}</span>}
-    icon={<span className="pd-reader-status-caret" aria-hidden="true">⌄</span>}
+    icon={false}
     items={STATUSES.map((item) => ({ id: item, label: statusLabel(t, item), selected: item === status,
       icon: <span className={`pd-reader-status-option-dot pd-reader-status-${item}`} aria-hidden="true" />,
       onSelect: () => { void change(item) },

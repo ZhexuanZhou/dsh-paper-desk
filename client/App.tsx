@@ -47,7 +47,7 @@ import { ResearchView } from './ResearchView.js'
 import { DiscoverView } from './DiscoverView.js'
 import { ImportDialog } from './ImportDialog.js'
 import { createActionGuard } from './actionGuard.js'
-import { parseImportLinks, runLinkImports } from './linkImports.js'
+import { allLinkImportsResolved, parseImportLinks, runLinkImports } from './linkImports.js'
 import type { LinkImportItem } from './linkImports.js'
 import { createAiThread } from './aiSession.js'
 import type { AiRow } from './aiSession.js'
@@ -432,6 +432,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const configured = status !== null && status.configured && status.libraryExists
   /* Re-fetch when the configured folder changes (settings / first run). */
   const activeLibraryPath = status?.settings.libraryPath ?? ''
+  const activeLibraryRef = useRef(activeLibraryPath)
+  activeLibraryRef.current = activeLibraryPath
 
   useEffect(() => {
     if (!configured || !activeLibraryPath) {
@@ -1743,6 +1745,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       })
       const last = successes.at(-1)
       if (last) {
+        if (allLinkImportsResolved(retryUrls ? urlResults : [], urls, successes.length)) setImportOpen(false)
         await loadPapers()
         requestAction(() => { setNav('library'); setSelectedId(last.id) })
         void loadStatus(true)
@@ -1754,7 +1757,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
       importBusyRef.current = false
       setUrlBusy(false)
     }
-  }, [urlValue, importing, loadPapers, requestAction, pushToast, loadStatus, maybeSyncCitations])
+  }, [urlValue, urlResults, importing, loadPapers, requestAction, pushToast, loadStatus, maybeSyncCitations])
 
   const onDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
@@ -2260,13 +2263,6 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         </div>
 
         <div className="pd-top-actions">
-          {nav === 'library' ? (
-            <Button className="pd-list-mobile-toggle" variant={listCollapsed ? 'ghost' : 'default'} icon={<IconBook />} onClick={toggleListCollapsed}
-              aria-expanded={!listCollapsed} aria-controls="pd-paper-list"
-              aria-label={t(listCollapsed ? 'list.restore' : 'list.collapse')} title={t(listCollapsed ? 'list.restore' : 'list.collapse')}>
-              {t('list.toggle')}
-            </Button>
-          ) : null}
           <Button
             variant="primary"
             icon={importing || urlBusy ? <Spinner size={14} /> : <IconImport />}
@@ -2368,6 +2364,9 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onSaveNotes={handleSaveNotes}
               onReloadNotes={handleReloadNotes}
               onAppendQuote={handleAppendQuote}
+              libraryPath={status.settings.libraryPath}
+              metadataAutosave={status.features?.metadataUndo === true}
+              onMetaApplied={(incoming, sourceLibrary) => { if (activeLibraryRef.current === sourceLibrary) applyMeta(incoming) }}
               onPatchMeta={handlePatchMeta}
               onEnrich={handleEnrich}
               onLlmEnrich={handleLlmEnrich}
@@ -2424,7 +2423,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         ) : nav === 'research' ? (
           <ResearchView supported={status.features?.topicDiscussion === true} ctx={ctx} workspacePath={status.settings.libraryPath} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} onDirtyChange={setNotesDirty} registerSave={registerNotesSave} onPapersChanged={() => { void loadPapers(); void loadStatus(true); setDetailNonce((value) => value + 1) }} />
         ) : nav === 'discover' ? (
-          <DiscoverView onImported={() => void loadPapers()} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} />
+          <DiscoverView ctx={ctx} workspacePath={status.settings.libraryPath} onImported={() => void loadPapers()} onOpenPaper={(id) => { setSelectedId(id); setNav('library') }} />
         ) : nav === 'sync' ? (
           <SyncView
             status={sync}

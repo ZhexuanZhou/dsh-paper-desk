@@ -219,11 +219,19 @@ export const api = {
     })
   },
 
-  patchPaper(id: string, patch: Partial<PaperMeta>): Promise<{ meta: PaperMeta }> {
+  patchPaper(id: string, patch: Partial<PaperMeta>, expected?: Partial<PaperMeta>, libraryPath?: string): Promise<{ meta: PaperMeta }> {
     return requestJson<{ meta: PaperMeta }>(`/paper${query({ id })}`, {
       method: 'PATCH',
-      body: JSON.stringify(patch),
+      body: JSON.stringify({ ...patch, ...(expected ? { expected } : {}), ...(libraryPath ? { libraryPath } : {}) }),
     })
+  },
+
+  metadataUndo(id: string): Promise<import('../src/types.js').MetadataUndo> {
+    return requestJson(`/paper/undo${query({ id })}`)
+  },
+
+  undoMetadata(id: string, revisionId: string, expectedHash: string, libraryPath?: string): Promise<{ meta: PaperMeta; undo: import('../src/types.js').MetadataUndo }> {
+    return requestJson(`/paper/undo${query({ id })}`, { method: 'POST', body: JSON.stringify({ revisionId, expectedHash, libraryPath }) })
   },
 
   deletePaper(id: string): Promise<{ trashed: string }> {

@@ -19,6 +19,10 @@ export type KeyAction =
   | 'zoomReset'
   | 'visualMode'
   | 'swapSelection'
+  | 'moveCaretLeft'
+  | 'moveCaretRight'
+  | 'moveCaretDown'
+  | 'moveCaretUp'
   | 'selectLeft'
   | 'selectRight'
   | 'selectLineDown'
@@ -47,6 +51,10 @@ export const DEFAULT_KEYMAP: KeyMap = {
   zoomReset: '0',
   visualMode: 'v',
   swapSelection: 'o',
+  moveCaretLeft: 'Shift+h',
+  moveCaretRight: 'Shift+l',
+  moveCaretDown: 'Shift+j',
+  moveCaretUp: 'Shift+k',
   selectLeft: 'h',
   selectRight: 'l',
   selectLineDown: 'j',
@@ -72,6 +80,10 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   'zoomReset',
   'visualMode',
   'swapSelection',
+  'moveCaretLeft',
+  'moveCaretRight',
+  'moveCaretDown',
+  'moveCaretUp',
   'selectLeft',
   'selectRight',
   'selectLineDown',
@@ -142,6 +154,7 @@ export function matchesBinding(event: KeyboardEvent, binding: string): boolean {
   if (event.metaKey !== mods.includes('meta')) return false
   if (event.altKey !== mods.includes('alt')) return false
   const wantsShift = mods.includes('shift')
+  if (wantsShift && !event.shiftKey) return false
   if (event.shiftKey !== wantsShift && key.length > 1) return false
   return event.key.toLowerCase() === key.toLowerCase()
 }
@@ -159,6 +172,10 @@ export const KEY_ACTION_LABELS: Record<KeyAction, { zh: string; en: string }> = 
   zoomOut: { zh: '缩小', en: 'Zoom out' },
   zoomReset: { zh: '实际大小', en: 'Actual size' },
   visualMode: { zh: '进入/退出可视选择', en: 'Visual mode' },
+  moveCaretLeft: { zh: '光标：向左定位', en: 'Caret: move left' },
+  moveCaretRight: { zh: '光标：向右定位', en: 'Caret: move right' },
+  moveCaretDown: { zh: '光标：向下一行定位', en: 'Caret: move down' },
+  moveCaretUp: { zh: '光标：向上一行定位', en: 'Caret: move up' },
   swapSelection: { zh: '交换选区两端', en: 'Swap selection ends' },
   selectLeft: { zh: '选择：向左一个字符', en: 'Select: char left' },
   selectRight: { zh: '选择：向右一个字符', en: 'Select: char right' },

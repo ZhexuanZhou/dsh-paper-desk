@@ -15,6 +15,7 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { ensurePaperWorkspace } from './agent.js'
 import type { PageImage } from './pageImages.js'
+import { parseWebSources, type WebSource } from './discoveryAgent.js'
 
 export type AiRowKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'error' | 'status'
 
@@ -39,6 +40,9 @@ export interface AiRow {
   streaming?: boolean
   /** Confirmed topic writes, preserved separately from conversational text. */
   mutation?: TopicMutation
+  /** Actual successful Host web_search metadata, never parsed from model prose. */
+  webSources?: WebSource[]
+  webSearch?: boolean
 }
 
 export interface AiThreadState {
@@ -345,6 +349,11 @@ function toolDetail(raw: unknown): string | undefined {
         const value = parsed[key]
         if (typeof value === 'string' && value.trim() !== '') return truncate(value, 80)
       }
+      const queries = parsed.queries
+      if (Array.isArray(queries)) {
+        const text = queries.filter((query): query is string => typeof query === 'string').join(' · ')
+        if (text) return truncate(text, 200)
+      }
       const pages = parsed.pages
       if (Array.isArray(pages)) {
         const numbers = pages.filter((page): page is number => typeof page === 'number' && Number.isFinite(page))
@@ -376,6 +385,7 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
   const streamRows = new Map<string, number>()
   /** tool callId → index of its tool row (result pairing). */
   const callRows = new Map<string, number>()
+  const webCalls = new Set<string>()
   const topicCalls = new Map<string, { topicId: string; document: TopicMutation['document'] }>()
   /** Turns that already rendered a failure row (attempt error == turn/end error). */
   const errorTurns = new Set<number>()
@@ -502,6 +512,7 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
         case 'tool/call': {
           const name = typeof data.name === 'string' && data.name !== '' ? data.name : 'tool'
           const callId = typeof data.callId === 'string' && data.callId !== '' ? data.callId : undefined
+          if (callId && name === 'web_search') webCalls.add(callId)
           if (callId && (name === 'research_topic_edit' || name === 'research_topic_history')) {
             try {
               const args = asRecord(typeof data.arguments === 'string' ? JSON.parse(data.arguments) : data.arguments)
@@ -542,11 +553,13 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
                     if (result?.ok === false) logicalFailure = typeof result.error === 'string' ? result.error : 'Topic edit failed.'
                   } catch { /* Unknown results stay as ordinary tool rows. */ }
                 }
-                rows[index] = { ...row, running: false, ...(mutation ? { mutation } : {}) }
+                rows[index] = { ...row, running: false, ...(mutation ? { mutation } : {}),
+                  ...(!failed && webCalls.has(callId) ? { webSearch: true, webSources: parseWebSources(data.meta) } : {}) }
                 if (logicalFailure) pushRow('error', truncate(logicalFailure, 600), seq)
               }
               callRows.delete(callId)
               topicCalls.delete(callId)
+              webCalls.delete(callId)
             } else if (failed) {
               // Result without a visible call row: keep the failure discoverable.
               pushRow('tool', '', seq, { tool: 'tool', running: false })
@@ -815,7 +828,9 @@ function rowsEqual(left: readonly AiRow[], right: readonly AiRow[]): boolean {
       a.mutation?.topicId !== b.mutation?.topicId ||
       a.mutation?.document !== b.mutation?.document ||
       a.mutation?.hash !== b.mutation?.hash ||
-      a.mutation?.summary !== b.mutation?.summary
+      a.mutation?.summary !== b.mutation?.summary ||
+      a.webSearch !== b.webSearch ||
+      JSON.stringify(a.webSources) !== JSON.stringify(b.webSources)
     ) {
       return false
     }

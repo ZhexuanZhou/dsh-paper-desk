@@ -181,6 +181,9 @@ export interface ReaderViewProps {
   onSaveNotes: (markdown: string, baseHash?: string) => Promise<NotesWriteResult>
   onReloadNotes: () => Promise<NotesDocument>
   onAppendQuote: (text: string, page?: number) => Promise<NotesWriteResult>
+  libraryPath: string
+  metadataAutosave: boolean
+  onMetaApplied: (meta: PaperMeta, libraryPath: string) => void
   onPatchMeta: (patch: Partial<PaperMeta>, opts?: { silent?: boolean }) => Promise<void>
   onEnrich: () => Promise<void>
   onLlmEnrich: () => Promise<void>
@@ -675,6 +678,8 @@ function ReaderViewImpl(props: ReaderViewProps) {
       textLayerUnavailable: t('viewer.textLayerUnavailable'),
       visualMode: t('viewer.visualMode'),
       visualHint: t('viewer.visualHint'),
+      visualAnchor: t('viewer.visualAnchor'),
+      visualFocus: t('viewer.visualFocus'),
       shortcuts: t('viewer.shortcuts'),
       shortcutsHint: t('viewer.shortcutsHint'),
       close: t('viewer.close'),
@@ -1077,12 +1082,13 @@ function ReaderViewImpl(props: ReaderViewProps) {
       <div className="pd-reader" data-tab={tab}>
         <header className="pd-reader-head">
           <div className="pd-reader-row pd-reader-row-title">
-            <h2 className="pd-reader-title" title={meta.title !== '' ? meta.title : meta.id}>
+            <div className="pd-reader-title-group"><h2 className="pd-reader-title" title={meta.title !== '' ? meta.title : meta.id}>
               {meta.title !== '' ? meta.title : meta.id}
             </h2>
-            <div className="pd-reader-actions" role="group" aria-label={t('reader.menu.label')}>
             <ReaderStatus key={meta.id} status={meta.status} disabled={busy !== null}
               onChange={(status) => onPatchMeta({ status }, { silent: true })} />
+            </div>
+            <div className="pd-reader-actions" role="group" aria-label={t('reader.menu.label')}>
             {busy !== null ? <Spinner size={11} label={t('common.loading')} /> : null}
             <Button
               size="sm"
@@ -1199,8 +1205,8 @@ function ReaderViewImpl(props: ReaderViewProps) {
               </span>
             ) : null}
             </div>
-            <ReaderTags key={meta.id} tags={meta.tags} />
           </div>
+          {meta.tags.length ? <div className="pd-reader-row pd-reader-row-tags"><ReaderTags key={meta.id} tags={meta.tags} /></div> : null}
 
           <div className="pd-reader-row pd-reader-row-tabs">
             <Tabs
@@ -1542,7 +1548,9 @@ function ReaderViewImpl(props: ReaderViewProps) {
             pdfBytes={detail.pdfBytes}
             pdfEvicted={detail.pdfEvicted}
             busy={busy !== null}
-            onSave={(patch) => onPatchMeta(patch)}
+            libraryPath={props.libraryPath}
+            supported={props.metadataAutosave}
+            onApplied={props.onMetaApplied}
             onEnrich={onEnrich}
             onLlmEnrich={onLlmEnrich}
             onToast={onToast}

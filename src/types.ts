@@ -288,7 +288,7 @@ export interface EffectiveSettings {
 
 /** Status payload of `/api/paper-desk/status`. */
 export interface StatusPayload {
-  features?: { topicAnalysis?: boolean; topicDiscussion?: boolean }
+  features?: { metadataUndo?: boolean; topicAnalysis?: boolean; topicDiscussion?: boolean }
   ok: boolean
   plugin: string
   version: string
@@ -594,3 +594,5 @@ export interface RevisionSummary {
 }
 export interface Revision extends RevisionSummary { content: string | null }
 export interface DocumentState { content: string | null; hash: string; activity?: ReadingActivity }
+
+export interface MetadataUndo { revisionId: string | null; expectedHash: string; action: 'undo' | 'redo'; fields: string[] }

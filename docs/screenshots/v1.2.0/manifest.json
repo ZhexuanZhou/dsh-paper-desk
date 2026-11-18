@@ -1,0 +1,27 @@
+{
+  "version": "1.2.0",
+  "captured": "2026-11-18",
+  "privacyReviewed": true,
+  "images": [
+    {
+      "path": "docs/screenshots/v1.2.0/reader-header.jpg",
+      "sha256": "304dd6caad3f85b35e9815aa27ba4f29605c4ad74afbb4988caafc7700a05597",
+      "sourceCapture": ".acceptances/standalone-paperdesk-redesign/20261118-101836-discovery-agent-1.2.0/assets/reader-header-8632-public-crop.jpg",
+      "sourceCaptureSha256": "304dd6caad3f85b35e9815aa27ba4f29605c4ad74afbb4988caafc7700a05597",
+      "size": "1421x969",
+      "description": "最终1.2.0阅读器头部：合成40页论文的长标题、阅读状态pill与标签；正文页8清晰可读。",
+      "crop": "从专用QA截图裁去左侧280px Harness账户侧栏并重编码JPEG；已逐图检查，无账户信息、地址或真实文献内容。",
+      "sourceClientSha256": "8632c239f84d0dcdf8ee91db8cd5b7888edad2242244659e8320d7a9fac01602"
+    },
+    {
+      "path": "docs/screenshots/v1.2.0/discovery-agent.jpg",
+      "sha256": "ec64c5e73275ee548690129f29339d4fd0b3fb852a3a0e8d214f348f8e0bcb51",
+      "sourceCapture": ".acceptances/standalone-paperdesk-redesign/20261118-101836-discovery-agent-1.2.0/assets/discovery-agent-final.jpg",
+      "sourceCaptureSha256": "15319388fb041bf9c0a65f8b0d11f3c95b7d0bf8fe92160e5242782b99ed926b",
+      "size": "1208x913",
+      "description": "文献发现页面显示一条已完成的自然语言检索及其解读。页面恢复的是先前完成的真实联网检索结果，本次截图没有触发模型或新检索。结果包含10条来源卡片；没有独立保存Host原始tool事件文件，来源核对依据为已完成界面、生产数据路径与自动化检查。",
+      "crop": "从原始截图左侧裁去493px Harness账户和会话侧栏，再重编码JPEG以清除元数据。",
+      "sourceClientSha256": "1e795c4aff9d511ac27c0797d27a12f4d7c9f6423293a755d619a16c944ecabf"
+    }
+  ]
+}
