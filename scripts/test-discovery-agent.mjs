@@ -12,7 +12,7 @@ globalThis.localStorage = { getItem: key => memory.get(key) ?? null, setItem: (k
 try {
   const pure = path.join(temp, 'pure.mjs')
   await build({ stdin: { contents: "export * from './client/discoveryAgent.ts'; export {reduceTranscript} from './client/aiSession.ts'", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', outfile: pure })
-  const { discoveryPrompt, parseWebSources, sourceImportUrl, reduceTranscript } = await import(pathToFileURL(pure))
+  const { discoveryPrompt, discoveryResultTitle, normalizeDiscoveryTitle, parseWebSources, sourceImportUrl, reduceTranscript } = await import(pathToFileURL(pure))
   const source = { url: 'https://example.org/paper', title: 'A real source', snippet: 'Search snippet' }
   check('source parsing rejects script/file URLs and removes duplicate sources', parseWebSources({ sources: [source, source, {url:'javascript:alert(1)'}, {url:'file:///private/test.pdf'}, {url:'https://user:secret@example.org/'}] }), [source])
   check('malformed metadata never invents sources', parseWebSources('Sources: https://example.org'), [])
@@ -29,6 +29,15 @@ try {
   const prompt = discoveryPrompt('小语种翻译\n重点：术语约束', 'zh')
   check('natural language input is preserved, not sent as provider syntax', prompt.includes('小语种翻译\n重点：术语约束') && prompt.includes('web_search') && prompt.includes('English academic terms'), true)
   check('discovery explicitly forbids automatic library changes', prompt.includes('Do not import') && prompt.includes('untrusted evidence'), true)
+  check('topic title is generated within the existing search request', prompt.includes('start the final answer with exactly one H1') && prompt.includes('actual search results'), true)
+  check('specific result heading names the search rather than the question prefix', discoveryResultTitle('# **术语约束翻译的模型与方案**\n\n正文', [source], '我想问一下翻译'), '术语约束翻译的模型与方案')
+  check('code and link labels remain plain text in a result title', discoveryResultTitle('# `XLM` 与 [术语约束](https://example.org)\n\n说明', [], 'query'), 'XLM 与 术语约束')
+  check('a legacy generic heading falls back to a source title', discoveryResultTitle('## 先说结论\n\n找到了相关方案。', [source], '长问题'), source.title)
+  check('generic H1 headings do not hide a meaningful result source', discoveryResultTitle('# Search results\n\nBody', [source], 'query'), source.title)
+  check('fenced code cannot manufacture a result title', discoveryResultTitle('```md\n# Incorrect title\n```', [source], 'query'), source.title)
+  check('hostname placeholders do not become history titles', discoveryResultTitle('No heading', [{ ...source, title: 'example.org' }], '研究问题'), '研究问题')
+  check('missing or failed results retain a readable question fallback', discoveryResultTitle('', [], '  用户问题\n 第二行  '), '用户问题 第二行')
+  check('long titles are bounded by characters without splitting surrogate pairs', [Array.from(normalizeDiscoveryTitle('😀'.repeat(80))).length, normalizeDiscoveryTitle('😀'.repeat(80)).endsWith('…')], [64, true])
 
   const job = path.join(temp, 'job.mjs')
   await build({ entryPoints: ['client/discoverySearch.ts'], bundle: true, platform: 'node', format: 'esm', outfile: job, plugins: [{ name: 'controlled-session', setup(b) {
@@ -61,10 +70,15 @@ try {
   controllers.at(-1).emit({ status: 'running', rows: [{ kind: 'tool', tool: '联网检索', text: 'low-resource translation', webSearch: true, webSources: [source] }, { kind: 'assistant', text: 'Partial', streaming: true }] })
   check('actual sources stream before answer completion', store.getSnapshot().searches[0].sources, [source])
   check('streaming is not a completed search', store.getSnapshot().searches[0].phase, 'running')
-  controllers.at(-1).emit({ status: 'ready', rows: [{ kind: 'tool', text: '', webSearch: true, webSources: [source] }, { kind: 'assistant', text: 'Final $x>1$' }] })
+  controllers.at(-1).emit({ status: 'ready', rows: [{ kind: 'tool', text: '', webSearch: true, webSources: [source] }, { kind: 'assistant', text: '# 小语种术语翻译方案\n\nFinal $x>1$' }] })
   await first
-  check('finished answer preserves original Markdown', [store.getSnapshot().searches[0].phase, store.getSnapshot().searches[0].markdown], ['complete', 'Final $x>1$'])
+  check('finished answer preserves original Markdown', [store.getSnapshot().searches[0].phase, store.getSnapshot().searches[0].markdown], ['complete', '# 小语种术语翻译方案\n\nFinal $x>1$'])
+  check('completed result stores a topic title without changing the full original question', [store.getSnapshot().searches[0].title, store.getSnapshot().searches[0].query, calls], ['小语种术语翻译方案', '小语种翻译\n可本地部署', 1])
   check('browser reload restores saved sources and answer without new model call', [discoverySearchStore({}, 'fixture').getSnapshot().searches[0].sources, calls], [[source], 1])
+  check('result title survives reopening', discoverySearchStore({}, 'fixture').getSnapshot().searches[0].title, '小语种术语翻译方案')
+  const legacy = { ...store.getSnapshot(), searches: store.getSnapshot().searches.map(({ title, ...entry }) => ({ ...entry, markdown: '## 先说结论\n\n已有结果' })) }
+  memory.set('paperdesk:discovery-search:legacy', JSON.stringify(legacy))
+  check('old records acquire a result-based title without another request or deleting their query', [discoverySearchStore({}, 'legacy').getSnapshot().searches[0].title, discoverySearchStore({}, 'legacy').getSnapshot().searches[0].query, calls], [source.title, '小语种翻译\n可本地部署', 1])
   const second = store.start('diffusion language models', 'en'); await new Promise(resolve => setImmediate(resolve))
   check('new search does not reuse the previous source list', store.getSnapshot().searches[0].sources, [])
   await store.stop(); await second

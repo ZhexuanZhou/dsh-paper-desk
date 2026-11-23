@@ -1,9 +1,9 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { createAiThread } from './aiSession.js'
-import { discoveryPrompt, parseWebSources, type WebSource } from './discoveryAgent.js'
+import { discoveryPrompt, discoveryResultTitle, normalizeDiscoveryTitle, parseWebSources, type WebSource } from './discoveryAgent.js'
 
 export interface DiscoverySearch {
-  id: string; query: string; createdAt: string
+  id: string; query: string; title: string; createdAt: string
   phase: 'running' | 'complete' | 'stopped' | 'error'
   markdown: string; sources: WebSource[]; steps: string[]; searched: boolean; error: string | null
 }
@@ -19,13 +19,18 @@ function makeStore(ctx: ClientContext, workspacePath: string) {
     const raw: unknown = JSON.parse(localStorage.getItem(key) || 'null')
     if (raw && typeof raw === 'object') {
       const saved = raw as Partial<DiscoverySearchState>
-      const searches = Array.isArray(saved.searches) ? saved.searches.filter((entry) => entry && typeof entry.id === 'string' && typeof entry.query === 'string' && typeof entry.createdAt === 'string').map((entry): DiscoverySearch => ({
-        id: entry.id, query: entry.query.slice(0, 4000), createdAt: entry.createdAt,
-        phase: entry.phase === 'complete' ? 'complete' : entry.phase === 'error' ? 'error' : 'stopped',
-        markdown: typeof entry.markdown === 'string' ? entry.markdown.slice(0, 100000) : '',
-        sources: parseWebSources({ sources: entry.sources }), steps: [], searched: entry.searched === true,
-        error: typeof entry.error === 'string' ? entry.error : null,
-      })) : []
+      const searches = Array.isArray(saved.searches) ? saved.searches.filter((entry) => entry && typeof entry.id === 'string' && typeof entry.query === 'string' && typeof entry.createdAt === 'string').map((entry): DiscoverySearch => {
+        const markdown = typeof entry.markdown === 'string' ? entry.markdown.slice(0, 100000) : ''
+        const sources = parseWebSources({ sources: entry.sources })
+        const title = typeof entry.title === 'string' && entry.title.trim() ? normalizeDiscoveryTitle(entry.title)
+          : entry.phase === 'complete' ? discoveryResultTitle(markdown, sources, entry.query) : ''
+        return {
+          id: entry.id, query: entry.query.slice(0, 4000), title, createdAt: entry.createdAt,
+          phase: entry.phase === 'complete' ? 'complete' : entry.phase === 'error' ? 'error' : 'stopped',
+          markdown, sources, steps: [], searched: entry.searched === true,
+          error: typeof entry.error === 'string' ? entry.error : null,
+        }
+      }) : []
       state = { ...state, searches, selected: searches.some((entry) => entry.id === saved.selected) ? saved.selected! : searches[0]?.id ?? null,
         draft: typeof saved.draft === 'string' ? saved.draft.slice(0, 4000) : '' }
     }
@@ -59,7 +64,7 @@ function makeStore(ctx: ClientContext, workspacePath: string) {
     async start(query: string, language: 'zh' | 'en') {
       if (!query.trim() || state.searches.some((entry) => entry.phase === 'running')) return
       const id = crypto.randomUUID()
-      const record: DiscoverySearch = { id, query: query.trim().slice(0, 4000), createdAt: new Date().toISOString(), phase: 'running', markdown: '', sources: [], steps: [], searched: false, error: null }
+      const record: DiscoverySearch = { id, query: query.trim().slice(0, 4000), title: '', createdAt: new Date().toISOString(), phase: 'running', markdown: '', sources: [], steps: [], searched: false, error: null }
       publish({ ...state, selected: id, searches: [record, ...state.searches] })
       const ai = createAiThread(ctx)
       let stopped = false
@@ -98,7 +103,11 @@ function makeStore(ctx: ClientContext, workspacePath: string) {
           timer = setTimeout(() => { void ai.stop(); reject(new Error(language === 'zh' ? '检索超时，请重试。' : 'Search timed out. Please retry.')) }, 600000)
           void ai.run(discoveryPrompt(record.query, language)).then((result) => { if (!result.ok) reject(new Error(result.error || 'Cannot start Agent search')) }, reject)
         })
-        if (!stopped) update(id, { phase: state.searches.find((entry) => entry.id === id)?.searched ? 'complete' : 'error' }, true)
+        if (!stopped) {
+          const completed = state.searches.find((entry) => entry.id === id)
+          update(id, { phase: completed?.searched ? 'complete' : 'error',
+            title: completed?.searched ? discoveryResultTitle(completed.markdown, completed.sources, completed.query) : '' }, true)
+        }
       } catch (error) {
         if (!stopped) update(id, { phase: 'error', error: error instanceof Error ? error.message : String(error) }, true)
       } finally {

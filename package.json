@@ -1,6 +1,6 @@
 {
   "name": "dsh-paper-desk",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "知页 · 论文助手 (Paper Companion): a local paper library and AI reading workspace for DeepSeek Harness — import PDFs, read, annotate, organize notes and cards, and follow research topics.",
   "type": "module",
   "license": "MIT",

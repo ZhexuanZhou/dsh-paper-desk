@@ -1,0 +1,27 @@
+{
+  "version": "1.3.1",
+  "captured": "2026-11-23",
+  "privacyReviewed": true,
+  "images": [
+    {
+      "path": "docs/screenshots/v1.3.1/reproduction.png",
+      "sha256": "5d2599a3d9356c4762ccfbc330565dcc3227f80d078be45d88c317383c2ecd00",
+      "sourceCapture": ".acceptances/standalone-ui-polish-1.3.1/20261123-134900-visual/assets/empty-private.png",
+      "sourceCaptureSha256": "fc263ff5acacdf998f789719af27dce1cb54c6f1a8aa2d67e706f62c6738d194",
+      "size": "1421x909",
+      "description": "合成论文的复现初始页：暖灰背景、单标题、可选要求与生成按钮。",
+      "crop": "原始PNG 1988x1118；裁剪左上(532,165)至右下(1953,1074)，去除浏览器及宿主账户侧栏。独立checker已核对裁剪图无账户、个人路径或私人浏览器资料。",
+      "sourceClientSha256": "8eba8e055a90f7d3905400ff6545253393fcf9c6b2805a8c0ff4d74d6b858334"
+    },
+    {
+      "path": "docs/screenshots/v1.3.1/discovery.png",
+      "sha256": "dfbefbcad7007051676e03c16223523bd803f756a1fedba649e3b027dc5cbcb3",
+      "sourceCapture": ".acceptances/standalone-ui-polish-1.3.1/20261123-134900-visual/assets/discovery-after.png",
+      "sourceCaptureSha256": "3245fe9edac1f4f19efeb22724a765600bd6adcf2c1ca2bff1db86f5057e0445",
+      "size": "1421x909",
+      "description": "公开术语约束解码问题的真实联网检索：紧凑输入、结果主题标题与原始问题入口。内容是检索演示，不作为研究结论。",
+      "crop": "原始PNG 1988x1118；裁剪左上(532,165)至右下(1953,1074)，去除浏览器及宿主账户侧栏。独立checker已核对裁剪图无账户、个人路径或私人浏览器资料。",
+      "sourceClientSha256": "8eba8e055a90f7d3905400ff6545253393fcf9c6b2805a8c0ff4d74d6b858334"
+    }
+  ]
+}

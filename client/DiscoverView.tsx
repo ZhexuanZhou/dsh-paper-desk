@@ -7,7 +7,7 @@ import { sourceImportUrl } from './discoveryAgent.js'
 import { useLang, useT, errorText } from './i18n.js'
 import { IconSearch, IconSpark } from './icons.js'
 import { Button, Spinner } from './ui.js'
-import { Markdown } from './markdown.js'
+import { Markdown, cardBodyForDisplay } from './markdown.js'
 
 export function DiscoverView({ ctx, workspacePath, onImported, onOpenPaper }: {
   ctx: ClientContext; workspacePath: string
@@ -52,15 +52,15 @@ export function DiscoverView({ ctx, workspacePath, onImported, onOpenPaper }: {
         <p className="pd-field-hint">{t('discoverAgent.historyHint')}</p>
         {!state.searches.length ? <p className="pd-sidebar-empty">{t('discoverAgent.noHistory')}</p> : null}
         {state.searches.map((entry) => <div className="pd-discovery-history-row" key={entry.id}><button className="pd-topic-row" data-selected={entry.id === state.selected}
-          aria-current={entry.id === state.selected ? 'true' : undefined} onClick={() => store.select(entry.id)}>
-          <span>{entry.query}</span><small>{new Date(entry.createdAt).toLocaleDateString()} · {t(`discoverAgent.${entry.phase}`)}</small>
+          aria-current={entry.id === state.selected ? 'true' : undefined} title={entry.query} onClick={() => store.select(entry.id)}>
+          <span>{entry.title || entry.query}</span><small>{new Date(entry.createdAt).toLocaleDateString()} · {t(`discoverAgent.${entry.phase}`)}</small>
         </button><Button size="sm" variant="ghost" disabled={entry.phase === 'running'} aria-label={t('discoverAgent.deleteSearch', { query: entry.query })} onClick={() => store.remove(entry.id)}>{t('discoverAgent.delete')}</Button></div>)}
       </aside>
       <main className="pd-discovery-content">
         <header className="pd-discovery-heading"><h2>{t('discover.title')}</h2><p>{t('discoverAgent.intro')}</p></header>
         <form className="pd-discovery-composer" onSubmit={(event) => { event.preventDefault(); start(state.draft) }}>
           <label htmlFor="pd-agent-discovery-query">{t('discoverAgent.question')}</label>
-          <textarea id="pd-agent-discovery-query" value={state.draft} maxLength={4000} rows={3}
+          <textarea id="pd-agent-discovery-query" value={state.draft} maxLength={4000} rows={2}
             placeholder={t('discoverAgent.placeholder')} aria-describedby="pd-discovery-input-hint"
             onChange={(event) => store.draft(event.target.value)} onKeyDown={(event) => {
               if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.nativeEvent.isComposing) {
@@ -79,13 +79,14 @@ export function DiscoverView({ ctx, workspacePath, onImported, onOpenPaper }: {
         {!current ? <section className="pd-discovery-start"><h3>{t('discoverAgent.startTitle')}</h3><div className="pd-discovery-examples">
           {['example1', 'example2', 'example3'].map((key) => <button key={key} onClick={() => store.draft(t(`discoverAgent.${key}`))}>{t(`discoverAgent.${key}`)}<span aria-hidden="true">↗</span></button>)}
         </div><p className="pd-field-hint">{t('discoverAgent.startHint')}</p></section> : <section className="pd-discovery-result" aria-label={t('discoverAgent.result')} aria-busy={current.phase === 'running'}>
-          <header><div><span className="pd-discovery-eyebrow">{t('discoverAgent.result')}</span><h3>{current.query}</h3></div>
+          <header><div><span className="pd-discovery-eyebrow">{t('discoverAgent.result')}</span><h3>{current.title || current.query}</h3></div>
             <span role="status">{current.phase === 'running' ? <Spinner size={13} /> : null}{t(`discoverAgent.${current.phase}`)}</span></header>
+          {current.title && current.title !== current.query ? <details className="pd-discovery-original-query"><summary>{t('discoverAgent.originalQuery')}</summary><p>{current.query}</p></details> : null}
           {current.phase === 'running' ? <p className="pd-field-hint" role="status">{t(current.searched ? 'discoverAgent.organizing' : 'discoverAgent.searching')}</p> : null}
           {current.error ? <p role="alert" className="pd-field-error">{current.error}</p> : null}
           {current.phase !== 'running' && !current.sources.length ? <div className="pd-discovery-warning" role="status"><strong>{t(current.searched ? 'discoverAgent.noSources' : 'discoverAgent.noSearch')}</strong><p>{t('discoverAgent.checkSettings')}</p></div> : null}
           {current.steps.length ? <details className="pd-discovery-process"><summary>{t('discoverAgent.process', { n: current.steps.length })}</summary><ol>{current.steps.map((step, index) => <li key={index}>{step}</li>)}</ol></details> : null}
-          {current.markdown ? <article className="pd-discovery-answer"><h4>{t(current.sources.length ? 'discoverAgent.analysis' : 'discoverAgent.unverified')}</h4><Markdown markdown={current.markdown} /></article> : null}
+          {current.markdown ? <article className="pd-discovery-answer"><h4>{t(current.sources.length ? 'discoverAgent.analysis' : 'discoverAgent.unverified')}</h4><Markdown markdown={current.title ? cardBodyForDisplay(current.title, current.markdown) : current.markdown} /></article> : null}
           {current.sources.length ? <section className="pd-discovery-sources"><h4>{t('discoverAgent.sources', { n: current.sources.length })}</h4><p className="pd-field-hint">{t('discoverAgent.sourcesHint')}</p>
             {current.sources.map((source, index) => <article className="pd-discovery-source" key={source.url}>
               <span className="pd-discovery-source-number">{String(index + 1).padStart(2, '0')}</span>

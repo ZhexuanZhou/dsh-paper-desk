@@ -15,20 +15,20 @@ export const discoveryCss = `
 .pd-discovery-history .pd-topic-row small { margin-top: 5px; font-size: 11px; }
 .pd-discovery-content { flex: 1; min-width: 0; overflow: auto; padding: 0 16px 48px 0; }
 .pd-discovery-content > * { max-width: 960px; margin-inline: auto; }
-.pd-discovery-heading { margin-bottom: 24px; }
+.pd-discovery-heading { margin-bottom: 16px; }
 .pd-discovery-heading h2 { margin: 0 0 8px; font-size: 26px; line-height: 1.4; }
 .pd-discovery-heading p { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 1.8; }
-.pd-discovery-composer { border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); padding: 18px 20px 14px; transition: border-color .15s; }
+.pd-discovery-composer { border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); padding: 12px 16px; transition: border-color .15s; }
 .pd-discovery-composer:focus-within { border-color: var(--pd-accent); }
-.pd-discovery-composer label { display: block; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
-.pd-discovery-composer textarea { display: block; box-sizing: border-box; width: 100%; min-height: 100px; max-height: 300px; resize: vertical; padding: 0; border: 0; border-radius: 0; box-shadow: none; outline: none; color: inherit; background: transparent; font: inherit; font-size: 15px; line-height: 1.85; }
+.pd-discovery-composer label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.pd-discovery-composer textarea { display: block; box-sizing: border-box; width: 100%; min-height: 52px; max-height: 220px; resize: vertical; padding: 0; border: 0; border-radius: 0; box-shadow: none; outline: none; color: inherit; background: transparent; font: inherit; font-size: 14px; line-height: 1.75; }
 .pd-discovery-composer textarea:focus { box-shadow: none; outline: none; }
 .pd-discovery-composer textarea::placeholder { color: var(--dsw-alias-label-secondary); opacity: .8; }
-.pd-discovery-composer-foot { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding-top: 12px; }
+.pd-discovery-composer-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 8px; }
 .pd-discovery-composer-foot > span { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .pd-discovery-composer-foot .pd-btn { flex-shrink: 0; }
 .pd-discovery-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
-.pd-discovery-privacy { margin-block: 12px 28px; font-size: 11px; color: var(--dsw-alias-label-secondary); line-height: 1.8; }
+.pd-discovery-privacy { margin-block: 8px 20px; font-size: 11px; color: var(--dsw-alias-label-secondary); line-height: 1.8; }
 .pd-discovery-start h3 { font-size: 14px; font-weight: 500; margin: 0 0 12px; }
 .pd-discovery-examples { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .pd-discovery-examples button { display: flex; justify-content: space-between; gap: 12px; padding: 16px; text-align: left; font: inherit; font-size: 13px; line-height: 1.8; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; cursor: pointer; }
@@ -40,6 +40,9 @@ export const discoveryCss = `
 .pd-discovery-eyebrow { color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .pd-discovery-result h3 { margin: 8px 0 0; font-size: 18px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pd-discovery-result > header > span { display: flex; align-items: center; gap: 6px; flex-shrink: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; padding-top: 4px; }
+.pd-discovery-original-query { margin-top: 10px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.pd-discovery-original-query summary { cursor: pointer; width: fit-content; padding: 4px 0; }
+.pd-discovery-original-query p { margin: 6px 0 16px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
 .pd-discovery-process { font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 16px 0 24px; }
 .pd-discovery-process summary { cursor: pointer; padding-block: 6px; }
 .pd-discovery-process ol { max-height: 180px; overflow: auto; line-height: 1.8; overflow-wrap: anywhere; }

@@ -4,7 +4,7 @@
 
 论文库直接保存在你选择的目录中：PDF、Markdown 笔记和 JSON 元数据都是普通文件，可以交给自己的网盘客户端同步。
 
-**当前版本：1.3.0** · [本版更新说明](docs/RELEASE-v1.3.0.md) · [安装与发布说明](docs/PUBLISHING.md)
+**当前版本：1.3.1** · [本版更新说明](docs/RELEASE-v1.3.1.md) · [安装与发布说明](docs/PUBLISHING.md)
 
 ## 功能概览
 
@@ -22,9 +22,17 @@
 | 对比与图谱 | 对比 2–6 篇论文，保存对比报告；管理引用、相关、方法、对比等论文关系。 |
 | 本地管理 | 阅读状态、评分、标签、BibTeX 导出、文件定位、冲突副本和中英文界面。 |
 
-论文复现截图来自 1.3.0 隔离合成库的真实模型生成，见 [截图记录](docs/screenshots/v1.3.0/manifest.json)。专题图来自 1.1.1；助读、导入及卡片等未修改页面保留 1.0 的版本标注和[截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。文献发现截图来自 1.2.0 的公开需求联网检索，见 [截图记录](docs/screenshots/v1.2.0/manifest.json)。演示内容不作为研究结论或实验成功的证明。
+当前复现初始页和检索标题截图来自 1.3.1，分别使用隔离合成论文和公开问题的真实联网结果，见 [截图记录](docs/screenshots/v1.3.1/manifest.json)。专题图来自 1.1.1；助读、导入及卡片等未修改页面保留 1.0 的版本标注和[截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。下方保留的 1.2.0 文献发现图展示该功能初版，见 [当时记录](docs/screenshots/v1.2.0/manifest.json)。演示内容不作为研究结论或实验成功的证明。
 
-![1.3.0 论文复现：独立实现说明、来源与正常对话](docs/screenshots/v1.3.0/reproduction.png)
+![1.3.1 论文复现：统一暖灰背景和精简的生成入口](docs/screenshots/v1.3.1/reproduction.png)
+
+## 1.3.1 的界面调整
+
+复现区与页面共用暖灰背景，输入框保留稍亮的底色与细边框。空状态去掉装饰图标、重复口号和介绍，只保留标题、简短说明、可选要求与生成按钮；内容和标题对齐并收紧上下留白。已读标签、菜单和列表圆点使用一致的灰绿色。
+
+文献发现输入区缩小，仍支持多行输入和手动拉高。新检索在同一次 Agent 任务中根据结果生成主题短标题，保存在左侧记录中；展开“查看原始问题”可读完整问题。旧记录优先使用已有解读的主题标题，其次采用已有结果的来源标题，无可用结果时保留问题摘要。不会为历史记录额外调用模型，也不会删除原始问题或结果。
+
+![1.3.1 文献发现：紧凑输入区与根据结果生成的检索标题](docs/screenshots/v1.3.1/discovery.png)
 
 ## 1.3.0 的论文复现
 
@@ -105,10 +113,10 @@ dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 
 ### 从 GitHub Release 安装
 
-从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.3.0。命令行维护的 profile 可安装：
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.3.1。命令行维护的 profile 可安装：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.3.0/dsh-paper-desk-1.3.0.tgz
+dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.3.1/dsh-paper-desk-1.3.1.tgz
 ```
 
 Release 同时提供安装包的 `SHA256SUMS` 校验文件；合成演示库位于源码的 `demo/library/`。

@@ -72,7 +72,7 @@ const readingCss = `
 .pd-topic-chat .pd-ai-assistant .pd-md { font-size: 15px; line-height: 1.85; }
 
 
-.pd-root { --pd-accent-fill: #637b69; --pd-accent-foreground: white; --pd-accent: color-mix(in srgb, #637b69 72%, var(--dsw-alias-label-primary)); font-size: 15px; line-height: 1.6; background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, #c8bca3); }
+.pd-root { --pd-accent-fill: #637b69; --pd-accent-foreground: white; --pd-accent: color-mix(in srgb, #637b69 72%, var(--dsw-alias-label-primary)); --pd-status-read: color-mix(in srgb, var(--pd-accent) 80%, var(--dsw-alias-label-secondary)); --pd-page-bg: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, #c8bca3); font-size: 15px; line-height: 1.6; background: var(--pd-page-bg); }
 .pd-topbar { min-height: 56px; padding: 8px 24px; gap: 20px; background: transparent; }
 .pd-brand-title { font-size: 23px; font-weight: 650; letter-spacing: -.04em; }
 .pd-brand-sub { display: none; }
@@ -573,8 +573,8 @@ export const CSS = `
   box-shadow: 0 0 0 2px color-mix(in srgb, ${BRAND} 20%, transparent);
 }
 .pd-dot[data-status="read"] {
-  background: ${OK};
-  box-shadow: 0 0 0 2px color-mix(in srgb, ${OK} 20%, transparent);
+  background: var(--pd-status-read, ${BRAND});
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pd-status-read, ${BRAND}) 20%, transparent);
 }
 .pd-dot[data-status="archived"] { background: ${FG_2}; opacity: 0.55; }
 .pd-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
@@ -965,9 +965,9 @@ export const CSS = `
   background: color-mix(in srgb, ${BRAND} 8%, transparent);
 }
 .pd-status-chip[data-status="read"] {
-  color: ${OK};
-  border-color: color-mix(in srgb, ${OK} 30%, transparent);
-  background: color-mix(in srgb, ${OK} 8%, transparent);
+  color: var(--pd-status-read, ${BRAND});
+  border-color: color-mix(in srgb, var(--pd-status-read, ${BRAND}) 30%, transparent);
+  background: color-mix(in srgb, var(--pd-status-read, ${BRAND}) 8%, transparent);
 }
 .pd-reader-row-meta .pd-tag { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-tabs-inline { flex: 0 0 auto; padding: 0; border-bottom: 0; gap: 0; overflow: visible; }
