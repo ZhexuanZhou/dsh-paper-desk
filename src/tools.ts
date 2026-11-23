@@ -6,6 +6,8 @@ import { topicDocumentContent, topicDocumentHash, listTopicRevisions, readTopicR
  * so a session never dies because of the paper library.
  */
 import { documentState, listRevisions, readRevision, restoreRevision } from './history.js'
+import { readReproduction, writeReproduction } from './reproduction.js'
+import { sha256 } from './util.js'
 import { stat } from 'node:fs/promises'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { annotationStats, readAnnotations } from './annotations.js'
@@ -781,6 +783,44 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
     render: (_args: unknown, value: unknown) => textResult(jsonText(value)),
   }
   add(defineTool({
+    name: 'paper_reproduction_read',
+    description: 'Read the independent implementation/reproduction guide for one paper before editing. Read all pages using nextOffset. Returns exact hash, libraryKey, requirements and original source metadata. This guide is NOT evidence of executed or successful experiments. Notes/cards are separate.',
+    parameters: { paperId: { type: 'string', required: true }, offset: { type: 'number' } },
+    output: editingOutput,
+    async execute(args, exec) {
+      exec.signal.throwIfAborted()
+      const invalid = badId(args.paperId); if (invalid) return invalid
+      const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+      try {
+        const next = await readReproduction(library.root, args.paperId)
+        const markdown = next.document?.markdown ?? ''
+        const offset = Math.max(0, Math.trunc(args.offset ?? 0)), end = Math.min(markdown.length, offset + 20000)
+        return { ok: true, paperId: args.paperId, exists: Boolean(next.document), hash: next.hash, libraryKey: next.libraryKey, stale: next.stale,
+          instructions: next.document?.instructions ?? '', source: next.document?.source ?? null,
+          markdown: markdown.slice(offset, end), nextOffset: end, totalLength: markdown.length, truncated: end < markdown.length, executionVerified: false }
+      } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+    },
+  }))
+  add(defineTool({
+    name: 'paper_reproduction_write',
+    description: 'Update the independent reproduction guide ONLY when the user asks to edit it. First read ALL of paper_reproduction_read, then pass its expectedHash and libraryKey. Replace the full Markdown, preserving unrelated material and citations unless asked otherwise. Prior version is saved automatically. Do not substitute notes/cards, fabricate experiment success, or execute training. A user-provided log is not verified execution evidence.',
+    parameters: {
+      paperId: { type: 'string', required: true }, expectedHash: { type: 'string', required: true }, libraryKey: { type: 'string', required: true },
+      markdown: { type: 'string', required: true }, instructions: { type: 'string', description: 'Change user requirements only if explicitly requested.' },
+      summary: { type: 'string', description: 'Short description of the actual change, at most 240 characters.' },
+    }, output: editingOutput,
+    async execute(args, exec) {
+      exec.signal.throwIfAborted()
+      const invalid = badId(args.paperId); if (invalid) return invalid
+      const library = libraryOrError(settings()); if (isToolFailure(library)) return library
+      if (args.libraryKey !== sha256(library.root)) return failure('library changed; read the requested guide in the current library before editing')
+      try {
+        const next = await writeReproduction(library.root, args.paperId, { markdown: args.markdown, expectedHash: args.expectedHash, instructions: args.instructions })
+        return { ok: true, paperId: args.paperId, document: 'reproduction', hash: next.hash, summary: args.summary?.trim().slice(0, 240) ?? '', executionVerified: false }
+      } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+    },
+  }))
+  add(defineTool({
     name: 'research_topic_read',
     description: 'Read the current research topic and hashes before editing. No document returns an overview and card index; notes/analysis are paginated with nextOffset. Follow all pages before rewriting. Cards belong to the topic and cite sourcePaperIds; pass cardId to read one full card.',
     parameters: {
@@ -911,7 +951,8 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         : action === 'read' ? 'Preview a prior version without changing anything. content=null means the document did not exist then.'
         : 'Restore the user-requested prior notes/card-collection version, with expectedHash from a fresh read. Saves the CURRENT version first so the restoration can itself be undone. Check the version belongs to the requested paper and document kind.',
       parameters: {
-        paperId: { type: 'string', required: true }, kind: { type: 'string', enum: ['notes', 'cards'], required: true },
+        paperId: { type: 'string', required: true }, kind: { type: 'string', enum: ['notes', 'cards', 'reproduction'], required: true },
+        libraryKey: { type: 'string', description: 'For reproduction restore, required from the latest paper_reproduction_read.' },
         ...(action !== 'list' ? { revisionId: { type: 'string' as const, required: true as const } } : {}),
         ...(action === 'restore' ? { expectedHash: { type: 'string' as const, required: true as const } } : {}),
       },
@@ -920,7 +961,8 @@ export function registerTools(tools: ToolRegistryLike, config: Config, autoTag?:
         exec.signal.throwIfAborted()
         const invalid = badId(args.paperId); if (invalid) return invalid
         const library = libraryOrError(settings()); if (isToolFailure(library)) return library
-        const kind = args.kind as 'notes' | 'cards'
+        const kind = args.kind as 'notes' | 'cards' | 'reproduction'
+        if (kind === 'reproduction' && action === 'restore' && args.libraryKey !== sha256(library.root)) return failure('library changed; read the guide before restoring')
         try {
           if (action === 'list') return { ok: true, currentHash: (await documentState(library.root, args.paperId, kind)).hash, versions: await listRevisions(library.root, args.paperId, kind) }
           if (action === 'read') return { ok: true, version: await readRevision(library.root, args.paperId, kind, args.revisionId!) }

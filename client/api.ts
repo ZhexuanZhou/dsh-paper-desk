@@ -1,4 +1,5 @@
 import type { ReportComment } from '../src/topicDiscussion.js'
+import type { ReproductionSnapshot } from '../src/types.js'
 /**
  * Typed client for the PaperDesk HTTP API (`/api/paper-desk/*`).
  * The only module in the browser half that performs fetch calls.
@@ -163,6 +164,16 @@ function query(params: Record<string, string | number | undefined>): string {
 }
 
 export const api = {
+  reproduction(id: string, libraryPath: string): Promise<ReproductionSnapshot> { return requestJson(`/reproduction${query({ id, libraryPath })}`) },
+  saveReproduction(id: string, libraryPath: string, body: { markdown: string; expectedHash: string; instructions?: string; generationSourceHash?: string }): Promise<ReproductionSnapshot> {
+    return requestJson(`/reproduction${query({ id, libraryPath })}`, { method: 'PUT', body: JSON.stringify(body) })
+  },
+  reproductionPrompt(id: string, libraryPath: string, body: { intent: 'generate' | 'discussion'; instructions?: string; question?: string; comments?: ReportComment[]; language: 'zh' | 'en' }): Promise<{ prompt: string; hash: string; sourceHash: string; instructions: string; excerptPages: number[]; textWarning: string | null }> {
+    return requestJson(`/reproduction/prompt${query({ id, libraryPath })}`, { method: 'POST', body: JSON.stringify(body) })
+  },
+  exportReproduction(id: string, libraryPath: string, expectedHash: string, language: 'zh' | 'en'): Promise<{ markdown: string; hash: string }> {
+    return requestJson(`/reproduction/export${query({ id, libraryPath, expectedHash, language })}`)
+  },
   research(): Promise<ResearchSnapshot> { return requestJson('/research') },
   saveTopic(topic: Omit<ResearchTopic, 'id' | 'updatedAt'> & { id?: string }, baseHash: string): Promise<ResearchSnapshot> {
     return requestJson('/research', { method: 'POST', body: JSON.stringify({ ...topic, baseHash }) })
@@ -261,14 +272,14 @@ export const api = {
     )
   },
 
-  history(id: string, kind: import('../src/types.js').DocumentKind): Promise<{ currentHash: string; versions: import('../src/types.js').RevisionSummary[] }> {
-    return requestJson(`/history${query({ id, kind })}`)
+  history(id: string, kind: import('../src/types.js').DocumentKind, libraryPath?: string): Promise<{ currentHash: string; versions: import('../src/types.js').RevisionSummary[] }> {
+    return requestJson(`/history${query({ id, kind, libraryPath })}`)
   },
-  historyVersion(id: string, kind: import('../src/types.js').DocumentKind, revisionId: string): Promise<import('../src/types.js').Revision> {
-    return requestJson(`/history/version${query({ id, kind, revisionId })}`)
+  historyVersion(id: string, kind: import('../src/types.js').DocumentKind, revisionId: string, libraryPath?: string): Promise<import('../src/types.js').Revision> {
+    return requestJson(`/history/version${query({ id, kind, revisionId, libraryPath })}`)
   },
-  restoreVersion(id: string, kind: import('../src/types.js').DocumentKind, revisionId: string, expectedHash: string): Promise<{ ok: boolean; hash: string; changed: boolean }> {
-    return requestJson(`/history/restore${query({ id, kind })}`, { method: 'POST', body: JSON.stringify({ revisionId, expectedHash }) })
+  restoreVersion(id: string, kind: import('../src/types.js').DocumentKind, revisionId: string, expectedHash: string, libraryPath?: string): Promise<{ ok: boolean; hash: string; changed: boolean }> {
+    return requestJson(`/history/restore${query({ id, kind, libraryPath })}`, { method: 'POST', body: JSON.stringify({ revisionId, expectedHash }) })
   },
 
   notes(id: string): Promise<NotesDocument> {

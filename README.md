@@ -4,7 +4,7 @@
 
 论文库直接保存在你选择的目录中：PDF、Markdown 笔记和 JSON 元数据都是普通文件，可以交给自己的网盘客户端同步。
 
-**当前版本：1.2.0** · [本版更新说明](docs/RELEASE-v1.2.0.md) · [安装与发布说明](docs/PUBLISHING.md)
+**当前版本：1.3.0** · [本版更新说明](docs/RELEASE-v1.3.0.md) · [安装与发布说明](docs/PUBLISHING.md)
 
 ## 功能概览
 
@@ -15,15 +15,28 @@
 | PDF 阅读 | 连续滚动、按阅读进度后台预加载、缩放、目录、全文查找、页内与外部链接、手型拖动和深色纸张。 |
 | 高亮与批注 | 选中文字后高亮、划线、备注或提问；批注按页整理，可编辑、删除或交给 AI 解答。 |
 | AI 助读 | 在阅读器旁流式问答，支持独立对话、自然语言任务、原页图片附件、引用页核对和回答批注；按要求记录笔记或卡片。 |
+| 论文复现 | 将方法映射为实现步骤，说明数据、环境、假设与验证条件；对话编辑并导出独立的 Agent 执行任务。 |
 | 笔记与卡片 | Markdown 整页阅读、分节目录、自动保存；回答可保存为独立卡片，再编辑或插入论文笔记。 |
 | 研究专题 | 创建后自动解读预设问题；右侧继续讨论、编辑专题笔记和卡片、更新解读，并保留可恢复版本。 |
 | 文献发现 | 用自然语言描述需求，Agent 联网查找并解释相关论文，展示可核对的来源；高级模式保留 arXiv、OpenAlex 和检索订阅。 |
 | 对比与图谱 | 对比 2–6 篇论文，保存对比报告；管理引用、相关、方法、对比等论文关系。 |
 | 本地管理 | 阅读状态、评分、标签、BibTeX 导出、文件定位、冲突副本和中英文界面。 |
 
-阅读头部截图来自 1.2.0 合成演示库，见 [截图记录](docs/screenshots/v1.2.0/manifest.json)。专题图来自 1.1.1；助读、导入及卡片等未修改页面保留 1.0 的版本标注和[截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。文献发现截图来自 1.2.0 的公开需求联网检索，见 [截图记录](docs/screenshots/v1.2.0/manifest.json)。AI 助读图包含真实只读模型回答；演示内容不作为研究结论。
+论文复现截图来自 1.3.0 隔离合成库的真实模型生成，见 [截图记录](docs/screenshots/v1.3.0/manifest.json)。专题图来自 1.1.1；助读、导入及卡片等未修改页面保留 1.0 的版本标注和[截图记录](docs/screenshots/v1.0.0/public-candidates-manifest.json)。文献发现截图来自 1.2.0 的公开需求联网检索，见 [截图记录](docs/screenshots/v1.2.0/manifest.json)。演示内容不作为研究结论或实验成功的证明。
 
-![1.2.0 论文阅读头部：标题旁的阅读状态与可展开标签](docs/screenshots/v1.2.0/reader-header.jpg)
+![1.3.0 论文复现：独立实现说明、来源与正常对话](docs/screenshots/v1.3.0/reproduction.png)
+
+## 1.3.0 的论文复现
+
+在论文阅读器打开 **论文复现**，补充一句实现目标或资源约束，再点击 **生成复现说明**。主区展示方法到代码、数据与环境、实现步骤、验收方法和待确认信息。目录、本次要求和来源按需展开，右侧使用正常对话继续解释、修改或核对外部运行记录。重新打开不重复生成。
+
+选中说明文字或公式后，点击 **添加评论**，编辑后带入右侧正常输入框发送。明确要求修改时，Agent 会更新原说明，并显示实际成功操作的回执。手动编辑自动保存；**版本历史**可以预览、恢复及撤销恢复。
+
+**复制给 Agent** 保留原始 Markdown、TeX 公式和代码，附带论文身份、来源、本次要求与执行交付标准。PDF正文中提供的相关链接附有页码，并标明未经联网核验。执行任务不依赖当前聊天、插件工具或本机目录；缺少论文访问地址时会明确要求提供 PDF。
+
+生成后显示“说明已生成”和“实验未验证”。公式、伪代码和建议阈值需要结合原文与测试复核。此版本不自动启动训练，也不把模型声称或用户回传的日志当成实际运行证明。数值检查需要考虑容差、零值与退化输入；合成数据跑通不能当成达到论文指标。外部执行后，可把记录带回右侧继续讨论。
+
+复现说明与笔记、卡片独立，保存在 `papers/<论文ID>/reproduction.json`；历史在 `.paperdesk/history/<论文ID>/reproduction/`。修改使用当前版本校验，冲突时保留草稿。生成过程中在本页切换功能，任务可以继续；刷新会保留已备份的未完成文本，但不会自动重启模型。浏览器草稿与正式保存的文档会分别提示，清除浏览器数据前请确认内容已保存。
 
 ## 1.2.0 的文献发现
 
@@ -92,10 +105,10 @@ dsh plugin --profile <profile> add /path/to/dsh-paper-desk
 
 ### 从 GitHub Release 安装
 
-从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.2.0。命令行维护的 profile 可安装：
+从 [最新 Release](https://github.com/ZhexuanZhou/dsh-paper-desk/releases/latest) 下载预构建安装包。当前 GitHub Release 为 1.3.0。命令行维护的 profile 可安装：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.2.0/dsh-paper-desk-1.2.0.tgz
+dsh plugin --profile <profile> add https://github.com/ZhexuanZhou/dsh-paper-desk/releases/download/v1.3.0/dsh-paper-desk-1.3.0.tgz
 ```
 
 Release 同时提供安装包的 `SHA256SUMS` 校验文件；合成演示库位于源码的 `demo/library/`。
@@ -263,7 +276,8 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 | `paper_notes_read` / `paper_note_append` | 读取笔记或追加内容。 |
 | `paper_notes_write` / `paper_notes_replace` | 重写笔记或替换指定段落，校验读取版本并保留历史。 |
 | `paper_card_create` / `paper_card_update` / `paper_cards_edit` | 新建、编辑卡片，或批量合并、拆分、删除和排序。 |
-| `paper_history_list` / `paper_history_read` / `paper_history_restore` | 列出、预览和恢复笔记或卡片历史。 |
+| `paper_history_list` / `paper_history_read` / `paper_history_restore` | 列出、预览和恢复笔记、卡片或复现说明的历史。 |
+| `paper_reproduction_read` / `paper_reproduction_write` | 分页读取或修改独立复现说明；写入校验文档版本与论文库身份。 |
 | `research_topic_read` / `research_topic_edit` / `research_topic_history` | 读取、编辑和恢复专题解读、笔记及卡片；写入需校验当前文档版本。 |
 | `paper_add` / `paper_update` | 导入本地 PDF，或修改元数据、标签、状态与评分。 |
 | `paper_sync` | 检查外部变更、网盘文件状态与冲突。 |
@@ -280,6 +294,7 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
     notes.md
     annotations.json
     cards.json
+    reproduction.json
     chats.json
     text.json
   comparisons/
@@ -298,6 +313,7 @@ Git tag 与 npm 发布是独立操作。从 npm 安装得到的是 registry 已�
 - 笔记等内容写入使用哈希检查及冲突副本；跨设备同时编辑同一文件仍应尽量避免。
 - 导入时的 LLM 补全会把标题、已有摘要/关键词/标签及前 4 页最多 7000 字符的节选发给配置的模型。已有非空字段保留；模型不可用或结果不足时显示警告，论文仍保存。
 - AI 助读会把相关文字、笔记及你明确附上的原页图片交给宿主配置的模型服务。请依据该服务的数据处理规则使用。
+- 论文复现会把论文元数据、本次要求及有长度限制的正文节选交给宿主模型；模型可通过现有论文工具补读。讨论还会携带你发送的问题、评论或运行记录。相关链接来自 PDF，未经联网核验的链接会明确标注。
 - Crossref 补全发送标题或 DOI。Agent 文献发现把研究需求交给配置的模型，并向 Harness 配置的搜索服务发送扩展查询；发现流程不读取本地论文全文。高级检索向所选 arXiv 或 OpenAlex 发送检索词。
 
 ## 设置与故障排查

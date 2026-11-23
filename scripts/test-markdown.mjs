@@ -43,6 +43,14 @@ try {
     ['raw HTML is text', '<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>'],
     ['unsafe links', '[bad](javascript:alert%281%29) ![bad](data:text/html;base64,AA==)'],
     ['old placeholder-looking prose is literal', 'PAPERDESKMATHFORMULA0 and PAPERDESKCODEBLOCK0 beside $x$.'],
+    ['table code with literal pipes', '| Metric | Definition | Source |\n|---|---|---|\n| error | `max_i |ŷ_i − y_i|` | proposed |\n| params | `max(|w−2|, |b−1|)` | proposed |'],
+    ['table math with absolute and norm bars', '| Value | Formula |\n|---|---|\n| abs | $|x|$ |\n| norm | $\\|x\\|$ |'],
+    ['table header and already escaped code pipes', '| `a|b` | B |\n|---|---|\n| `x\\|y` | $a>b$ |'],
+    ['nested table in a quote', '> | Name | Value |\n> |---|---|\n> | A | `x|y` |'],
+    ['table-looking fenced code is literal', '```markdown\n| A | B |\n|---|---|\n| code | `x|y` |\n```'],
+    ['table marker-looking prose is preserved', 'PAPERDESK_LITERAL_PIPE\n\n| A | B |\n|---|---|\n| code | `x|y` |'],
+    ['unescaped absolute values retain the complete original row', '| Test | Action | Pass |\n|---|---|---|\n| T4 | train | 最终 |w−2|≤1e-6、|b−1|≤1e-6、J≤1e-10 |'],
+    ['extra ordinary cells retain the complete original row', '| A | B |\n|---|---|\n| one | two | three | four |\n| valid | row |'],
   ]
   if (process.argv[2]) examples.push(['original reported answer', await readFile(process.argv[2], 'utf8')])
   for (const [label, markdown] of examples) {
@@ -88,5 +96,24 @@ try {
   check('unsafe links do not survive as destinations', /(?:href|src)="(?:javascript:|data:)/.test(render('[bad](javascript:alert%281%29) ![bad](data:text/html;base64,AA==)')), false)
   check('invalid TeX remains escaped readable text', /&lt;bad&gt;/.test(render('$\\unknown{<bad>}$')), true)
   check('literal placeholder-looking words are unchanged', render('PAPERDESKMATHFORMULA0 beside $x$').includes('PAPERDESKMATHFORMULA0'), true)
+  const pipeTable = render('| Metric | Definition | Source |\n|---|---|---|\n| error | `max_i |ŷ_i − y_i|` | proposed |\n| params | `max(|w−2|, |b−1|)` | proposed |')
+  check('literal code pipes do not manufacture extra table cells', (pipeTable.match(/<td\b/g) ?? []).length, 6)
+  check('the full reported error expression remains in one code cell', pipeTable.includes('<code>max_i |ŷ_i − y_i|</code>'), true)
+  check('multiple absolute values stay in the same code cell', pipeTable.includes('<code>max(|w−2|, |b−1|)</code>'), true)
+  const mathTable = render('| Value | Formula |\n|---|---|\n| abs | $|x|$ |\n| norm | $\\|x\\|$ |')
+  check('math bars preserve the exact original TeX annotation', mathTable.includes('encoding="application/x-tex">\\|x\\|</annotation>'), true)
+  check('math inside tables is typeset with stable column count', [(mathTable.match(/<math\b/g) ?? []).length, (mathTable.match(/<td\b/g) ?? []).length], [2, 4])
+  check('existing escaped GFM code pipes keep their established display', render('| A | B |\n|---|---|\n| `x\\|y` | c |').includes('<code>x|y</code>'), true)
+  check('pipes inside header code do not invalidate an otherwise valid table', (render('| `a|b` | B |\n|---|---|\n| c | d |').match(/<th\b/g) ?? []).length, 2)
+  check('nested quoted tables use the same literal-pipe rules', render('> | A | B |\n> |---|---|\n> | code | `x|y` |').includes('<code>x|y</code>'), true)
+  check('fenced examples are never reinterpreted as real tables', render('```md\n| A | B |\n|---|---|\n| code | `x|y` |\n```').includes('<table>'), false)
+  check('table protection never leaks markers or edits prose', render('PAPERDESK_LITERAL_PIPE\n\n| A | B |\n|---|---|\n| code | `x|y` |').includes('PAPERDESK_LITERAL_PIPE</p>'), true)
+  const overflowTable = render('| Test | Action | Pass |\n|---|---|---|\n| T4 | train | 最终 |w−2|≤1e-6、|b−1|≤1e-6、J≤1e-10 |\n| T5 | check | tolerance (1+|J_t|) |')
+  check('ambiguous table rows retain the entire original condition', overflowTable.includes('|w−2|≤1e-6、|b−1|≤1e-6、J≤1e-10'), true)
+  check('ambiguous rows are labelled as source rather than silently truncated', (overflowTable.match(/class="pd-md-table-overflow"/g) ?? []).length, 2)
+  check('fallback rows span only the declared columns', (overflowTable.match(/colspan="3"/g) ?? []).length, 2)
+  check('malformed row fallback does not expose raw HTML', /<script>/.test(render('| A | B |\n|---|---|\n| x | y | <script>bad</script> |')), false)
+  check('escaped delimiters do not trigger overflow fallback', render('| A | B |\n|---|---|\n| x\\|y | z |').includes('pd-md-table-overflow'), false)
+  check('nonterminal optional delimiters remain ordinary GFM rows', render('A | B\n---|---\nx | y').includes('pd-md-table-overflow'), false)
   console.log(`${checks} delivered Markdown checks passed`)
 } finally { await rm(root, { recursive: true, force: true }) }

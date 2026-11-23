@@ -42,6 +42,7 @@ import { importCss } from './importStyles.js'
 import { topicWorkspaceCss } from './topicWorkspaceStyles.js'
 import { readerHeaderCss } from './readerHeaderStyles.js'
 import { discoveryCss } from './discoveryStyles.js'
+import { reproductionCss } from './reproductionStyles.js'
 
 
 const readingCss = `
@@ -2200,6 +2201,8 @@ export const CSS = `
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
+.pd-md-table-overflow small { display: block; color: var(--dsw-alias-label-secondary); font-size: 11px; margin-bottom: 5px; }
+.pd-md-table-overflow div { overflow-wrap: anywhere; }
 .pd-md th, .pd-md td {
   min-width: 72px;
   padding: 4px 7px;
@@ -2276,7 +2279,7 @@ export const CSS = `
 }
 ` +
   relationsCss +
-  compareCss + readingCss + aiReadingCss + importCss + topicWorkspaceCss + readerHeaderCss + discoveryCss
+  compareCss + readingCss + aiReadingCss + importCss + topicWorkspaceCss + readerHeaderCss + discoveryCss + reproductionCss
 
 /** Value of the injected `<style data-plugin-css="...">` attribute. */
 export const STYLE_ATTR = 'paper-desk'

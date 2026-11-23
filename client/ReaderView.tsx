@@ -5,6 +5,9 @@
  * agent-assist bar. Presentational only — all data and API calls come from App.
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { ReproductionView } from './ReproductionView.js'
+import type { EditorNavigationControls } from './actionGuard.js'
 import { topDialog } from './dialogFocus.js'
 import type { CSSProperties } from 'react'
 import type {
@@ -64,7 +67,7 @@ type ToastPush = (kind: ToastKind, message: string) => void
 
 export type ReaderBusy = 'enrich' | 'bibtex' | 'reveal' | 'delete' | 'download'
 
-type ReaderTab = 'read' | 'text' | 'notes' | 'cards' | 'info'
+type ReaderTab = 'read' | 'text' | 'notes' | 'cards' | 'info' | 'reproduction'
 
 
 type DrawerTab = 'annotations' | 'ai'
@@ -141,7 +144,7 @@ interface CardEditorState {
   availableTurns?: readonly CardContextTurn[]
 }
 
-const READER_TABS: readonly ReaderTab[] = ['read', 'notes', 'cards', 'text', 'info']
+const READER_TABS: readonly ReaderTab[] = ['read', 'notes', 'cards', 'reproduction', 'text', 'info']
 const ASSIST_TASKS: readonly AssistTask[] = ['summary', 'method', 'critique', 'related']
 
 function tabLabel(t: (key: string) => string, tab: ReaderTab): string {
@@ -154,12 +157,16 @@ function tabLabel(t: (key: string) => string, tab: ReaderTab): string {
       return t('reader.tab.notes')
     case 'cards':
       return t('cards.title')
+    case 'reproduction':
+      return t('reader.tab.reproduction')
     default:
       return t('reader.tab.info')
   }
 }
 
 export interface ReaderViewProps {
+  ctx: ClientContext
+  reproductionSupported: boolean
   paperId: string | null
   detail: PaperDetail | null
   loading: boolean
@@ -177,6 +184,7 @@ export interface ReaderViewProps {
   onEnterNotebook: () => void
   onDirtyChange: (dirty: boolean) => void
   registerNotesSave: (save: (() => Promise<boolean>) | null) => void
+  registerEditorNavigation: (controls: EditorNavigationControls | null) => void
   onRestoreDocuments: () => Promise<void>
   onSaveNotes: (markdown: string, baseHash?: string) => Promise<NotesWriteResult>
   onReloadNotes: () => Promise<NotesDocument>
@@ -827,7 +835,7 @@ function ReaderViewImpl(props: ReaderViewProps) {
   const meta = detail.meta
 
   const activateTab = (next: ReaderTab): boolean => {
-    if (tab === 'notes' && next !== 'notes' && notesDirty) {
+    if ((tab === 'notes' || tab === 'reproduction') && next !== tab && notesDirty) {
       onToast('warn', t('research.saveFirst'))
       return false
     }
@@ -1460,6 +1468,10 @@ function ReaderViewImpl(props: ReaderViewProps) {
             />
           </div>
         ) : null}
+        {tab === 'reproduction' ? <div className="pd-tab-panel pd-reproduction-panel"><ReproductionView key={`${props.libraryPath}:${meta.id}`} ctx={props.ctx} paperId={meta.id} libraryPath={props.libraryPath}
+          supported={props.reproductionSupported} onDirtyChange={onDirtyChange} registerSave={registerNotesSave}
+          registerNavigation={props.registerEditorNavigation}
+          onActivity={() => { void props.onRestoreDocuments() }} onOpenSource={setSourcePage} onReadPaper={() => { activateTab('read') }} /></div> : null}
         {tab === 'cards' ? (
           <div className="pd-tab-panel pd-cards-workspace">
             <CardsPanel

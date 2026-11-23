@@ -9,9 +9,9 @@ export function clampTopicWidth(value: number, side: TopicSide, available: numbe
   const range = topicWidthRange(side, available, otherWidth)
   return Math.min(range.max, Math.max(range.min, value))
 }
-export function readTopicLayout(store: Pick<Storage, 'getItem'> | null): TopicLayoutSettings {
+export function readTopicLayout(store: Pick<Storage, 'getItem'> | null, key = 'paperdesk:topic-layout'): TopicLayoutSettings {
   try {
-    const data = JSON.parse(store?.getItem('paperdesk:topic-layout') ?? 'null')
+    const data = JSON.parse(store?.getItem(key) ?? 'null')
     if (data && Number.isFinite(data.listWidth) && Number.isFinite(data.chatWidth)) return {
       listWidth: Math.min(340, Math.max(180, data.listWidth)), chatWidth: Math.min(640, Math.max(300, data.chatWidth)),
       listClosed: data.listClosed === true, chatClosed: data.chatClosed === true,

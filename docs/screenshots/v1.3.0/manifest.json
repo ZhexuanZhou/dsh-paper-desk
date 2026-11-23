@@ -1,0 +1,17 @@
+{
+  "version": "1.3.0",
+  "captured": "2026-11-23",
+  "privacyReviewed": true,
+  "images": [
+    {
+      "path": "docs/screenshots/v1.3.0/reproduction.png",
+      "sha256": "e71ee3abe777b6992fd7e2da293d473eae1da73aef78de72b29a0fdf5c365aa7",
+      "sourceCapture": ".acceptances/paper-reproduction-1.3.0/assets/final3-public-original.png",
+      "sourceCaptureSha256": "0870c78fde98c0ed46bf3e493fdee27a9f27211a0fc63b43dd68499f1f124f7f",
+      "size": "1421x913",
+      "description": "最终1.3.0论文复现：合成论文的真实模型说明、实验未验证状态、来源与正常讨论区。生成内容仍须结合原文和测试复核。",
+      "crop": "原图1701x913，裁去左侧280px宿主账户侧栏。裁剪由验收执行者亲检，无账户、个人路径、测试草稿标记或错误；保留合成演示属性。",
+      "sourceClientSha256": "4c4b29ef69385493eb6ec5cfd6d2bd368e2d04124b3c186992b6ec946ddd29a0"
+    }
+  ]
+}

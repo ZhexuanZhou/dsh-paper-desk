@@ -15,12 +15,12 @@ const check = (label, actual, expected) => { assert.equal(actual, expected, labe
 try {
   const file = path.join(root, 'messages.mjs')
   await build({
-    entryPoints: ['client/ConversationMessages.tsx'], bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', outfile: file,
+    stdin: { contents: "export * from './client/ConversationMessages.tsx'; export { TopicCommentComposer } from './client/TopicComments.tsx'", resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', outfile: file,
     plugins: [{ name: 'shared-react', setup(builder) {
       builder.onResolve({ filter: /^react(?:\/.*)?$/ }, ({ path: specifier }) => ({ path: require.resolve(specifier), external: true }))
     } }],
   })
-  const { UserQuestion, AssistantAnswer } = await import(pathToFileURL(file))
+  const { UserQuestion, AssistantAnswer, TopicCommentComposer } = await import(pathToFileURL(file))
   const question = (text) => renderToStaticMarkup(createElement(UserQuestion, { text, label: '你', expand: '展开完整问题', collapse: '收起问题' }))
   const short = question('我是说新建一个卡片，保存这些内容')
   check('short question exposes the user role without a repeated heading', short.includes('aria-label="你"') && !short.includes('>你</span>'), true)
@@ -38,5 +38,14 @@ try {
   check('streaming indicator remains available', answer.includes('pd-ai-caret'), true)
   const body = answer.slice(answer.indexOf('class="pd-ai-assistant"'))
   check('role header stays outside selectable answer content', body.includes('AI 助读'), false)
+  const formula = '\\frac{a}{b}'
+  const comment = { id: 'formula', quote: `$${formula}$`, formulas: [formula], section: '', comment: 'Check', version: 'current' }
+  const commentView = (draft) => renderToStaticMarkup(createElement(TopicCommentComposer, { draft, version: 'current', busy: false, onChange: () => {} }))
+  const editor = commentView({ message: '', comments: [], editor: comment })
+  check('comment editor displays complete TeX once', editor.split(formula).length - 1, 1)
+  check('queued comment does not repeat TeX already in the quotation', commentView({ message: '', comments: [comment], editor: null }).includes('<pre>'), false)
+  const legacy = { ...comment, quote: 'ab' }
+  check('legacy flattened formula comments retain the original TeX fallback', commentView({ message: '', comments: [], editor: legacy }).includes(`<pre>${formula}</pre>`), true)
+  check('queued legacy comments retain their formula fallback', commentView({ message: '', comments: [legacy], editor: null }).includes(`<pre>${formula}</pre>`), true)
   console.log(`${checks} AI message checks passed`)
 } finally { await rm(root, { recursive: true, force: true }) }

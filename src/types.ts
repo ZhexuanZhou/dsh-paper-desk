@@ -288,7 +288,7 @@ export interface EffectiveSettings {
 
 /** Status payload of `/api/paper-desk/status`. */
 export interface StatusPayload {
-  features?: { metadataUndo?: boolean; topicAnalysis?: boolean; topicDiscussion?: boolean }
+  features?: { metadataUndo?: boolean; topicAnalysis?: boolean; topicDiscussion?: boolean; reproduction?: boolean }
   ok: boolean
   plugin: string
   version: string
@@ -582,7 +582,7 @@ export interface DiscoveryResult {
   cacheHit: boolean
 }
 
-export type DocumentKind = 'notes' | 'cards'
+export type DocumentKind = 'notes' | 'cards' | 'reproduction'
 export interface RevisionSummary {
   id: string
   paperId: string
@@ -596,3 +596,33 @@ export interface Revision extends RevisionSummary { content: string | null }
 export interface DocumentState { content: string | null; hash: string; activity?: ReadingActivity }
 
 export interface MetadataUndo { revisionId: string | null; expectedHash: string; action: 'undo' | 'redo'; fields: string[] }
+
+/** One independently versioned implementation guide; never an execution verdict. */
+export interface ReproductionSource {
+  title: string
+  authors: string[]
+  year: number | null
+  doi: string
+  links: string[]
+  pdfSha256: string | null
+  pageCount: number | null
+}
+export interface ReproductionDocument {
+  schemaVersion: 1
+  instructions: string
+  markdown: string
+  source: ReproductionSource
+  sourceHash: string
+  generatedAt: string | null
+  updatedAt: string
+}
+export interface ReproductionSnapshot {
+  document: ReproductionDocument | null
+  hash: string
+  sourceHash: string
+  stale: boolean
+  libraryKey: string
+  references: ReproductionReference[]
+  activity?: ReadingActivity
+}
+export interface ReproductionReference { url: string; page: number }

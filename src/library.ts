@@ -703,12 +703,15 @@ async function editMeta(root: string, paperId: string, edit: (meta: PaperMeta) =
   const key = `${path.resolve(root)}:${paperId}`
   const previous = metadataWrites.get(key) ?? Promise.resolve()
   const task = previous.catch(() => {}).then(async () => {
+    // Coercing legacy metadata fills absent timestamps with the current time.
+    // Compare persisted bytes, not two independently synthesized projections.
+    const baseline = await sha256File(safeJoin(root, metaRel(paperId)))
     const current = await readMeta(root, paperId)
     if (current === null) throw new Error(`paper not found: ${paperId}`)
     const next = { ...current, authors: [...current.authors], keywords: [...current.keywords], tags: [...current.tags] }
     if (await edit(next) === false || JSON.stringify(next) === JSON.stringify(current)) return current
     await snapshotMetadata(root, current, next, action)
-    if (JSON.stringify(await readMeta(root, paperId)) !== JSON.stringify(current)) throw new MetadataConflict('元数据在保存期间变化，未覆盖其他修改。')
+    if (await sha256File(safeJoin(root, metaRel(paperId))) !== baseline) throw new MetadataConflict('元数据在保存期间变化，未覆盖其他修改。')
     next.updatedAt = nowIso()
     await writeMeta(root, next)
     return next

@@ -7,6 +7,7 @@
  */
 import { useMemo } from 'react'
 import { mathExtensions } from './markdownMath.js'
+import { literalTableSupport } from './markdownTables.js'
 import { Marked } from 'marked'
 import type { RendererObject } from 'marked'
 
@@ -131,8 +132,10 @@ export function noteOutline(markdown: string): { label: string; offset: number }
 /** Render markdown to a safe HTML string (never throws). */
 export function renderMarkdown(markdown: string): string {
   try {
-    const html = marked.parse(markdown)
-    return typeof html === 'string' ? html : escapeHtml(markdown)
+    const tables = literalTableSupport(markdown)
+    const parser = new Marked({ gfm: true, breaks: true, renderer: { ...renderer, ...tables.renderer }, extensions: tables.extensions, tokenizer: tables.tokenizer })
+    const html = parser.parse(markdown)
+    return typeof html === 'string' ? tables.restore(html) : escapeHtml(markdown)
   } catch {
     return `<p>${escapeHtml(markdown)}</p>`
   }

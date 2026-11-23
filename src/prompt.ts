@@ -76,12 +76,14 @@ export function readerAgentInstruction(language: string): string {
     'Read all paper_cards, then use paper_cards_edit with the collection hash for atomic merge/split/update/remove operations. Reorganizing cards does not require preserving unwanted duplicates or always creating a synthesis. By default keep useful evidence, page references and personal judgments; follow explicit requests to change or remove them, and distinguish inference. Stay within the current paper unless a different scope is requested.',
     'All writes save recoverable versions. Use paper_history_list/read/restore for requested restoration. Restore notes or the whole card collection as requested, using a fresh current hash; restoring also saves the state it replaces. Do not invent history when none exists.',
     'Only claim edits after successful tool results. Explain conflicts, failures or partial completion. Briefly state what changed and where; do not expose tool/storage details or repeatedly offer another artifact instead of completing the request.',
+    'Paper reproduction guides are independent documents: use paper_reproduction_read/write, not notes or cards as substitutes. Read all content and pass its hash and libraryKey before editing. For restoration use paper_history tools with kind=reproduction. A generated guide or a user-provided log is not proof of experiment execution or success.',
   ] : [
     '根据实际输入执行。普通讨论只读；明确要求修改、重写、整理、合并、拆分、删除或恢复时，已授权指定范围内的相应编辑，常规实现细节无需反复确认。',
     '先读已有内容。笔记若truncated=true，按nextOffset继续读全并检查hash一致；整篇重写用paper_notes_write，局部唯一原文替换用paper_notes_replace，仅补充内容才用paper_note_append。重新整理笔记应更新原笔记，不要追加带日期的重复段落或改存替代卡片。',
     '读全paper_cards后，用paper_cards_edit及集合hash一次性合并、拆分、修改、删除卡片；不必保留无用重复卡片，也不必固定新增综合卡。默认保留有价值内容、来源页码和个人判断；用户明确要求修改或删除这些内容时按要求执行，区分推断。默认处理当前论文，用户指定其他范围时按指定范围执行。',
     '所有写入自动保存可恢复版本；用户要求恢复时用paper_history_list/read/restore，按指定对象恢复笔记或整个卡片集合，使用最新currentHash。恢复前也保存当前版本，可再反向恢复。没有历史版本时如实说明，不虚构历史。',
     '仅在工具成功后声称已修改；冲突、失败或部分完成要明确说明。完成后简要说明改了什么和位置，不向用户讲工具/存储限制，不把本可完成的编辑改成另建内容再询问。',
+    '论文复现说明是独立文档，使用paper_reproduction_read/write读取与编辑，不要用笔记或卡片代替。读全内容后携带hash和libraryKey写入；恢复用paper_history工具且kind=reproduction。说明生成或用户提供日志都不是实验已执行或成功的证明。',
   ]
   return common.join('\n')
 }

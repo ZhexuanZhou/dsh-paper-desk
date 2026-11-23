@@ -5,17 +5,18 @@ import type { TopicLayoutSettings, TopicSide } from './topicLayout.js'
 import { browserDraftStore } from './topicDraft.js'
 import { useT } from './i18n.js'
 
-export function useTopicPanels(hasChat: boolean) {
+export function useTopicPanels(hasChat: boolean, options: { withList?: boolean; storageKey?: string } = {}) {
+  const storageKey = options.storageKey ?? 'paperdesk:topic-layout'
   const rootRef = useRef<HTMLElement>(null)
   const [rootElement, setRootElement] = useState<HTMLElement | null>(null)
   const attachRoot = useCallback((node: HTMLElement | null) => { rootRef.current = node; setRootElement(node) }, [])
-  const [settings, setSettings] = useState(() => readTopicLayout(browserDraftStore()))
+  const [settings, setSettings] = useState(() => readTopicLayout(browserDraftStore(), storageKey))
   const current = useRef(settings); current.current = settings
   const [available, setAvailable] = useState(1400)
   const [overlay, setOverlay] = useState<TopicSide | null>(null)
   const cleanupDrag = useRef<(() => void) | null>(null)
   const compact = available < 1080
-  const listOpen = compact ? overlay === 'list' : !settings.listClosed
+  const listOpen = options.withList !== false && (compact ? overlay === 'list' : !settings.listClosed)
   const chatOpen = hasChat && (compact ? overlay === 'chat' : !settings.chatClosed)
   useEffect(() => {
     const node = rootElement
@@ -27,7 +28,7 @@ export function useTopicPanels(hasChat: boolean) {
   useEffect(() => { setOverlay(null) }, [compact])
   const persist = (next: TopicLayoutSettings) => {
     setSettings(next)
-    try { browserDraftStore()?.setItem('paperdesk:topic-layout', JSON.stringify(next)) } catch { /* Width memory is optional. */ }
+    try { browserDraftStore()?.setItem(storageKey, JSON.stringify(next)) } catch { /* Width memory is optional. */ }
   }
   const otherWidth = (side: TopicSide) => side === 'list' ? chatOpen ? settings.chatWidth : 0 : listOpen ? settings.listWidth : 0
   const width = (side: TopicSide) => clampTopicWidth(side === 'list' ? settings.listWidth : settings.chatWidth, side, available, otherWidth(side))

@@ -39,6 +39,19 @@ function renderMath(text: string, raw: string, display: boolean, block: boolean)
   } catch { return escapeHtml(raw) }
 }
 
+/** Shared scanner lets table parsing preserve exactly the same math boundaries. */
+export function inlineMathToken(source: string): { type: string; raw: string; text: string; display: boolean } | undefined {
+  const open = source.startsWith('\\(') ? '\\(' : source.startsWith('$$') ? '$$' : source.startsWith('$') ? '$' : null
+  if (open === null) return
+  const close = open === '\\(' ? '\\)' : open
+  const end = closingDelimiter(source, close, open.length)
+  if (end < 0) return
+  const text = source.slice(open.length, end)
+  if (!text.trim() || text.length > 1_000 || text.includes('\n')) return
+  if (open === '$' && (!dollarMath(text) || /\d/.test(source[end + 1] ?? ''))) return
+  return { type: 'pdMathInline', raw: source.slice(0, end + close.length), text, display: open === '$$' }
+}
+
 /** Let Marked protect code, links, lists and fences before tokenizing formulas. */
 export const mathExtensions: TokenizerAndRendererExtension[] = [
   {
@@ -60,17 +73,7 @@ export const mathExtensions: TokenizerAndRendererExtension[] = [
   {
     name: 'pdMathInline', level: 'inline',
     start(source) { return source.search(/\$|\\\(/) },
-    tokenizer(source) {
-      const open = source.startsWith('\\(') ? '\\(' : source.startsWith('$$') ? '$$' : source.startsWith('$') ? '$' : null
-      if (open === null) return
-      const close = open === '\\(' ? '\\)' : open
-      const end = closingDelimiter(source, close, open.length)
-      if (end < 0) return
-      const text = source.slice(open.length, end)
-      if (!text.trim() || text.length > 1_000 || text.includes('\n')) return
-      if (open === '$' && (!dollarMath(text) || /\d/.test(source[end + 1] ?? ''))) return
-      return { type: 'pdMathInline', raw: source.slice(0, end + close.length), text, display: open === '$$' }
-    },
+    tokenizer(source) { return inlineMathToken(source) },
     renderer(token) { return renderMath(String(token.text), token.raw, token.display === true, false) },
   },
 ]

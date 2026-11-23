@@ -40,6 +40,7 @@ export interface AiRow {
   streaming?: boolean
   /** Confirmed topic writes, preserved separately from conversational text. */
   mutation?: TopicMutation
+  reproductionMutation?: { paperId: string; hash: string; summary?: string }
   /** Actual successful Host web_search metadata, never parsed from model prose. */
   webSources?: WebSource[]
   webSearch?: boolean
@@ -170,6 +171,8 @@ const LEGACY_CACHE_PREFIX = 'paperdesk:ai-session:'
 
 /** Friendly zh labels for the tools the PaperDesk agent can call. */
 const TOOL_LABELS: Readonly<Record<string, string>> = {
+  paper_reproduction_read: '读取复现说明',
+  paper_reproduction_write: '更新复现说明',
   research_topic_read: '读取专题内容',
   research_topic_edit: '更新专题内容',
   research_topic_history: '查看或恢复专题版本',
@@ -387,6 +390,7 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
   const callRows = new Map<string, number>()
   const webCalls = new Set<string>()
   const topicCalls = new Map<string, { topicId: string; document: TopicMutation['document'] }>()
+  const reproductionCalls = new Map<string, string>()
   /** Turns that already rendered a failure row (attempt error == turn/end error). */
   const errorTurns = new Set<number>()
   let counter = 0
@@ -513,6 +517,12 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
           const name = typeof data.name === 'string' && data.name !== '' ? data.name : 'tool'
           const callId = typeof data.callId === 'string' && data.callId !== '' ? data.callId : undefined
           if (callId && name === 'web_search') webCalls.add(callId)
+          if (callId && (name === 'paper_reproduction_write' || name === 'paper_history_restore')) {
+            try {
+              const args = asRecord(typeof data.arguments === 'string' ? JSON.parse(data.arguments) : data.arguments)
+              if (args && typeof args.paperId === 'string' && (name === 'paper_reproduction_write' || args.kind === 'reproduction')) reproductionCalls.set(callId, args.paperId)
+            } catch { /* Incomplete arguments are not writes. */ }
+          }
           if (callId && (name === 'research_topic_edit' || name === 'research_topic_history')) {
             try {
               const args = asRecord(typeof data.arguments === 'string' ? JSON.parse(data.arguments) : data.arguments)
@@ -545,6 +555,15 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
               if (row !== undefined && row.kind === 'tool') {
                 let mutation: TopicMutation | undefined
                 let logicalFailure: string | undefined
+                let reproductionMutation: AiRow['reproductionMutation']
+                const reproductionId = reproductionCalls.get(callId)
+                if (!failed && reproductionId) {
+                  try {
+                    const result = asRecord(JSON.parse(toolResultText(message)))
+                    if (result?.ok === true && typeof result.hash === 'string' && /^[a-f0-9]{64}$/.test(result.hash)) reproductionMutation = { paperId: reproductionId, hash: result.hash, ...(typeof result.summary === 'string' ? { summary: result.summary.slice(0, 240) } : {}) }
+                    if (result?.ok === false) logicalFailure = typeof result.error === 'string' ? result.error : 'Reproduction edit failed.'
+                  } catch { /* A model claim or unknown result cannot create a receipt. */ }
+                }
                 const target = topicCalls.get(callId)
                 if (!failed && target) {
                   try {
@@ -554,11 +573,13 @@ export function reduceTranscript(entries: readonly unknown[], paperId: string): 
                   } catch { /* Unknown results stay as ordinary tool rows. */ }
                 }
                 rows[index] = { ...row, running: false, ...(mutation ? { mutation } : {}),
+                  ...(reproductionMutation ? { reproductionMutation } : {}),
                   ...(!failed && webCalls.has(callId) ? { webSearch: true, webSources: parseWebSources(data.meta) } : {}) }
                 if (logicalFailure) pushRow('error', truncate(logicalFailure, 600), seq)
               }
               callRows.delete(callId)
               topicCalls.delete(callId)
+              reproductionCalls.delete(callId)
               webCalls.delete(callId)
             } else if (failed) {
               // Result without a visible call row: keep the failure discoverable.

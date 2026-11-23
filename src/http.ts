@@ -4,6 +4,8 @@
  * configured library root by the modules below; ids are validated here.
  */
 import { metadataUndoState } from './metadataHistory.js'
+import { readReproduction, writeReproduction, reproductionPrompt } from './reproduction.js'
+import { reproductionExport } from './reproductionContract.js'
 import { readTopic, editTopicDocument, restoreTopicDocument } from './topicDocuments.js'
 import { listTopicRevisions, readTopicRevision, topicDocumentHash, type TopicDocumentKind } from './topicHistory.js'
 import { documentState, listRevisions, readRevision, restoreRevision } from './history.js'
@@ -250,7 +252,7 @@ async function buildStatus(config: Config): Promise<StatusPayload> {
   return {
     ok: true,
     plugin: 'dsh-paper-desk',
-    features: { metadataUndo: true, topicAnalysis: true, topicDiscussion: true },
+    features: { metadataUndo: true, topicAnalysis: true, topicDiscussion: true, reproduction: true },
     version: pkg?.version ?? '0.0.0',
     configured: settings.libraryPath.length > 0 && libraryExists,
     libraryExists,
@@ -685,10 +687,36 @@ async function handle(
       return methodNotAllowed(res)
     }
 
+    if (route === 'reproduction' || route === 'reproduction/prompt' || route === 'reproduction/export') {
+      const id = requirePdfId(q['id'] ?? null)
+      if (!q['libraryPath'] || path.resolve(q['libraryPath']) !== path.resolve(root)) throw new HttpError(409, '论文库已切换，请重新加载复现说明。')
+      if (route === 'reproduction' && method === 'GET') return json(res, 200, await readReproduction(root, id))
+      if (route === 'reproduction' && method === 'PUT') {
+        const body = await readJsonBody(req)
+        if (typeof body.markdown !== 'string' || typeof body.expectedHash !== 'string' ||
+          (body.instructions !== undefined && typeof body.instructions !== 'string') || (body.generationSourceHash !== undefined && typeof body.generationSourceHash !== 'string')) throw new HttpError(400, '复现说明参数不正确。')
+        return json(res, 200, await writeReproduction(root, id, { markdown: body.markdown, expectedHash: body.expectedHash, instructions: body.instructions as string | undefined, generationSourceHash: body.generationSourceHash as string | undefined }))
+      }
+      if (route === 'reproduction/prompt' && method === 'POST') {
+        const body = await readJsonBody(req)
+        if (!['generate', 'discussion'].includes(String(body.intent)) || (body.instructions !== undefined && typeof body.instructions !== 'string') || (body.question !== undefined && typeof body.question !== 'string')) throw new HttpError(400, '复现任务参数不正确。')
+        return json(res, 200, await reproductionPrompt(root, id, { intent: body.intent as 'generate' | 'discussion', instructions: body.instructions as string | undefined, question: body.question as string | undefined, comments: body.comments, language: body.language === 'en' ? 'en' : 'zh' }))
+      }
+      if (route === 'reproduction/export' && method === 'GET') {
+        const next = await readReproduction(root, id)
+        if (!next.document) throw new HttpError(404, '尚未生成复现说明。')
+        if (q['expectedHash'] !== next.hash) throw new HttpError(409, '复现说明已变化，请重新加载后再复制。')
+        if (next.stale) throw new HttpError(409, '论文来源已变化，请先核对并更新复现说明，再复制执行任务。')
+        return json(res, 200, { markdown: reproductionExport(next.document, q['language'] === 'en' ? 'en' : 'zh', next.references), hash: next.hash })
+      }
+      return methodNotAllowed(res)
+    }
+
     if (route === 'history' || route === 'history/version' || route === 'history/restore') {
       const id = requirePdfId(q['id'] ?? null)
       const kind = q['kind']
-      if (kind !== 'notes' && kind !== 'cards') throw new HttpError(400, 'invalid document kind')
+      if (kind !== 'notes' && kind !== 'cards' && kind !== 'reproduction') throw new HttpError(400, 'invalid document kind')
+      if (kind === 'reproduction' && (!q['libraryPath'] || path.resolve(q['libraryPath']) !== path.resolve(root))) throw new HttpError(409, '论文库已切换，请重新加载。')
       if (route === 'history' && method === 'GET') {
         const current = await documentState(root, id, kind)
         json(res, 200, { currentHash: current.hash, versions: await listRevisions(root, id, kind) }); return

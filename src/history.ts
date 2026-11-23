@@ -3,6 +3,7 @@ import { recordReadingActivity } from './library.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { atomicWrite, safeJoin, sha256 } from './util.js'
+import { parseReproduction } from './reproductionContract.js'
 
 import type { DocumentKind, Revision, RevisionSummary, DocumentState } from './types.js'
 export type { DocumentKind, Revision, RevisionSummary, DocumentState } from './types.js'
@@ -12,11 +13,11 @@ const pending = new Map<string, Promise<unknown>>()
 
 function validate(paperId: string, kind: DocumentKind): void {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(paperId)) throw new Error('invalid paper id')
-  if (kind !== 'notes' && kind !== 'cards') throw new Error('invalid document kind')
+  if (!['notes', 'cards', 'reproduction'].includes(kind)) throw new Error('invalid document kind')
 }
 function documentPath(root: string, paperId: string, kind: DocumentKind): string {
   validate(paperId, kind)
-  return safeJoin(root, `papers/${paperId}/${kind === 'notes' ? 'notes.md' : 'cards.json'}`)
+  return safeJoin(root, `papers/${paperId}/${kind === 'notes' ? 'notes.md' : kind === 'cards' ? 'cards.json' : 'reproduction.json'}`)
 }
 function historyPath(root: string, paperId: string, kind: DocumentKind): string {
   validate(paperId, kind)
@@ -61,6 +62,9 @@ export async function editDocument(
     if (next === null) await unlink(file).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
     else await atomicWrite(file, next)
     let meaningful = kind === 'notes' && Boolean(next?.trim())
+    if (kind === 'reproduction' && next !== null) {
+      try { meaningful = Boolean(JSON.parse(next).markdown?.trim()) } catch { /* Invalid snapshots remain inspectable. */ }
+    }
     if (kind === 'cards' && next !== null) {
       try { meaningful = Array.isArray(JSON.parse(next).items) && JSON.parse(next).items.length > 0 } catch { /* Preserve legacy restore behavior. */ }
     }
@@ -100,6 +104,7 @@ export async function listRevisions(root: string, paperId: string, kind: Documen
 export async function restoreRevision(root: string, paperId: string, kind: DocumentKind, id: string, expectedHash: string): Promise<DocumentState & { changed: boolean }> {
   if (typeof expectedHash !== 'string') throw new Error('expectedHash is required')
   const revision = await readRevision(root, paperId, kind, id)
+  if (kind === 'reproduction') parseReproduction(revision.content)
   let changed = false
   const result = await editDocument(root, paperId, kind, (current) => { changed = current.content !== revision.content; return revision.content }, { expectedHash, reason: `restore ${id}` })
   return { ...result, changed }

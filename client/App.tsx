@@ -47,6 +47,7 @@ import { ResearchView } from './ResearchView.js'
 import { DiscoverView } from './DiscoverView.js'
 import { ImportDialog } from './ImportDialog.js'
 import { createActionGuard } from './actionGuard.js'
+import type { EditorNavigationControls } from './actionGuard.js'
 import { allLinkImportsResolved, parseImportLinks, runLinkImports } from './linkImports.js'
 import type { LinkImportItem } from './linkImports.js'
 import { createAiThread } from './aiSession.js'
@@ -329,9 +330,11 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const [notesDirty, setNotesDirty] = useState(false)
   const notesDirtyRef = useRef(notesDirty)
   notesDirtyRef.current = notesDirty
-  const [guardSaving, setGuardSaving] = useState(false)
+  const [guardAction, setGuardAction] = useState<'save' | 'discard' | null>(null)
+  const guardSaving = guardAction !== null
   const [unsavedPrompt, setUnsavedPrompt] = useState<{ run: () => void } | null>(null)
   const saveNotesRef = useRef<(() => Promise<boolean>) | null>(null)
+  const editorNavigationRef = useRef<EditorNavigationControls | null>(null)
 
   /* imports */
   const [importing, setImporting] = useState(false)
@@ -734,7 +737,10 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
 
   const requestAction = useMemo(() => createActionGuard(
     () => notesDirtyRef.current,
-    (run) => setUnsavedPrompt({ run }),
+    (run) => {
+      if (editorNavigationRef.current && !editorNavigationRef.current.pause()) { setNotesDirty(false); run(); return }
+      setUnsavedPrompt({ run })
+    },
   ), [])
 
   const selectPaper = useCallback(
@@ -781,25 +787,30 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const saveAndContinue = useCallback(async () => {
     const prompt = unsavedPrompt
     if (prompt === null) return
-    setGuardSaving(true)
+    setGuardAction('save')
     try {
       const save = saveNotesRef.current
       const ok = save === null ? true : await save()
       if (ok) {
+        editorNavigationRef.current?.resume()
         setNotesDirty(false)
         setUnsavedPrompt(null)
         prompt.run()
       }
     } finally {
-      setGuardSaving(false)
+      setGuardAction(null)
     }
   }, [unsavedPrompt])
 
-  const discardAndContinue = useCallback(() => {
+  const discardAndContinue = useCallback(async () => {
     const prompt = unsavedPrompt
-    setUnsavedPrompt(null)
-    setNotesDirty(false)
-    if (prompt !== null) prompt.run()
+    if (!prompt) return
+    setGuardAction('discard')
+    try {
+      const ok = editorNavigationRef.current ? await editorNavigationRef.current.discard() : true
+      if (!ok) { editorNavigationRef.current?.resume(); setUnsavedPrompt(null); return }
+      setUnsavedPrompt(null); setNotesDirty(false); prompt.run()
+    } finally { setGuardAction(null) }
   }, [unsavedPrompt])
 
   useEffect(() => {
@@ -1966,6 +1977,7 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
   const registerNotesSave = useCallback((save: (() => Promise<boolean>) | null) => {
     saveNotesRef.current = save
   }, [])
+  const registerEditorNavigation = useCallback((controls: EditorNavigationControls | null) => { editorNavigationRef.current = controls }, [])
 
   const setLanguage = useCallback(
     async (next: Lang): Promise<void> => {
@@ -2337,6 +2349,8 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onRelations={openRelationsOverlay}
             />
             <ReaderView
+              ctx={ctx}
+              reproductionSupported={status.features?.reproduction === true}
               paperId={selectedId}
               detail={detail}
               loading={detailLoading}
@@ -2354,12 +2368,14 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
               onRequestText={() => void requestText()}
               onDirtyChange={setNotesDirty}
               registerNotesSave={registerNotesSave}
+              registerEditorNavigation={registerEditorNavigation}
               onRestoreDocuments={async () => {
                 const paperId = selectedId
+                const library = activeLibraryPath
                 if (!paperId) return
                 const [paper, cards] = await Promise.all([api.paper(paperId), api.cards(paperId)])
-                if (selectedIdRef.current !== paperId) return
-                setDetail(paper); setCardsDoc(cards)
+                if (selectedIdRef.current !== paperId || activeLibraryRef.current !== library) return
+                setDetail(paper); setCardsDoc(cards); applyMeta(paper.meta)
               }}
               onSaveNotes={handleSaveNotes}
               onReloadNotes={handleReloadNotes}
@@ -2472,12 +2488,12 @@ function AppBody({ ctx, lang, onLangChange }: AppBodyProps) {
         open={unsavedPrompt !== null}
         title={t('notes.unsaved.title')}
         description={t('notes.unsaved.desc')}
-        onClose={() => setUnsavedPrompt(null)}
+        onClose={() => { if (!guardSaving) { editorNavigationRef.current?.resume(); setUnsavedPrompt(null) } }}
         footer={
           <>
-            <Button onClick={() => setUnsavedPrompt(null)}>{t('notes.unsaved.stay')}</Button>
-            <Button onClick={discardAndContinue}>{t('notes.unsaved.discard')}</Button>
-            <Button variant="primary" loading={guardSaving} onClick={() => void saveAndContinue()}>
+            <Button disabled={guardSaving} onClick={() => { editorNavigationRef.current?.resume(); setUnsavedPrompt(null) }}>{t('notes.unsaved.stay')}</Button>
+            <Button disabled={guardSaving} loading={guardAction === 'discard'} onClick={() => void discardAndContinue()}>{t('notes.unsaved.discard')}</Button>
+            <Button variant="primary" disabled={guardSaving} loading={guardAction === 'save'} onClick={() => void saveAndContinue()}>
               {t('notes.unsaved.save')}
             </Button>
           </>
