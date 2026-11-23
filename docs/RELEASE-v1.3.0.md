@@ -26,6 +26,6 @@
 
 ## 安装与数据
 
-下载 `dsh-paper-desk-1.3.0.tgz` 并按 `SHA256SUMS` 校验。源码安装需构建后重新加载插件并刷新页面。
+下载 `dsh-paper-desk-1.3.0.tgz` 并按 `SHA256SUMS` 校验。源码链接安装需构建并刷新界面；若重新开关插件后后台仍保留旧行为，请先保存工作，再完整退出并重新打开 Harness，核对新功能是否实际生效。
 
 说明位于 `<库>/papers/<论文ID>/reproduction.json`，历史位于 `<库>/.paperdesk/history/<论文ID>/reproduction/`。编辑与讨论草稿保存在当前浏览器，按论文库和论文区分，不作为跨设备同步的已保存文档。浏览器存储失败时会提示。
